@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 import {
   AppBar,
@@ -19,13 +20,21 @@ import {
 } from "@mui/material";
 
 import {
-  Inbox as InboxIcon,
-  Mail as MailIcon,
   Logout as LogoutIcon,
-  StarBorder,
   ExpandLess,
   ExpandMore,
   Camera,
+  Dashboard,
+  GroupAdd,
+  AddLocationAlt,
+  Category,
+  Build,
+  History,
+  Settings,
+  Book,
+  Reviews,
+  Engineering,
+  Inventory
 } from "@mui/icons-material";
 
 const drawerWidth = 270;
@@ -98,45 +107,82 @@ export default function Navigations({
           <Box sx={{ overflow: "auto" }}>
             <List>
               <ListItem disablePadding>
-                <ListItemButton>
+                <ListItemButton component={Link} to="/">
                   <ListItemIcon>
-                    <MailIcon />
+                    <Dashboard />
                   </ListItemIcon>
-                  <ListItemText primary="Inbox" />
+                  <ListItemText primary="Dashboard" />
                 </ListItemButton>
               </ListItem>
-              <ListItem disablePadding>
+              {/* <ListItem disablePadding>
                 <ListItemButton>
                   <ListItemIcon>
                     <MailIcon />
                   </ListItemIcon>
                   <ListItemText primary="Starred" />
                 </ListItemButton>
-              </ListItem>
-              <ListItem disablePadding>
+              </ListItem> */}
+              {/* <ListItem disablePadding>
                 <ListItemButton>
                   <ListItemIcon>
                     <MailIcon />
                   </ListItemIcon>
                   <ListItemText primary="Send email" />
                 </ListItemButton>
-              </ListItem>
+              </ListItem> */}
               <ListItem disablePadding>
                 <ListItemButton onClick={() => setOpen((p) => !p)}>
                   <ListItemIcon>
-                    <MailIcon />
+                    <Build />
                   </ListItemIcon>
-                  <ListItemText primary="Drafts" />
+                  <ListItemText primary="Configurations" />
                   {open ? <ExpandLess /> : <ExpandMore />}
                 </ListItemButton>
               </ListItem>
               <Collapse in={open}>
                 <List>
-                  <ListItemButton sx={{ pl: 4 }}>
+                  <ListItemButton component={Link} to="/users" sx={{ pl: 4 }}>
                     <ListItemIcon>
-                      <StarBorder />
+                      <GroupAdd />
                     </ListItemIcon>
-                    <ListItemText primary="Starred" />
+                    <ListItemText primary="Users" />
+                  </ListItemButton>
+                  <ListItemButton component={Link} to="/locations" sx={{ pl: 4 }}>
+                    <ListItemIcon>
+                      <AddLocationAlt />
+                    </ListItemIcon>
+                    <ListItemText primary="Location" />
+                  </ListItemButton>
+                  <ListItemButton component={Link} to="/items" sx={{ pl: 4 }}>
+                    <ListItemIcon>
+                      <Category />
+                    </ListItemIcon>
+                    <ListItemText primary="Items" />
+                  </ListItemButton>
+                </List>
+              </Collapse>
+              <ListItem disablePadding>
+                <ListItemButton onClick={() => setOpen((p) => !p)}>
+                  <ListItemIcon>
+                    <Reviews />
+                  </ListItemIcon>
+                  <ListItemText primary="Review" />
+                  {open ? <ExpandLess /> : <ExpandMore />}
+                </ListItemButton>
+              </ListItem>
+              <Collapse in={open}>
+                <List>
+                  <ListItemButton component={Link} to="/users" sx={{ pl: 4 }}>
+                    <ListItemIcon>
+                      <Engineering />
+                    </ListItemIcon>
+                    <ListItemText primary="Conuter" />
+                  </ListItemButton>
+                  <ListItemButton component={Link} to="/locations" sx={{ pl: 4 }}>
+                    <ListItemIcon>
+                      <Inventory />
+                    </ListItemIcon>
+                    <ListItemText primary="Checker" />
                   </ListItemButton>
                 </List>
               </Collapse>
@@ -146,25 +192,25 @@ export default function Navigations({
               <ListItem disablePadding>
                 <ListItemButton>
                   <ListItemIcon>
-                    <InboxIcon />
+                    <Book />
                   </ListItemIcon>
-                  <ListItemText primary="All mail" />
+                  <ListItemText primary="User Logs" />
                 </ListItemButton>
               </ListItem>
               <ListItem disablePadding>
                 <ListItemButton>
                   <ListItemIcon>
-                    <InboxIcon />
+                    <History />
                   </ListItemIcon>
-                  <ListItemText primary="Trash" />
+                  <ListItemText primary="History" />
                 </ListItemButton>
               </ListItem>
               <ListItem disablePadding>
                 <ListItemButton>
                   <ListItemIcon>
-                    <InboxIcon />
+                    <Settings />
                   </ListItemIcon>
-                  <ListItemText primary="Spam" />
+                  <ListItemText primary="Settings" />
                 </ListItemButton>
               </ListItem>
             </List>

@@ -1,16 +1,21 @@
 import { createTheme } from "@mui/material";
 import { ThemeProvider } from "@emotion/react";
 import Navigations from "./components/Navigations";
+import LoginPage from "./pages/login";
+import Dashboard from "./pages/dashboard";
 import { Typography } from "@mui/material";
+import { AuthProvider, useAuth } from "./context/AuthContext";
+import UserManagement from "./pages/userManagement";
+import LocationManagement from "./pages/locationManagement";
+import ItemsPage from "./pages/items";
+import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from "react-router-dom";
+import React from "react";
 
+// Define Theme
 const theme = createTheme({
   palette: {
-    primary: {
-      main: "#0C2C48",
-    },
-    secondary: {
-      main: "#fff",
-    },
+    primary: { main: "#0C2C48" },
+    secondary: { main: "#fff" },
     text: {
       primary: "rgba(60, 72, 88, 1)",
       secondary: "rgba(132, 146, 166, 1)",
@@ -19,28 +24,69 @@ const theme = createTheme({
   },
 });
 
+// Private Route Wrapper
+const PrivateRoute: React.FC<{ element: React.ReactNode }> = ({ element }) => {
+  const { user } = useAuth();
+  console.log("User in PrivateRoute:", user); // Debugging
+  return user ? <>{element}</> : <Navigate to="/login" />;
+};
+
+// Layout Component (Conditionally Render Navigation)
+const Layout: React.FC<{ children: React.ReactElement }> = ({ children }) => {
+  const location = useLocation();
+  const hideNav = location.pathname === "/login" || location.pathname === "/signup";
+
+  return (
+    <>
+      {!hideNav ? <Navigations>{children}</Navigations> : children}
+    </>
+  );
+};
+
+// Main App Component
+// const App: React.FC = () => {
+//   return (
+//     <AuthProvider>
+//       <ThemeProvider theme={theme}>
+//         <Router>
+//           <Layout>
+//             <Routes>
+//               {/* Public Route */}
+//               <Route path="/login" element={<LoginPage />} />
+
+//               {/* Protected Routes */}
+//               <Route path="/dashboard" element={<PrivateRoute element={<Dashboard />} />} />
+//               <Route path="/users" element={<PrivateRoute element={<UserManagement />} />} />
+//               <Route path="/locations" element={<PrivateRoute element={<LocationManagement />} />} />
+//               <Route path="/items" element={<PrivateRoute element={<ItemsPage />} />} />
+
+//               {/* Redirect all unknown routes to login */}
+//               <Route path="*" element={<Navigate to="/login" />} />
+//             </Routes>
+//           </Layout>
+//         </Router>
+//       </ThemeProvider>
+//     </AuthProvider>
+//   );
+// };
+
 function App() {
   return (
     <ThemeProvider theme={theme}>
-      <Navigations>
-        <Typography sx={{ marginBottom: 2 }}>
-          Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do
-          eiusmod tempor incididunt ut labore et dolore magna aliqua. Rhoncus
-          dolor purus non enim praesent elementum facilisis leo vel. Risus at
-          ultrices mi tempus imperdiet. Semper risus in hendrerit gravida rutrum
-          quisque non tellus. Convallis convallis tellus id interdum velit
-          laoreet id donec ultrices. Odio morbi quis commodo odio aenean sed
-          adipiscing. Amet nisl suscipit adipiscing bibendum est ultricies
-          integer quis. Cursus euismod quis viverra nibh cras. Metus vulputate
-          eu scelerisque felis imperdiet proin fermentum leo. Mauris commodo
-          quis imperdiet massa tincidunt. Cras tincidunt lobortis feugiat
-          vivamus at augue. At augue eget arcu dictum varius duis at consectetur
-          lorem. Velit sed ullamcorper morbi tincidunt. Lorem donec massa sapien
-          faucibus et molestie ac.
-        </Typography>
-      </Navigations>
+      <Router>
+        <Navigations>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/users" element={<UserManagement />} />
+            <Route path="/locations" element={<LocationManagement />} />
+            <Route path="/items" element={<ItemsPage />} />
+          </Routes>
+        </Navigations>
+      </Router>
     </ThemeProvider>
   );
 }
+
 
 export default App;
