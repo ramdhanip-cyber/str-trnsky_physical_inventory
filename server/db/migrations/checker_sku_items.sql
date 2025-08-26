@@ -1,0 +1,22 @@
+CREATE TABLE IF NOT EXISTS checker_sku_item (
+  id SERIAL PRIMARY KEY,
+  location_id INTEGER NOT NULL,
+  form VARCHAR(255) NOT NULL,
+  grade VARCHAR(255) NOT NULL,
+  size VARCHAR(255) NOT NULL,
+  finish VARCHAR(255) NOT NULL,
+  ext_finish VARCHAR(255),
+  width VARCHAR(255),
+  length VARCHAR(255),
+  mill VARCHAR(255),
+  heat VARCHAR(255),
+  system_qty INTEGER NOT NULL,
+  counted_qty INTEGER NOT NULL,
+  variance INTEGER NOT NULL,
+  status VARCHAR(50) NOT NULL,
+  checker_count INTEGER,
+  verified BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  verified_at TIMESTAMP WITH TIME ZONE,
+  FOREIGN KEY (location_id) REFERENCES st_locations(location_id)
+); 

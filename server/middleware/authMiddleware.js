@@ -12,14 +12,43 @@ const TOKEN_FILE_PATH = "./temp/token.json"
 const getValidAccessToken = async () => {
     try {
         if (fs.existsSync(TOKEN_FILE_PATH)) {
-            const tokenData = JSON.parse(fs.readFileSync(TOKEN_FILE_PATH, "utf8"));
+            const fileContent = fs.readFileSync(TOKEN_FILE_PATH, "utf8");
+            
+            // Check if file is empty
+            if (!fileContent || fileContent.trim() === '') {
+                console.log("Token file is empty, fetching new token");
+                return await fetchNewAccessToken();
+            }
+            
+            const tokenData = JSON.parse(fileContent);
+            
+            // Validate token data structure
+            if (!tokenData.access_token || !tokenData.expires_at) {
+                console.log("Token file has invalid structure, fetching new token");
+                return await fetchNewAccessToken();
+            }
+            
             if (tokenData.expires_at > Date.now()) {
                 return tokenData.access_token;
+            } else {
+                console.log("Token expired, fetching new token");
             }
+        } else {
+            console.log("Token file does not exist, fetching new token");
         }
+        
         return await fetchNewAccessToken();
     } catch (error) {
         console.error("Error reading token file:", error);
+        // If there's an error reading the file, try to delete it and fetch a new token
+        try {
+            if (fs.existsSync(TOKEN_FILE_PATH)) {
+                fs.unlinkSync(TOKEN_FILE_PATH);
+                console.log("Deleted corrupted token file");
+            }
+        } catch (deleteError) {
+            console.error("Error deleting corrupted token file:", deleteError);
+        }
         return await fetchNewAccessToken();
     }
 };
@@ -27,6 +56,13 @@ const getValidAccessToken = async () => {
 // Function to request a new access token
 const fetchNewAccessToken = async () => {
     try {
+        // Ensure temp directory exists
+        const tempDir = path.dirname(TOKEN_FILE_PATH);
+        if (!fs.existsSync(tempDir)) {
+            fs.mkdirSync(tempDir, { recursive: true });
+            console.log("Created temp directory:", tempDir);
+        }
+
         const response = await axios.post(process.env.OAUTH_TOKEN_URL, new URLSearchParams({
             grant_type: "client_credentials",
             client_id: process.env.OAUTH_CLIENT_ID,
@@ -40,7 +76,14 @@ const fetchNewAccessToken = async () => {
             expires_at: Date.now() + response.data.expires_in * 1000
         };
 
-        fs.writeFileSync(TOKEN_FILE_PATH, JSON.stringify(tokenData, null, 2));
+        // Write token data with proper error handling
+        try {
+            fs.writeFileSync(TOKEN_FILE_PATH, JSON.stringify(tokenData, null, 2));
+            console.log("Successfully saved new token to file");
+        } catch (writeError) {
+            console.error("Error writing token file:", writeError);
+            // Continue without saving to file, but return the token
+        }
 
         return tokenData.access_token;
     } catch (error) {

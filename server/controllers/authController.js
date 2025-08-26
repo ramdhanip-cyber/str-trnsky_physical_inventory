@@ -2,79 +2,77 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const pool = require("../database/db");
 
-// Generate JWT Token
-const generateToken = (user) => {
-  return jwt.sign(
-    { userId: user.user_id, role: user.role_id },
-    process.env.JWT_SECRET,
-    { expiresIn: "1h" }
-  );
+const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
+
+exports.registerUser = async (req, res) => {
+    const { user_name, full_name, password } = req.body;
+    
+    try {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const result = await pool.query(
+            'INSERT INTO st_users (user_name, full_name, password) VALUES ($1, $2, $3) RETURNING user_id',
+            [user_name, full_name, hashedPassword]
+        );
+
+        res.status(201).json({ message: 'User registered successfully', userId: result.rows[0].user_id });
+    } catch (error) {
+        res.status(500).json({ error: 'User registration failed' });
+    }
 };
 
-// Login Function with Session Storage
-exports.login = async (req, res) => {
-  const { userName, password } = req.body;
-  console.log(userName, password)
+exports.loginUser = async (req, res) => {
+  const { user_name, password } = req.body;
+  console.log(user_name, password);
 
   try {
-    const result = await pool.query(
-      "SELECT * FROM st_users WHERE user_name = $1",
-      [userName]
-    );
+      // Query to check if user exists
+      const user = await pool.query('SELECT * FROM st_users WHERE user_name = $1', [user_name]);
+      console.log(user.rows[0].password);
 
-    if (result.rows.length === 0)
-      return res.status(401).json({ message: "Invalid credentials" });
+      // Check if user exists and password matches
+      if (user.rows.length === 0) {
+          return res.status(401).json({ error: 'Invalid credentials' });
+      }
 
-    const user = result.rows[0];
-    const isPasswordValid = await bcrypt.compare(password, user.password);
+      const isMatch = await bcrypt.compare(password, user.rows[0].password);
+      if (!isMatch) {
+          return res.status(401).json({ error: 'Invalid credentials' });
+      }
 
-    if (!isPasswordValid)
-      return res.status(401).json({ message: "Invalid credentials" });
+      // Get full_name from the user data
+      const full_name = user.rows[0].full_name;
+      const user_id = user.rows[0].user_id;
 
-    // Generate JWT Token
-    const token = generateToken(user);
+      const role = await pool.query('SELECT DISTINCT b.role_desc from st_users a, st_roles b, teams c, team_members d where a.user_id = d.user_id and b.role_id = d.role_id and d.team_id = c.team_id and d.user_id = $1', [user_id]);
 
-    // Store session in database
-    const sessionResult = await pool.query(
-      "INSERT INTO st_sessions (user_id, token) VALUES ($1, $2) RETURNING session_id",
-      [user.user_id, token]
-    );
+      const roleDesc = role.rows.map(row => row.role_desc);
 
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: false,
-      sameSite: "strict",
-    });
+      // Generate JWT token
+      const token = jwt.sign({ userId: user.rows[0].user_id }, JWT_SECRET, { expiresIn: '1h' });
 
-    res.json({
-      message: "Login successful",
-      token,
-      sessionId: sessionResult.rows[0].session_id,
-      user: { id: user.user_id, role: user.role_id },
-    });
+      // Insert session information into the database
+      await pool.query(
+          'INSERT INTO st_sessions (user_id, token, expires_at) VALUES ($1, $2, NOW() + INTERVAL \'1 hour\')',
+          [user.rows[0].user_id, token]
+      );
 
+      // Return the token and full_name in the response
+      return res.json({ token, full_name, user_id, roleDesc });
   } catch (error) {
-    console.error("Login Error:", error);
-    res.status(500).json({ message: "Server error" });
+      console.error(error);
+      res.status(500).json({ error: 'Login failed' });
   }
 };
 
-// Logout Function
-exports.logout = async (req, res) => {
-  const token = req.cookies.token;
+exports.logoutUser = async (req, res) => {
+    const token = req.header('Authorization')?.split(' ')[1];
 
-  if (!token) return res.status(400).json({ message: "No active session found" });
-
-  try {
-    await pool.query("DELETE FROM st_sessions WHERE token = $1", [token]);
-
-    res.clearCookie("token");
-    res.json({ message: "Logged out successfully" });
-
-  } catch (error) {
-    console.error("Logout Error:", error);
-    res.status(500).json({ message: "Server error" });
-  }
+    try {
+        await pool.query('DELETE FROM st_sessions WHERE token = $1', [token]);
+        res.json({ message: 'Logged out successfully' });
+    } catch (error) {
+        res.status(500).json({ error: 'Logout failed' });
+    }
 };
 
 // Verify Token with Session Validation

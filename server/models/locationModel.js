@@ -5,10 +5,10 @@ const getLocations = async () => {
   return res.rows;
 };
 
-const createLocation = async (location_desc, warehouse) => {
+const createLocation = async (location_desc, warehouse, branch) => {
   const res = await pool.query(
-    "INSERT INTO st_locations (location_desc, warehouse) VALUES ($1, $2) RETURNING *",
-    [location_desc, warehouse]
+    "INSERT INTO st_locations (location_desc, warehouse, branch) VALUES ($1, $2, $3) RETURNING *",
+    [location_desc, warehouse, branch]
   );
   return res.rows[0];
 };

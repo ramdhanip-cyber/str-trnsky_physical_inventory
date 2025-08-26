@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import axios from "axios";
+import { authAPI } from "../config/api";
 import { 
   Button, 
   Container, 
@@ -28,7 +28,7 @@ const Signup: React.FC = () => {
 
   useEffect(() => {
     // Fetch roles from the API
-    axios.get("http://localhost:5000/auth/roles")
+    authAPI.getRoles()
       .then((res) => setRoles(res.data))
       .catch(() => setError("Failed to load roles"));
   }, []);
@@ -52,7 +52,7 @@ const Signup: React.FC = () => {
     }
 
     try {
-      const res = await axios.post("http://localhost:5000/auth/signup", { 
+      const res = await authAPI.signup({ 
         full_name: fullName,
         username, 
         password, 
