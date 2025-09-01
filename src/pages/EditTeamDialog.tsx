@@ -108,9 +108,11 @@ const EditTeamDialog: React.FC<EditTeamDialogProps> = ({
       return;
     }
 
-    // Validate at least one user is selected
-    if (userRoles.some(ur => !ur.userId || !ur.roleId)) {
-      setError('Please select both user and role for all members');
+    // Filter out empty user-role combinations and validate at least one user is selected
+    const validUserRoles = userRoles.filter(ur => ur.userId && ur.roleId);
+    
+    if (validUserRoles.length === 0) {
+      setError('Please select at least one team member');
       return;
     }
 
@@ -122,19 +124,46 @@ const EditTeamDialog: React.FC<EditTeamDialogProps> = ({
         team_name: teamName,
         tag_from: tagRange.from,
         tag_to: tagRange.to,
-        members: userRoles.map(ur => ({
+        members: validUserRoles.map(ur => ({
           user_id: parseInt(ur.userId),
           role_id: parseInt(ur.roleId)
         }))
       };
 
-      await servicesAPI.updateTeam(team?.team_id.toString() || '', teamData);
+      console.log('=== FRONTEND DEBUG ===');
+      console.log('Original team members:', team?.members);
+      console.log('All userRoles (including empty):', userRoles);
+      console.log('Valid userRoles (filtered):', validUserRoles);
+      console.log('Sending team update data:', teamData);
+      console.log('=== END FRONTEND DEBUG ===');
+
+      const response = await servicesAPI.updateTeam(team?.team_id.toString() || '', teamData);
       
-      onTeamUpdated(); // Refresh team list
-      onClose(); // Close dialog
-    } catch (error) {
+      if (response.data.success) {
+        // Show success message with changes if available
+        const changes = response.data.changes;
+        if (changes) {
+          const changeMessage = [];
+          if (changes.added > 0) changeMessage.push(`${changes.added} member(s) added`);
+          if (changes.removed > 0) changeMessage.push(`${changes.removed} member(s) removed`);
+          
+          if (changeMessage.length > 0) {
+            console.log(`Team updated: ${changeMessage.join(', ')}`);
+          }
+        }
+        
+        onTeamUpdated(); // Refresh team list
+        onClose(); // Close dialog
+      }
+    } catch (error: any) {
       console.error("Error updating team:", error);
-      setError('Failed to update team. Please try again.');
+      
+      // Handle specific error messages from the server
+      if (error.response?.data?.message) {
+        setError(error.response.data.message);
+      } else {
+        setError('Failed to update team. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

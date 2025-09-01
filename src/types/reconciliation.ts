@@ -57,6 +57,9 @@ export interface ReconciliationItem {
   inv_quality?: string;
   type_description?: string;
   quality_description?: string;
+  // Comparison data properties (when item has been compared with checker data)
+  checker_qty?: number;
+  has_comparison?: boolean;
 }
 
 export interface RecheckItem {

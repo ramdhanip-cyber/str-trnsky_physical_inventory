@@ -177,9 +177,9 @@ CREATE TABLE recheck_items (
     length VARCHAR(255),
     mill VARCHAR(255),
     heat VARCHAR(255),
-    system_qty INT,
-    counted_qty INT,
-    variance INT,
+    system_qty NUMERIC(10,2),
+    counted_qty NUMERIC(10,2),
+    variance NUMERIC(10,2),
     status VARCHAR(100) DEFAULT 'Rechecking in Progress',
     recheck_reason TEXT,
     marked_by INT REFERENCES st_users(user_id),
@@ -223,12 +223,15 @@ CREATE INDEX idx_checker_logs_activity_type ON checker_activity_logs(activity_ty
 CREATE TABLE reconciliation_records (
     id SERIAL PRIMARY KEY,
     location_id INT NOT NULL REFERENCES st_locations(location_id) ON DELETE CASCADE,
+    branch VARCHAR(255) NOT NULL,
+    warehouse VARCHAR(255) NOT NULL,
     record_name VARCHAR(255) NULL,
     record_date TIMESTAMPTZ DEFAULT NOW(),
     created_by INT NULL REFERENCES st_users(user_id) ON DELETE SET NULL,
     status VARCHAR(50) DEFAULT 'active',
     summary_data JSONB NOT NULL,
     items_data JSONB NOT NULL,
+
     notes TEXT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ NULL
@@ -236,6 +239,7 @@ CREATE TABLE reconciliation_records (
 
 -- Create indexes for better performance
 CREATE INDEX idx_reconciliation_records_location_id ON reconciliation_records(location_id);
+CREATE INDEX idx_reconciliation_records_branch_warehouse ON reconciliation_records(branch, warehouse);
 CREATE INDEX idx_reconciliation_records_status ON reconciliation_records(status);
 CREATE INDEX idx_reconciliation_records_created_by ON reconciliation_records(created_by);
 CREATE INDEX idx_reconciliation_records_record_date ON reconciliation_records(record_date);

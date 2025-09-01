@@ -119,7 +119,7 @@ const AddTeamDialog: React.FC<AddTeamDialogProps> = ({ open, onClose, onTeamCrea
 
     try {
       const response = await servicesAPI.createTeam(teamData);
-      if (response.status === 201) {
+      if (response.data.success) {
         alert("Team created successfully!");
         await onTeamCreated();
         onClose();
@@ -130,8 +130,15 @@ const AddTeamDialog: React.FC<AddTeamDialogProps> = ({ open, onClose, onTeamCrea
       } else {
         console.error("Error creating team");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error submitting team:", error);
+      
+      // Handle specific error messages from the server
+      if (error.response?.data?.message) {
+        alert(`Error creating team: ${error.response.data.message}`);
+      } else {
+        alert('Failed to create team. Please try again.');
+      }
     }
   };
 

@@ -273,8 +273,9 @@ const ReconciliationDialog: React.FC<ReconciliationDialogProps> = ({
           original_transaction_ids: item.transaction_count ? [item.transaction_count] : []
         }));
 
-      // Send to new endpoint for recheck enabling
-      const response = await servicesAPI.createRecheckItems(locationId, {
+      // Send to endpoint for recheck enabling
+      const response = await servicesAPI.markItemsForRecheck({
+        location_id: locationId,
         items: selectedItemsData,
         recheck_reason: 'Marked for rechecking due to variance'
       });

@@ -78,20 +78,18 @@ interface Branch {
   brh_brh: string;
 }
 
-interface Warehouse {
-  whs_whs: string;
-}
+
 
 const LocationManagement: React.FC = () => {
   const theme = useTheme();
   const navigate = useNavigate();
   const [openDialog, setOpenDialog] = useState<boolean>(false);
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+
   const [locations, setLocations] = useState<Location[]>([]);
   const [filteredLocations, setFilteredLocations] = useState<Location[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string>("");
-  const [selectedWarehouse, setSelectedWarehouse] = useState<string>("");
+
   const [locationDesc, setLocationDesc] = useState<string>("");
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
@@ -129,23 +127,7 @@ const LocationManagement: React.FC = () => {
     fetchBranches();
   }, []);
 
-  // Fetch warehouses when a branch is selected
-  useEffect(() => {
-    if (selectedBranch) {
-      const fetchWarehouses = async () => {
-        try {
-          const response = await servicesAPI.getWarehouses(selectedBranch);
-          setWarehouses(response.data.Data);
-        } catch (error) {
-          console.error("Error fetching warehouses:", error);
-          setError("Failed to load warehouses");
-        }
-      };
-      fetchWarehouses();
-    } else {
-      setWarehouses([]);
-    }
-  }, [selectedBranch]);
+
 
   // Fetch locations from the database
   const fetchLocations = async () => {
@@ -276,22 +258,39 @@ const LocationManagement: React.FC = () => {
     fetchLocations();
   }, []);
 
-  // Filter locations based on search term
+  // Filter locations based on search term and branch
   useEffect(() => {
-    if (searchTerm.trim() === '') {
-      setFilteredLocations(locations);
-    } else {
-      const filtered = locations.filter(location =>
+    let filtered = locations;
+
+    // Filter by search term
+    if (searchTerm.trim() !== '') {
+      filtered = filtered.filter(location =>
         location.location_desc.toLowerCase().includes(searchTerm.toLowerCase()) ||
         location.branch.toLowerCase().includes(searchTerm.toLowerCase()) ||
         location.warehouse.toLowerCase().includes(searchTerm.toLowerCase())
       );
-      setFilteredLocations(filtered);
     }
-  }, [searchTerm, locations]);
+
+    // Filter by branch
+    if (selectedBranch !== '') {
+      filtered = filtered.filter(location => location.branch === selectedBranch);
+    }
+
+    console.log('Filtering results:', {
+      totalLocations: locations.length,
+      filteredCount: filtered.length,
+      searchTerm,
+      selectedBranch,
+      filters: {
+        search: searchTerm.trim() !== '',
+        branch: selectedBranch !== ''
+      }
+    });
+    setFilteredLocations(filtered);
+  }, [searchTerm, selectedBranch, locations]);
 
   const createLocation = async () => {
-    if (!selectedBranch || !selectedWarehouse || !locationDesc) {
+    if (!selectedBranch || !locationDesc) {
       setError("Please fill all fields");
       return;
     }
@@ -301,13 +300,11 @@ const LocationManagement: React.FC = () => {
       await servicesAPI.createLocation({
         location_desc: locationDesc,
         branch: selectedBranch,
-        warehouse: selectedWarehouse,
       });
 
       setOpenDialog(false);
       setLocationDesc("");
       setSelectedBranch("");
-      setSelectedWarehouse("");
       await fetchLocations();
     } catch (error) {
       console.error("Error creating location:", error);
@@ -456,12 +453,12 @@ const LocationManagement: React.FC = () => {
               }}
             />
           </Grid>
-          <Grid item xs={6} md={3}>
+          <Grid item xs={6} md={2}>
             <FormControl fullWidth size="small">
               <InputLabel>Filter by Branch</InputLabel>
               <Select
-                value=""
-                onChange={() => {}}
+                value={selectedBranch}
+                onChange={(e) => setSelectedBranch(e.target.value)}
                 label="Filter by Branch"
                 sx={{ borderRadius: 2 }}
                 startAdornment={
@@ -479,11 +476,27 @@ const LocationManagement: React.FC = () => {
               </Select>
             </FormControl>
           </Grid>
-          <Grid item xs={6} md={3}>
+
+          <Grid item xs={12} md={2}>
             <Box display="flex" justifyContent="flex-end" alignItems="center" gap={1}>
               <Typography variant="body2" color="text.secondary">
                 {filteredLocations.length} locations
               </Typography>
+              <Tooltip title="Clear Filters">
+                <IconButton 
+                  onClick={() => {
+                    setSearchTerm('');
+                    setSelectedBranch('');
+                  }}
+                  disabled={!searchTerm && !selectedBranch}
+                  sx={{
+                    backgroundColor: alpha(theme.palette.action.hover, 0.1),
+                    borderRadius: 2
+                  }}
+                >
+                  <CompareArrows fontSize="small" />
+                </IconButton>
+              </Tooltip>
               <Tooltip title="Refresh">
                 <IconButton 
                   onClick={handleRefresh}
@@ -493,22 +506,39 @@ const LocationManagement: React.FC = () => {
                     borderRadius: 2
                   }}
                 >
-                  {/* <RefreshIcon fontSize="small" /> */}
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Filters">
-                <IconButton
-                  sx={{
-                    backgroundColor: alpha(theme.palette.action.hover, 0.1),
-                    borderRadius: 2
-                  }}
-                >
-                  {/* <FilterIcon fontSize="small" /> */}
+                  <Refresh fontSize="small" />
                 </IconButton>
               </Tooltip>
             </Box>
           </Grid>
         </Grid>
+        
+        {/* Active Filters Display */}
+        {(searchTerm || selectedBranch) && (
+          <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center' }}>
+              Active filters:
+            </Typography>
+            {searchTerm && (
+              <Chip
+                label={`Search: "${searchTerm}"`}
+                size="small"
+                onDelete={() => setSearchTerm('')}
+                color="primary"
+                variant="outlined"
+              />
+            )}
+            {selectedBranch && (
+              <Chip
+                label={`Branch: ${selectedBranch}`}
+                size="small"
+                onDelete={() => setSelectedBranch('')}
+                color="primary"
+                variant="outlined"
+              />
+            )}
+          </Box>
+        )}
       </Paper>
 
       {/* Create Location Dialog */}
@@ -578,20 +608,7 @@ const LocationManagement: React.FC = () => {
             </Select>
           </FormControl>
 
-          <FormControl fullWidth margin="normal" disabled={!selectedBranch}>
-            <InputLabel>Warehouse</InputLabel>
-            <Select 
-              value={selectedWarehouse} 
-              onChange={(e) => setSelectedWarehouse(e.target.value)}
-              sx={{ borderRadius: 2 }}
-            >
-              {warehouses.map((warehouse) => (
-                <MenuItem key={warehouse.whs_whs} value={warehouse.whs_whs}>
-                  {warehouse.whs_whs}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+
         </DialogContent>
         <DialogActions sx={{ 
           p: 3, 
@@ -613,7 +630,7 @@ const LocationManagement: React.FC = () => {
             onClick={createLocation} 
             color="primary" 
             variant="contained"
-            disabled={!selectedBranch || !selectedWarehouse || !locationDesc || loading}
+            disabled={!selectedBranch || !locationDesc || loading}
             sx={{
               borderRadius: 2,
               px: 3

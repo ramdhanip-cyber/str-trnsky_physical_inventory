@@ -407,6 +407,20 @@ exports.postTeams = async (req, res) => {
     const current_tag = tagRange.from;
   
     try {
+      await pool.query('BEGIN');
+
+      // Validate that no duplicate user-role combinations exist within the new team
+      const userRoleCombinations = userRoles.map(ur => `${ur.userId}-${ur.roleId}`);
+      const uniqueCombinations = new Set(userRoleCombinations);
+      
+      if (userRoleCombinations.length !== uniqueCombinations.size) {
+        await pool.query('ROLLBACK');
+        return res.status(400).json({ 
+          success: false,
+          message: "Duplicate user-role combinations are not allowed within the same team" 
+        });
+      }
+
       // Insert into teams table
       const teamResult = await pool.query(
         "INSERT INTO teams (team_name, tag_from, tag_to, current_tag) VALUES ($1, $2, $3, $4) RETURNING team_id",
@@ -422,12 +436,21 @@ exports.postTeams = async (req, res) => {
         )
       );
   
-      // await Promise.all(insertPromises);
+      await Promise.all(insertPromises);
+      await pool.query('COMMIT');
   
-      res.status(201).json({ message: "Team created successfully", teamId });
+      res.status(201).json({ 
+        success: true,
+        message: "Team created successfully", 
+        teamId 
+      });
     } catch (error) {
+      await pool.query('ROLLBACK');
       console.error("Error creating team:", error);
-      res.status(500).json({ error: "Internal server error" });
+      res.status(500).json({ 
+        success: false,
+        error: "Internal server error" 
+      });
     }
 };
 
@@ -458,29 +481,103 @@ exports.updateTeam = async (req, res) => {
             [team_name, tag_from, tag_to, team_id]
         );
 
-        // Delete existing team members
-        await pool.query(
-            "DELETE FROM team_members WHERE team_id = $1",
+        // Get current team members and clean up duplicates
+        const currentMembers = await pool.query(
+            "SELECT user_id, role_id FROM team_members WHERE team_id = $1",
             [team_id]
         );
+        
+        // Clean up duplicate entries in team_members table
+        console.log('Cleaning up duplicate team members...');
+        await pool.query(
+            `DELETE FROM team_members 
+             WHERE team_id = $1 
+             AND id NOT IN (
+                 SELECT MIN(id) 
+                 FROM team_members 
+                 WHERE team_id = $1 
+                 GROUP BY user_id, role_id
+             )`,
+            [team_id]
+        );
+        
+        // Get cleaned up current members
+        const cleanedCurrentMembers = await pool.query(
+            "SELECT user_id, role_id FROM team_members WHERE team_id = $1",
+            [team_id]
+        );
+        
+        console.log('Members before cleanup:', currentMembers.rows.length);
+        console.log('Members after cleanup:', cleanedCurrentMembers.rows.length);
 
-        // Insert new team members
-        if (members && members.length > 0) {
-            const insertPromises = members.map(({ user_id, role_id }) =>
-                pool.query(
-                    "INSERT INTO team_members (team_id, user_id, role_id) VALUES ($1, $2, $3)",
-                    [team_id, user_id, role_id]
-                )
+        // Validate that no duplicate user-role combinations exist within the updated team
+        const userRoleCombinations = members.map(m => `${m.user_id}-${m.role_id}`);
+        const uniqueCombinations = new Set(userRoleCombinations);
+        
+        if (userRoleCombinations.length !== uniqueCombinations.size) {
+            await pool.query('ROLLBACK');
+            return res.status(400).json({ 
+                success: false, 
+                message: "Duplicate user-role combinations are not allowed within the same team" 
+            });
+        }
+
+        // Find members to remove (in current but not in new)
+        const currentMemberKeys = cleanedCurrentMembers.rows.map(m => `${m.user_id}-${m.role_id}`);
+        const newMemberKeys = members.map(m => `${m.user_id}-${m.role_id}`);
+        
+        console.log('=== TEAM UPDATE DEBUG ===');
+        console.log('Team ID:', team_id);
+        console.log('Current members from DB (cleaned):', cleanedCurrentMembers.rows);
+        console.log('New members from request:', members);
+        console.log('Current member keys:', currentMemberKeys);
+        console.log('New member keys:', newMemberKeys);
+        
+        // Simple comparison: find members to remove (in current but not in new)
+        const membersToRemove = cleanedCurrentMembers.rows.filter(m => {
+            const memberKey = `${m.user_id}-${m.role_id}`;
+            const shouldRemove = !newMemberKeys.includes(memberKey);
+            console.log(`Checking member ${memberKey}: shouldRemove = ${shouldRemove}`);
+            return shouldRemove;
+        });
+
+        // Find members to add (in new but not in current)
+        const membersToAdd = members.filter(m => {
+            const memberKey = `${m.user_id}-${m.role_id}`;
+            const shouldAdd = !currentMemberKeys.includes(memberKey);
+            console.log(`Checking new member ${memberKey}: shouldAdd = ${shouldAdd}`);
+            return shouldAdd;
+        });
+
+        console.log('Members to remove:', membersToRemove);
+        console.log('Members to add:', membersToAdd);
+        console.log('=== END DEBUG ===');
+
+        // Remove members that are no longer in the team
+        for (const member of membersToRemove) {
+            await pool.query(
+                "DELETE FROM team_members WHERE team_id = $1 AND user_id = $2 AND role_id = $3",
+                [team_id, member.user_id, member.role_id]
             );
+        }
 
-            await Promise.all(insertPromises);
+        // Add new members
+        for (const { user_id, role_id } of membersToAdd) {
+            await pool.query(
+                "INSERT INTO team_members (team_id, user_id, role_id) VALUES ($1, $2, $3)",
+                [team_id, user_id, role_id]
+            );
         }
 
         await pool.query('COMMIT');
 
         res.status(200).json({ 
             success: true, 
-            message: "Team updated successfully" 
+            message: "Team updated successfully",
+            changes: {
+                removed: membersToRemove.length,
+                added: membersToAdd.length
+            }
         });
 
     } catch (error) {

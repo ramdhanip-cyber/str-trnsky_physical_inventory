@@ -7,10 +7,11 @@ const getAPIBaseURL = () => {
     return 'http://localhost:5310';
   }
   
-  // For production, use the same hostname with the correct base path
+  // For production, use the same hostname with port 5310
   const protocol = window.location.protocol;
   const hostname = window.location.hostname;
   
+  // Use the same hostname with port 5310 for the API server
   // Extract the base path from the current URL (same logic as App.tsx)
   const baseUrl = window.location.pathname.split('/star-inventory/')[0] || '';
   const basePath = baseUrl + '/star-inventory';
@@ -18,13 +19,10 @@ const getAPIBaseURL = () => {
   // Use the same hostname without specifying port
   // const apiBaseURL = `${protocol}//${hostname}:5310`; // For development
   const apiBaseURL = `${protocol}//${hostname}${basePath}`; // For production
-  
   // Debug logging
   console.log('API Base URL Debug:', {
     protocol,
     hostname,
-    baseUrl,
-    basePath,
     fullApiBaseURL: apiBaseURL
   });
   
@@ -178,6 +176,7 @@ export const servicesAPI = {
   // Branches and Warehouses
   getBranches: () => api.get('/services/branches'),
   getWarehouses: (branch: string) => api.get(`/services/warehouses?branch=${branch}`),
+  getAllWarehouses: () => api.get('/services/available-warehouses'),
   getAvailableWarehouses: () => api.get('/services/available-warehouses'),
   getLocationsByWarehouse: (warehouse: string) => api.get(`/services/locations-by-warehouse?warehouse=${encodeURIComponent(warehouse)}`),
   completeAssignedLocation: (locationId: string, sectionId: string, data: unknown) => api.post(`/services/assigned-locations/${locationId}/${sectionId}`, data),
@@ -197,8 +196,15 @@ export const servicesAPI = {
   updateReconciliationRecord: (recordId: string, data: unknown) => api.put(`/services/reconciliation-records/${recordId}`, data),
   deleteReconciliationRecord: (recordId: string) => api.delete(`/services/reconciliation-records/${recordId}`),
   reconcileInventory: (data: unknown) => api.post('/services/reconcile', data),
-  getRecheckItems: (locationId: string) => api.get(`/services/recheck-items/${locationId}`),
-  createRecheckItems: (locationId: string, data: unknown) => api.post(`/services/recheck-items/${locationId}`, data),
+  saveReconciliationWithComparison: (data: unknown) => api.post('/services/reconcile/save', data),
+  checkExistingReconciliation: (params: unknown) => api.get('/services/reconcile/check-existing', { params }),
+  loadReconciliationData: (recordId: string) => api.get(`/services/reconcile/load/${recordId}`),
+  
+  // Recheck API methods
+  markItemsForRecheck: (data: unknown) => api.post('/services/recheck/mark-items', data),
+  getRecheckItems: (locationId: string) => api.get(`/services/recheck/items/${locationId}`),
+      updateRecheckItem: (itemId: string, data: unknown) => api.put(`/services/recheck/items/${itemId}`, data),
+    completeRecheckItem: (itemId: string, data: unknown) => api.post(`/services/recheck/complete/${itemId}`, data),
   updateRecheckItems: (locationId: string, data: unknown) => api.put(`/services/recheck-items/${locationId}`, data),
   deleteRecheckItems: (locationId: string, data: unknown) => api.delete(`/services/recheck-items/${locationId}`, { data }),
   // Checker specific API methods

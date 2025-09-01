@@ -45,6 +45,7 @@ import { useSnackbar } from 'notistack';
 import { servicesAPI } from '../config/api';
 import { ReconciliationData } from '../types/reconciliation';
 import { AxiosError } from 'axios';
+import * as XLSX from 'xlsx';
 
 interface Transaction {
   tag_id: number;
@@ -148,6 +149,48 @@ const CheckerReviewPageImproved: React.FC = () => {
     }
   };
 
+  // Helper function to detect changes between checker and counter transactions
+  const detectChanges = (checker: any, counter: any): Array<{
+    field: string;
+    oldValue: any;
+    newValue: any;
+    type: 'added' | 'modified' | 'removed';
+  }> => {
+    const changes: Array<{
+      field: string;
+      oldValue: any;
+      newValue: any;
+      type: 'added' | 'modified' | 'removed';
+    }> = [];
+
+    if (!checker || !counter) {
+      return changes;
+    }
+
+    // Fields to compare
+    const fieldsToCompare = ['qty', 'grade', 'size', 'finish', 'ext_finish', 'width', 'length', 'quality', 'remarks', 'ad_cmts'];
+
+    fieldsToCompare.forEach(field => {
+      const checkerValue = checker[field];
+      const counterValue = counter[field];
+
+      // Handle null/undefined values
+      const normalizedCheckerValue = checkerValue === null || checkerValue === undefined ? '' : String(checkerValue);
+      const normalizedCounterValue = counterValue === null || counterValue === undefined ? '' : String(counterValue);
+
+      if (normalizedCheckerValue !== normalizedCounterValue) {
+        changes.push({
+          field,
+          oldValue: counterValue,
+          newValue: checkerValue,
+          type: 'modified'
+        });
+      }
+    });
+
+    return changes;
+  };
+
   // Fetch all transactions for all sections
   const fetchAllTransactions = async () => {
     try {
@@ -169,28 +212,52 @@ const CheckerReviewPageImproved: React.FC = () => {
           console.log(`Section ${section.section_id} - Checker response:`, checkerResponse.data);
           console.log(`Section ${section.section_id} - Counter response:`, counterResponse.data);
           
-          // Process checker transactions
-          const checkerTransactions = checkerResponse.data.map((t: any) => ({
-            ...t,
-            section_id: section.section_id,
-            section_desc: section.section_desc,
-            location_desc: section.location_desc,
-            warehouse: section.warehouse,
-            branch: section.branch
-          }));
+          // Create maps for easy lookup
+          const checkerMap = new Map();
+          const counterMap = new Map();
           
-          // Process counter transactions
-          const counterTransactions = counterResponse.data.map((t: any) => ({
-            ...t,
-            section_id: section.section_id,
-            section_desc: section.section_desc,
-            location_desc: section.location_desc,
-            warehouse: section.warehouse,
-            branch: section.branch
-          }));
+          checkerResponse.data.forEach((t: any) => {
+            checkerMap.set(t.tag_id, t);
+          });
+          
+          counterResponse.data.forEach((t: any) => {
+            counterMap.set(t.tag_id, t);
+          });
+          
+          // Process checker transactions with changes detection
+          const checkerTransactions = checkerResponse.data.map((t: any) => {
+            const counterTransaction = counterMap.get(t.tag_id);
+            const changes = detectChanges(t, counterTransaction);
+            
+            return {
+              ...t,
+              section_id: section.section_id,
+              section_desc: section.section_desc,
+              location_desc: section.location_desc,
+              warehouse: section.warehouse,
+              branch: section.branch,
+              changes: changes
+            };
+          });
+          
+          // Process counter transactions (no changes detection needed)
+          const counterTransactions = counterResponse.data.map((t: any) => {
+            return {
+              ...t,
+              section_id: section.section_id,
+              section_desc: section.section_desc,
+              location_desc: section.location_desc,
+              warehouse: section.warehouse,
+              branch: section.branch,
+              changes: [] // No changes for counter transactions
+            };
+          });
           
           console.log(`Section ${section.section_id} - Processed checker transactions:`, checkerTransactions.length);
           console.log(`Section ${section.section_id} - Processed counter transactions:`, counterTransactions.length);
+          console.log(`Section ${section.section_id} - Transactions with changes:`, 
+            [...checkerTransactions, ...counterTransactions].filter(t => t.changes && t.changes.length > 0).length
+          );
           
           allTransactions.push(...checkerTransactions, ...counterTransactions);
         } catch (error) {
@@ -200,6 +267,7 @@ const CheckerReviewPageImproved: React.FC = () => {
       
       console.log('Total transactions fetched:', allTransactions.length);
       console.log('Transaction roles:', allTransactions.map(t => ({ tag_id: t.tag_id, role: t.role })));
+      console.log('Transactions with changes:', allTransactions.filter(t => t.changes && t.changes.length > 0).length);
       
       setTransactions(allTransactions);
     } catch (error) {
@@ -244,7 +312,7 @@ const CheckerReviewPageImproved: React.FC = () => {
       const matchesCountType = filters.countTypeFilter === 'all' || 
         transaction.count_type === filters.countTypeFilter;
 
-      const matchesHasChanges = filters.hasChangesFilter === 'all' || 
+            const matchesHasChanges = filters.hasChangesFilter === 'all' ||
         (filters.hasChangesFilter === 'yes' && transaction.changes && transaction.changes.length > 0) ||
         (filters.hasChangesFilter === 'no' && (!transaction.changes || transaction.changes.length === 0));
 
@@ -256,9 +324,23 @@ const CheckerReviewPageImproved: React.FC = () => {
   // Summary calculations
   const summary = useMemo(() => {
     const total = filteredTransactions.length;
+    
     const withChanges = filteredTransactions.filter(t => t.changes && t.changes.length > 0).length;
+    
     const bundleCount = filteredTransactions.filter(t => t.count_type === 'bundle').length;
     const pieceCount = filteredTransactions.filter(t => t.count_type === 'pcs').length;
+    
+    console.log('Summary calculation:', {
+      total,
+      withChanges,
+      bundleCount,
+      pieceCount,
+      transactionsWithChanges: filteredTransactions.filter(t => t.changes && t.changes.length > 0).map(t => ({
+        tag_id: t.tag_id,
+        role: t.role,
+        changes: t.changes
+      }))
+    });
     
     return { total, withChanges, bundleCount, pieceCount };
   }, [filteredTransactions]);
@@ -318,6 +400,112 @@ const CheckerReviewPageImproved: React.FC = () => {
   const handleRefresh = () => {
     fetchSections();
     setTransactions([]);
+  };
+
+  const handleExport = () => {
+    try {
+      // Prepare data for export
+      const exportData = getGroupedTransactions().map(({ tagId, checker, counter }) => {
+        const baseData = {
+          tag_id: tagId,
+          section_desc: checker?.section_desc || '',
+          location_desc: checker?.location_desc || '',
+          warehouse: checker?.warehouse || '',
+          branch: checker?.branch || '',
+          form: checker?.form || '',
+          grade: checker?.grade || '',
+          size: checker?.size || '',
+          finish: checker?.finish || '',
+          ext_finish: checker?.ext_finish || '',
+          width: checker?.width || '',
+          length: checker?.length || '',
+          type: checker?.type || '',
+          quality: checker?.quality || '',
+          remarks: checker?.remarks || '',
+          ad_cmts: checker?.ad_cmts || '',
+        };
+
+        return {
+          ...baseData,
+          // Checker data
+          checker_qty: checker?.qty || 0,
+          checker_count_type: checker?.count_type || '',
+          checker_team: checker?.team_name || '',
+          checker_counted_by: checker?.counted_by || '',
+          checker_date: checker?.created_at ? new Date(checker.created_at).toLocaleString() : '',
+          checker_has_changes: checker?.changes && checker.changes.length > 0 ? 'Yes' : 'No',
+          checker_changes_count: checker?.changes?.length || 0,
+          checker_changes_details: checker?.changes?.map(c => `${c.field}: ${c.oldValue} → ${c.newValue}`).join('; ') || '',
+          
+          // Counter data
+          counter_qty: counter?.qty || 0,
+          counter_count_type: counter?.count_type || '',
+          counter_team: counter?.team_name || '',
+          counter_counted_by: counter?.counted_by || '',
+          counter_date: counter?.created_at ? new Date(counter.created_at).toLocaleString() : '',
+          
+          // Comparison
+          qty_difference: (checker?.qty || 0) - (counter?.qty || 0),
+          has_differences: checker?.changes && checker.changes.length > 0 ? 'Yes' : 'No',
+        };
+      });
+
+      // Create workbook
+      const wb = XLSX.utils.book_new();
+
+      // Add main comparison sheet
+      const mainWs = XLSX.utils.json_to_sheet(exportData);
+      XLSX.utils.book_append_sheet(wb, mainWs, "Checker vs Counter");
+
+      // Add summary sheet
+      const summaryData = [
+        { metric: 'Total Tags', value: getGroupedTransactions().length },
+        { metric: 'Tags with Changes', value: summary.withChanges },
+        { metric: 'Bundle Counts', value: summary.bundleCount },
+        { metric: 'Piece Counts', value: summary.pieceCount },
+        { metric: 'Total Transactions', value: summary.total },
+        { metric: 'Export Date', value: new Date().toLocaleString() },
+        { metric: 'Location ID', value: location_id },
+        { metric: 'Location Description', value: sections[0]?.location_desc || '' },
+        { metric: 'Warehouse', value: sections[0]?.warehouse || '' },
+        { metric: 'Branch', value: sections[0]?.branch || '' },
+      ];
+      
+      const summaryWs = XLSX.utils.json_to_sheet(summaryData);
+      XLSX.utils.book_append_sheet(wb, summaryWs, "Summary");
+
+      // Add detailed changes sheet if there are changes
+      const transactionsWithChanges = filteredTransactions.filter(t => t.changes && t.changes.length > 0);
+      if (transactionsWithChanges.length > 0) {
+        const changesData = transactionsWithChanges.flatMap(transaction => 
+          transaction.changes?.map(change => ({
+            tag_id: transaction.tag_id,
+            role: transaction.role,
+            field: change.field,
+            old_value: change.oldValue,
+            new_value: change.newValue,
+            change_type: change.type,
+            section_desc: transaction.section_desc,
+            team_name: transaction.team_name,
+            counted_by: transaction.counted_by,
+          })) || []
+        );
+        
+        const changesWs = XLSX.utils.json_to_sheet(changesData);
+        XLSX.utils.book_append_sheet(wb, changesWs, "Detailed Changes");
+      }
+
+      // Generate file name
+      const fileName = `Checker_Review_Location_${location_id}_${new Date().toISOString().slice(0,10)}.xlsx`;
+
+      // Download the file
+      XLSX.writeFile(wb, fileName);
+      
+      enqueueSnackbar('Export completed successfully!', { variant: 'success' });
+    } catch (error) {
+      console.error('Export error:', error);
+      enqueueSnackbar('Export failed. Please try again.', { variant: 'error' });
+    }
   };
 
   const handleReconcile = async () => {
@@ -577,10 +765,8 @@ const CheckerReviewPageImproved: React.FC = () => {
             <Button
               variant="outlined"
               startIcon={<Download />}
-              onClick={() => {
-                // Export functionality
-                enqueueSnackbar('Export functionality coming soon', { variant: 'info' });
-              }}
+              onClick={handleExport}
+              disabled={loading.transactions || transactions.length === 0}
             >
               Export
             </Button>
@@ -685,13 +871,29 @@ const CheckerReviewPageImproved: React.FC = () => {
                           )}
                         </TableCell>
                         <TableCell>
-                          <Chip 
-                            label={`#${tagId}`}
-                            size="small"
-                            color="primary"
-                            variant="outlined"
-                            sx={{ fontWeight: 600 }}
-                          />
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Chip 
+                              label={`#${tagId}`}
+                              size="small"
+                              color="primary"
+                              variant="outlined"
+                              sx={{ fontWeight: 600 }}
+                            />
+                            {checker.changes && checker.changes.length > 0 && (
+                              <Chip
+                                label={`${checker.changes.length} changes`}
+                                size="small"
+                                color="warning"
+                                variant="filled"
+                                sx={{ 
+                                  fontSize: '0.7rem',
+                                  height: '20px',
+                                  minWidth: 'auto',
+                                  px: 0.5
+                                }}
+                              />
+                            )}
+                          </Box>
                         </TableCell>
                         <TableCell>
                           <Chip 
