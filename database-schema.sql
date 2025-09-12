@@ -80,7 +80,7 @@ CREATE TABLE assigned_locations (
     assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP NULL,
     team_id INT NULL REFERENCES teams(team_id) ON DELETE SET NULL,
-    status VARCHAR(225) DEFAULT 'Not Started'
+    status VARCHAR(225) DEFAULT 'In Progress'
 );
 
 -- =================================================================

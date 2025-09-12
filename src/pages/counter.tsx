@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   TextField,
   Button,
@@ -169,6 +169,229 @@ const CounterPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [openBundleModal, setOpenBundleModal] = useState(false);
   const [openTableModal, setOpenTableModal] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Field navigation refs
+  const fieldRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
+  
+  // Field navigation order
+  const fieldOrder = [
+    'form', 'grade', 'size', 'finish', 'extendedFinish', 
+    'width', 'length', 'heat', 'mill', 'location', 
+    'type', 'remarks', 'ad_cmts', 'quantity'
+  ];
+  
+  // Navigate to next field
+  const navigateToNextField = (currentField: string) => {
+    const currentIndex = fieldOrder.indexOf(currentField);
+    if (currentIndex < fieldOrder.length - 1) {
+      const nextField = fieldOrder[currentIndex + 1];
+      const nextFieldRef = fieldRefs.current[nextField];
+      if (nextFieldRef) {
+        nextFieldRef.focus();
+        nextFieldRef.select(); // Select all text for easy replacement
+      }
+    }
+  };
+  
+  // Validate field value against available options
+  const validateFieldValue = (fieldName: string, value: string): { isValid: boolean; message?: string } => {
+    // Fields that allow spaces as valid values
+    const fieldsThatAllowSpaces = ['finish', 'extendedFinish', 'width', 'length', 'heat', 'mill', 'remarks', 'ad_cmts'];
+    
+    // For fields that allow spaces, don't fail on empty/whitespace-only input
+    if (!fieldsThatAllowSpaces.includes(fieldName) && (!value || value.trim() === '')) {
+      return { isValid: false, message: `${fieldName} is required` };
+    }
+
+    const trimmedValue = value.trim();
+    
+    switch (fieldName) {
+      case 'form':
+        if (!formOptions.includes(trimmedValue)) {
+          return { isValid: false, message: `Form "${trimmedValue}" not found. Please select from available options.` };
+        }
+        break;
+      case 'grade':
+        if (!gradeOptions.includes(trimmedValue)) {
+          return { isValid: false, message: `Grade "${trimmedValue}" not found. Please select from available options.` };
+        }
+        break;
+      case 'size':
+        if (!sizeOptions.includes(trimmedValue)) {
+          return { isValid: false, message: `Size "${trimmedValue}" not found. Please select from available options.` };
+        }
+        break;
+      case 'finish':
+        // Allow empty spaces and the actual value
+        if (trimmedValue === '' || finishOptions.includes(trimmedValue)) {
+          // Valid: empty (spaces) or found in options
+        } else {
+          return { isValid: false, message: `Finish "${trimmedValue}" not found. Please select from available options.` };
+        }
+        break;
+      case 'extendedFinish':
+        // Allow empty spaces and the actual value
+        if (trimmedValue === '' || extfinishOptions.includes(trimmedValue)) {
+          // Valid: empty (spaces) or found in options
+        } else {
+          return { isValid: false, message: `Extended Finish "${trimmedValue}" not found. Please select from available options.` };
+        }
+        break;
+      case 'width':
+        // Allow empty spaces and the actual value
+        if (trimmedValue === '' || widthOptions.includes(trimmedValue)) {
+          // Valid: empty (spaces) or found in options
+        } else {
+          // Check if the value is a valid number that could be formatted
+          const numValue = parseFloat(trimmedValue);
+          if (!isNaN(numValue)) {
+            // Check if any width option matches when converted to the same format
+            // API returns values like "0.0000" but user might type "0.00"
+            const hasMatchingOption = widthOptions.some(option => {
+              const optionNum = parseFloat(option);
+              return !isNaN(optionNum) && Math.abs(optionNum - numValue) < 0.0001;
+            });
+            if (hasMatchingOption) {
+              // Valid: numeric value that matches an option
+            } else {
+              return { isValid: false, message: `Width "${trimmedValue}" not found. Please select from available options.` };
+            }
+          } else {
+            return { isValid: false, message: `Width "${trimmedValue}" not found. Please select from available options.` };
+          }
+        }
+        break;
+      case 'length':
+        // Allow empty spaces and the actual value
+        if (trimmedValue === '' || lengthOptions.includes(trimmedValue)) {
+          // Valid: empty (spaces) or found in options
+        } else {
+          // Check if the value is a valid number that could be formatted
+          const numValue = parseFloat(trimmedValue);
+          if (!isNaN(numValue)) {
+            // Check if any length option matches when converted to the same format
+            // API returns values like "240.0000" but user might type "240"
+            const hasMatchingOption = lengthOptions.some(option => {
+              const optionNum = parseFloat(option);
+              return !isNaN(optionNum) && Math.abs(optionNum - numValue) < 0.0001;
+            });
+            if (hasMatchingOption) {
+              // Valid: numeric value that matches an option
+            } else {
+              return { isValid: false, message: `Length "${trimmedValue}" not found. Please select from available options.` };
+            }
+          } else {
+            return { isValid: false, message: `Length "${trimmedValue}" not found. Please select from available options.` };
+          }
+        }
+        break;
+      case 'heat':
+        // Allow empty spaces, dash, and actual values
+        if (trimmedValue === '' || trimmedValue === '-' || heatOptions.includes(trimmedValue)) {
+          // Valid: empty (spaces), dash, or found in options
+        } else {
+          return { isValid: false, message: `Heat "${trimmedValue}" not found. Please select from available options, use "-", or use empty space.` };
+        }
+        break;
+      case 'mill':
+        // Allow empty spaces, dash, and actual values
+        if (trimmedValue === '' || trimmedValue === '-' || millOptions.includes(trimmedValue)) {
+          // Valid: empty (spaces), dash, or found in options
+        } else {
+          return { isValid: false, message: `Mill "${trimmedValue}" not found. Please select from available options, use "-", or use empty space.` };
+        }
+        break;
+      case 'location':
+        if (!locationOptions.includes(trimmedValue)) {
+          return { isValid: false, message: `Location "${trimmedValue}" not found. Please select from available options.` };
+        }
+        break;
+      case 'type': {
+        const validTypes = typeOptions.map(t => t.value);
+        const validLabels = typeOptions.map(t => t.label);
+        // Accept both value format (e.g., "M") and label format (e.g., "M - Master")
+        if (!validTypes.includes(trimmedValue) && !validLabels.includes(trimmedValue)) {
+          return { isValid: false, message: `Type "${trimmedValue}" not found. Please select from available options.` };
+        }
+        break;
+      }
+      case 'remarks':
+        // Allow empty spaces, default value, and actual values
+        if (trimmedValue === '' || trimmedValue === 'Conforms to Std' || remarksOptions.includes(trimmedValue)) {
+          // Valid: empty (spaces), default value, or found in options
+        } else {
+          return { isValid: false, message: `Remarks "${trimmedValue}" not found. Please select from available options, use "Conforms to Std", or use empty space.` };
+        }
+        break;
+      case 'ad_cmts':
+        // Additional comments are optional - always valid
+        break;
+      case 'quantity': {
+        const qty = parseFloat(trimmedValue);
+        if (isNaN(qty) || qty <= 0) {
+          return { isValid: false, message: `Quantity must be a positive number.` };
+        }
+        break;
+      }
+    }
+    
+    return { isValid: true };
+  };
+
+  // Handle key press for field navigation
+  const handleKeyPress = (fieldName: string, event: React.KeyboardEvent, currentValue?: string) => {
+    if (event.key === 'Enter' || event.key === 'Tab') {
+      event.preventDefault();
+      let valueToUse = currentValue;
+      if (!valueToUse && event.target) {
+        const target = event.target as HTMLInputElement;
+        valueToUse = target.value;
+      }
+      const validation = validateFieldValue(fieldName, valueToUse || '');
+      if (!validation.isValid) {
+        setError(validation.message || 'Invalid value');
+        const currentFieldRef = fieldRefs.current[fieldName as keyof typeof fieldRefs.current];
+        if (currentFieldRef) {
+          currentFieldRef.focus();
+        }
+        return; // Prevents navigation to the next field
+      }
+      setError(null); // Clear any previous error
+      setTimeout(() => {
+        navigateToNextField(fieldName);
+      }, 50);
+    }
+  };
+
+  // Check dimension segment and auto-set width for length-based products
+  const checkDimensionSegment = async (newFinish?: string) => {
+    const { form, grade, size } = formData;
+    const finish = newFinish || formData.finish;
+    
+    // Only check if all four fields are filled
+    if (!form || !grade || !size || !finish) {
+      return;
+    }
+
+    try {
+      console.log('Checking dimension segment for:', { form, grade, size, finish });
+      
+      const response = await servicesAPI.checkDimensionSegment({
+        prm_frm: form,
+        prm_grd: grade,
+        prm_size: size,
+        prm_fnsh: finish
+      });
+
+      if (response.data.success && response.data.isLengthBased) {
+        console.log('Length-based product detected, setting width to 0.00');
+        setFormData(prev => ({ ...prev, width: '0.00' }));
+      }
+    } catch (error) {
+      console.error('Error checking dimension segment:', error);
+    }
+  };
   
   // Options state
   const [formOptions, setFormOptions] = useState<string[]>([]);
@@ -432,7 +655,13 @@ const CounterPage: React.FC = () => {
           // Special handling for width field
           if (formFieldName === 'width') {
             const numValue = Number(value);
-            return isNaN(numValue) ? ' ' : numValue.toFixed(2);
+            return isNaN(numValue) ? ' ' : numValue.toFixed(4);
+          }
+          
+          // Special handling for length field
+          if (formFieldName === 'length') {
+            const numValue = Number(value);
+            return isNaN(numValue) ? ' ' : numValue.toFixed(4);
           }
           
           if (value === null || value === undefined || value === '') {
@@ -561,7 +790,7 @@ const CounterPage: React.FC = () => {
         },
         setWidthOptions,
         "width",
-        "width", // fieldName
+        "prd_wdth", // fieldName - API returns prd_wdth field
         setFormData, // formDataSetter
         "width" // formFieldName
       );
@@ -611,8 +840,8 @@ const CounterPage: React.FC = () => {
       setHeatOptions([]);
     }
     
-    // Clear mill when heat changes, but preserve default value if heat is default
-    setFormData(prev => ({ ...prev, mill: formData.heat === '-' ? '-' : '' }));
+    // Always set mill to default value when other fields change
+    setFormData(prev => ({ ...prev, mill: '-' }));
   }, [formData.form, formData.grade, formData.size, formData.finish, formData.extendedFinish, formData.width, formData.length]);
 
   // Effect for mill options (now populated based on heat)
@@ -668,7 +897,7 @@ const CounterPage: React.FC = () => {
       { field: formData.grade, name: "Grade" },
       { field: formData.size, name: "Size" },
       { field: formData.finish, name: "Finish" },
-      { field: formData.mill && formData.mill !== '-', name: "Mill" },
+      { field: formData.mill, name: "Mill" },
     ];
 
     const missingField = requiredFields.find(f => !f.field);
@@ -703,7 +932,7 @@ const CounterPage: React.FC = () => {
         ext_finish: formData.extendedFinish || null,
         width: formData.width ? parseFloat(formData.width) : null,
         length: formData.length ? parseFloat(formData.length) : null,
-        mill: formData.mill && formData.mill !== '-' ? formData.mill : null,
+        mill: formData.mill || '-',
         heat: formData.heat || null,
         location: formData.location || null,
         remarks: formData.remarks && formData.remarks.trim() !== '' && formData.remarks !== 'Conforms to Std' ? formData.remarks : 'Conforms to Std',
@@ -911,6 +1140,13 @@ const CounterPage: React.FC = () => {
       <Card sx={{ mb: 4 }}>
         <CardHeader title="Item Details" />
         <CardContent>
+          {error && (
+            <Box sx={{ mb: 2, p: 2, backgroundColor: 'error.light', borderRadius: 1, color: 'error.contrastText' }}>
+              <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                ⚠️ {error}
+              </Typography>
+            </Box>
+          )}
           <form onSubmit={handleSubmit}>
             <Grid container spacing={2}>
               {/* Form Field */}
@@ -929,6 +1165,10 @@ const CounterPage: React.FC = () => {
                       label="Form"
                       fullWidth
                       required
+                      inputRef={(input) => {
+                        fieldRefs.current.form = input;
+                      }}
+                      onKeyDown={(e) => handleKeyPress('form', e, formData.form)}
                       InputProps={{
                         ...params.InputProps,
                         endAdornment: (
@@ -960,6 +1200,10 @@ const CounterPage: React.FC = () => {
                       label="Grade"
                       fullWidth
                       required
+                      inputRef={(input) => {
+                        fieldRefs.current.grade = input;
+                      }}
+                      onKeyDown={(e) => handleKeyPress('grade', e, formData.grade)}
                       InputProps={{
                         ...params.InputProps,
                         endAdornment: (
@@ -991,6 +1235,10 @@ const CounterPage: React.FC = () => {
                       label="Size"
                       fullWidth
                       required
+                      inputRef={(input) => {
+                        fieldRefs.current.size = input;
+                      }}
+                      onKeyDown={(e) => handleKeyPress('size', e, formData.size)}
                       InputProps={{
                         ...params.InputProps,
                         endAdornment: (
@@ -1011,8 +1259,11 @@ const CounterPage: React.FC = () => {
                   freeSolo
                   options={finishOptions}
                   value={formData.finish}
-                  onChange={(_, value) => {
-                    setFormData(prev => ({ ...prev, finish: value || '' }));
+                  onChange={async (_, value) => {
+                    const newFinish = value || '';
+                    setFormData(prev => ({ ...prev, finish: newFinish }));
+                    // Check dimension segment with the new finish value
+                    checkDimensionSegment(newFinish);
                   }}
                   loading={loading.finish}
                   disabled={!formData.size}
@@ -1022,6 +1273,10 @@ const CounterPage: React.FC = () => {
                       label="Finish"
                       fullWidth
                       required
+                      inputRef={(input) => {
+                        fieldRefs.current.finish = input;
+                      }}
+                      onKeyDown={(e) => handleKeyPress('finish', e, formData.finish)}
                       InputProps={{
                         ...params.InputProps,
                         endAdornment: (
@@ -1052,6 +1307,10 @@ const CounterPage: React.FC = () => {
                       {...params}
                       label="Extended Finish"
                       fullWidth
+                      inputRef={(input) => {
+                        fieldRefs.current.extendedFinish = input;
+                      }}
+                      onKeyDown={(e) => handleKeyPress('extendedFinish', e, formData.extendedFinish)}
                       InputProps={{
                         ...params.InputProps,
                         endAdornment: (
@@ -1071,9 +1330,9 @@ const CounterPage: React.FC = () => {
                 <Autocomplete
                   freeSolo
                   options={widthOptions}
-                  value={formData.width ? Number(formData.width).toFixed(2) : ''}
+                  value={formData.width !== '' ? Number(formData.width).toFixed(4) : ''}
                   onChange={(_, value) => {
-                    const formattedValue = value ? Number(value).toFixed(2) : '';
+                    const formattedValue = value !== null && value !== '' ? Number(value).toFixed(4) : '';
                     setFormData(prev => ({ ...prev, width: formattedValue }));
                   }}
                   loading={loading.width}
@@ -1083,6 +1342,10 @@ const CounterPage: React.FC = () => {
                       {...params}
                       label="Width"
                       fullWidth
+                      inputRef={(input) => {
+                        fieldRefs.current.width = input;
+                      }}
+                      onKeyDown={(e) => handleKeyPress('width', e, formData.width)}
                       InputProps={{
                         ...params.InputProps,
                         endAdornment: (
@@ -1102,9 +1365,10 @@ const CounterPage: React.FC = () => {
                 <Autocomplete
                   freeSolo
                   options={lengthOptions}
-                  value={formData.length}
+                  value={formData.length !== '' ? Number(formData.length).toFixed(4) : ''}
                   onChange={(_, value) => {
-                    setFormData(prev => ({ ...prev, length: value || '' }));
+                    const formattedValue = value !== null && value !== '' ? Number(value).toFixed(4) : '';
+                    setFormData(prev => ({ ...prev, length: formattedValue }));
                   }}
                   loading={loading.length}
                   disabled={!formData.width}
@@ -1113,6 +1377,10 @@ const CounterPage: React.FC = () => {
                       {...params}
                       label="Length"
                       fullWidth
+                      inputRef={(input) => {
+                        fieldRefs.current.length = input;
+                      }}
+                      onKeyDown={(e) => handleKeyPress('length', e, formData.length)}
                       InputProps={{
                         ...params.InputProps,
                         endAdornment: (
@@ -1153,6 +1421,10 @@ const CounterPage: React.FC = () => {
                       label="Heat"
                       fullWidth
                       placeholder="Type to search heat values..."
+                      inputRef={(input) => {
+                        fieldRefs.current.heat = input;
+                      }}
+                      onKeyDown={(e) => handleKeyPress('heat', e, formData.heat)}
                       InputProps={{
                         ...params.InputProps,
                         endAdornment: (
@@ -1172,7 +1444,7 @@ const CounterPage: React.FC = () => {
                 <Autocomplete
                   freeSolo
                   options={millOptions}
-                  value={formData.mill}
+                  value={formData.mill || '-'}
                   onChange={(_, value) => {
                     setFormData(prev => ({ ...prev, mill: value || '-' }));
                   }}
@@ -1184,6 +1456,11 @@ const CounterPage: React.FC = () => {
                       label="Mill *"
                       required
                       fullWidth
+                      placeholder="-"
+                      inputRef={(input) => {
+                        fieldRefs.current.mill = input;
+                      }}
+                      onKeyDown={(e) => handleKeyPress('mill', e, formData.mill)}
                       sx={{
                         '& .MuiOutlinedInput-root': {
                           borderColor: 'primary.main',
@@ -1212,11 +1489,18 @@ const CounterPage: React.FC = () => {
               {/* Location Field */}
               <Grid item xs={12} sm={6}>
                 <Autocomplete
+                  freeSolo
                   options={locationOptions}
                   value={formData.location}
                   onChange={(_, value) => {
                     console.log('Location selected:', value);
                     setFormData(prev => ({ ...prev, location: value || '' }));
+                  }}
+                  onInputChange={(_, value) => {
+                    // Handle when user types a custom value
+                    if (value !== null) {
+                      setFormData(prev => ({ ...prev, location: value }));
+                    }
                   }}
                   loading={loading.location}
                   onOpen={() => console.log('Autocomplete opened, options:', locationOptions)}
@@ -1235,6 +1519,10 @@ const CounterPage: React.FC = () => {
                       label="Location"
                       fullWidth
                       placeholder="Select location..."
+                      inputRef={(input) => {
+                        fieldRefs.current.location = input;
+                      }}
+                      onKeyDown={(e) => handleKeyPress('location', e, formData.location)}
                       InputProps={{
                         ...params.InputProps,
                         endAdornment: (
@@ -1266,17 +1554,47 @@ const CounterPage: React.FC = () => {
               {/* Type Field */}
               <Grid item xs={12} sm={6}>
                 <Autocomplete
+                  freeSolo
                   options={typeOptions}
-                  getOptionLabel={(option) => option.label}
+                  getOptionLabel={(option) => typeof option === 'string' ? option : option.label}
                   value={typeOptions.find(option => option.value === formData.type) || null}
                   onChange={(_, value) => {
-                    setFormData(prev => ({ ...prev, type: value ? value.value : '' }));
+                    if (value && typeof value === 'object' && 'value' in value) {
+                      setFormData(prev => ({ ...prev, type: value.value }));
+                    } else if (typeof value === 'string') {
+                      setFormData(prev => ({ ...prev, type: value }));
+                    } else {
+                      setFormData(prev => ({ ...prev, type: 'M' }));
+                    }
+                  }}
+                  onInputChange={(_, value) => {
+                    // Handle when user types a custom value
+                    if (value !== null) {
+                      // Check if it's a label format (e.g., "M - Master")
+                      const foundOption = typeOptions.find(option => option.label === value);
+                      if (foundOption) {
+                        setFormData(prev => ({ ...prev, type: foundOption.value }));
+                      } else {
+                        // Check if it's a value format (e.g., "M")
+                        const foundByValue = typeOptions.find(option => option.value === value);
+                        if (foundByValue) {
+                          setFormData(prev => ({ ...prev, type: foundByValue.value }));
+                        } else {
+                          // Store the typed value as-is for validation
+                          setFormData(prev => ({ ...prev, type: value }));
+                        }
+                      }
+                    }
                   }}
                   renderInput={(params) => (
                     <TextField
                       {...params}
                       label="Type"
                       fullWidth
+                      inputRef={(input) => {
+                        fieldRefs.current.type = input;
+                      }}
+                      onKeyDown={(e) => handleKeyPress('type', e, formData.type)}
                     />
                   )}
                 />
@@ -1296,6 +1614,10 @@ const CounterPage: React.FC = () => {
                       {...params}
                       label="Quality Code"
                       fullWidth
+                      inputRef={(input) => {
+                        fieldRefs.current.remarks = input;
+                      }}
+                      onKeyDown={(e) => handleKeyPress('remarks', e, formData.remarks)}
                     />
                   )}
                 />
@@ -1309,6 +1631,10 @@ const CounterPage: React.FC = () => {
                 onChange={(e) => {
                   setFormData(prev => ({ ...prev, ad_cmts: e.target.value }));
                 }}
+                inputRef={(input) => {
+                  fieldRefs.current.ad_cmts = input;
+                }}
+                onKeyDown={(e) => handleKeyPress('ad_cmts', e, formData.ad_cmts)}
               />
               </Grid>
 
@@ -1337,12 +1663,15 @@ const CounterPage: React.FC = () => {
                   <TextField
                     label="Quantity (Pieces)"
                     name="quantity"
-                    type="number"
+                    type="text"
                     value={formData.quantity}
                     onChange={handleChange}
                     fullWidth
                     required
-                    inputProps={{ min: 1 }}
+                    inputRef={(input) => {
+                      fieldRefs.current.quantity = input;
+                    }}
+                    onKeyDown={(e) => handleKeyPress('quantity', e, formData.quantity.toString())}
                   />
                 ) : (
                   <>
@@ -1360,7 +1689,7 @@ const CounterPage: React.FC = () => {
                     <TextField
                       label="Total Quantity"
                       name="quantity"
-                      type="number"
+                      type="text"
                       value={formData.quantity}
                       fullWidth
                       disabled
@@ -1442,26 +1771,24 @@ const CounterPage: React.FC = () => {
                     <TableCell>{index + 1}</TableCell>
                     <TableCell>
                       <TextField
-                        type="number"
+                        type="text"
                         value={bundle.num_of_bundle || ''}
                         onChange={(e) => {
                           const value = parseInt(e.target.value) || 0;
                           handleBundleChange(index, "num_of_bundle", value);
                         }}
                         fullWidth
-                        inputProps={{ min: 1 }}
                       />
                     </TableCell>
                     <TableCell>
                       <TextField
-                        type="number"
+                        type="text"
                         value={bundle.bundle_count || ''}
                         onChange={(e) => {
                           const value = parseInt(e.target.value) || 0;
                           handleBundleChange(index, "bundle_count", value);
                         }}
                         fullWidth
-                        inputProps={{ min: 1 }}
                       />
                     </TableCell>
                     <TableCell>
@@ -1547,26 +1874,37 @@ const CounterPage: React.FC = () => {
           }, 2000);
         }}
         onUpdateTransaction={async (updatedTransaction) => {
-          setSubmittedData(prev => 
-            prev.map(transaction => 
-              transaction.id === updatedTransaction.id || transaction.tag_id === updatedTransaction.tag_id 
-                ? updatedTransaction 
-                : transaction
-            )
-          );
-          // Refresh the data after updating a transaction
-          await refreshSubmittedTransactions();
-        }}
-        onUpdateBundles={async (transactionId, updatedBundles) => {
-          setSubmittedData(prev => 
-            prev.map(transaction => 
-              transaction.id === transactionId || transaction.tag_id === transactionId
-                ? { ...transaction, bundles: updatedBundles }
-                : transaction
-            )
-          );
-          // Refresh the data after updating bundles
-          await refreshSubmittedTransactions();
+          try {
+            // Call the counter-specific update API
+            const response = await servicesAPI.updateCounterTransaction(updatedTransaction);
+            
+            if (response.data.success) {
+              setSubmittedData(prev => 
+                prev.map(transaction => 
+                  transaction.id === updatedTransaction.id || transaction.tag_id === updatedTransaction.tag_id 
+                    ? updatedTransaction 
+                    : transaction
+                )
+              );
+              // Refresh the data after updating a transaction
+              await refreshSubmittedTransactions();
+              
+              setSnackbar({
+                open: true,
+                message: "Transaction updated successfully!",
+                severity: "success"
+              });
+            } else {
+              throw new Error(response.data.message || 'Failed to update transaction');
+            }
+          } catch (error) {
+            console.error('Error updating transaction:', error);
+            setSnackbar({
+              open: true,
+              message: `Failed to update transaction: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              severity: "error"
+            });
+          }
         }}
         onCompleteLocation={handleCompleteLocation}
       />

@@ -22,10 +22,12 @@ import {
   Visibility, 
   Search, 
   Refresh, 
-  AssignmentInd,
-  CheckCircle,
-  PendingActions,
-  Warning
+  Warning,
+  AccessTime as AccessTimeIcon,
+  CheckCircle as CheckCircleIcon,
+  Assignment as AssignmentIcon,
+  TaskAlt as TaskAltIcon,
+  Error as ErrorIcon
 } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import { styled } from "@mui/material/styles";
@@ -113,22 +115,22 @@ const CounterHome: React.FC = () => {
     'In Progress': 'warning',
     'Count Completed': 'info',
     'Assigned Checker': 'primary',
-    'Check Completed': 'success',
+    'Completed': 'success',
     'Not Started': 'error',
   } as const;
 
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'In Progress':
-        return <PendingActions color="warning" />;
+        return <AccessTimeIcon fontSize="small" />;
       case 'Count Completed':
-        return <CheckCircle color="info" />;
+        return <CheckCircleIcon fontSize="small" />;
       case 'Assigned Checker':
-        return <AssignmentInd color="primary" />;
-      case 'Check Completed':
-        return <CheckCircle color="success" />;
+        return <AssignmentIcon fontSize="small" />;
+      case 'Completed':
+        return <TaskAltIcon fontSize="small" />;
       default:
-        return <Warning color="error" />;
+        return <ErrorIcon fontSize="small" />;
     }
   };
 

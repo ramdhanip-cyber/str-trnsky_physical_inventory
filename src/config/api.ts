@@ -136,12 +136,15 @@ export const servicesAPI = {
   
   // Forms and Assignments
   getAssignedLocations: () => api.get('/services/assigned-locations'),
+  getLocationSummary: () => api.get('/services/location-summary'),
   getAssignedItems: (locationId: string) => api.get(`/services/assigned-items/${locationId}`),
   getAssignedItemsTotalAmount: (locationId: string) => api.get(`/services/assigned-items/${locationId}/total-amount`),
+  getOverallWeightAndAmount: (branch: string, warehouse: string) => api.get(`/services/overall-weight-amount?branch=${branch}&warehouse=${warehouse}`),
   assignForms: (data: unknown) => api.post('/services/assign-forms', data),
   deleteAssignedItem: (locationId: string, itemId: string) => api.delete(`/services/assigned-items/${locationId}/${itemId}`),
   deleteAssignedLocation: (locationId: string) => api.delete(`/services/assigned-items/${locationId}`),
   assignTeam: (data: unknown) => api.post('/services/assign-team', data),
+  unassignTeam: (locationId: string, sectionId: string) => api.delete(`/services/assign-team/${locationId}/${sectionId}`),
   
   // Item Group Analytics
   // getItemGroupAnalytics: (locationId: string) => api.get(`/services/item-group-analytics/${locationId}`),
@@ -169,6 +172,7 @@ export const servicesAPI = {
   getMillByHeat: (params: unknown) => api.get('/services/mill-by-heat', { params }),
   getHeat: (params: unknown) => api.get('/services/heat', { params }),
   getRemarks: () => api.get('/services/remarks'),
+  checkDimensionSegment: (params: unknown) => api.get('/services/check-dimension-segment', { params }),
   
   // Dashboard
   getDashboardAnalytics: () => api.get('/services/dashboard-analytics'),
@@ -214,6 +218,7 @@ export const servicesAPI = {
   verifyTransaction: (data: unknown) => api.post('/services/checker/verify-transaction', data),
   unverifyTransaction: (data: unknown) => api.post('/services/checker/unverify-transaction', data),
   updateTransaction: (data: unknown) => api.post('/services/checker/update-transaction', data),
+  updateCounterTransaction: (data: unknown) => api.post('/services/counter/update-transaction', data),
   updateCheckerStatus: (locationId: string, sectionId: string) => api.post(`/services/assigned-locations/checker/${locationId}/${sectionId}`),
   addLineItem: (data: unknown) => api.post('/services/checker/add-line-item', data),
   getAssignedLocationsForChecker: (locationId: string, sectionId: string) => api.get(`/services/assigned-locations/checker/${locationId}/${sectionId}`),

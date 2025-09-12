@@ -34,6 +34,7 @@ import {
 import { servicesAPI } from "../config/api";
 import {
   PersonAdd as PersonAddIcon,
+  PersonRemove as PersonRemoveIcon,
   Close as CloseIcon,
   Delete as DeleteIcon,
   Search as SearchIcon,
@@ -41,9 +42,7 @@ import {
   Refresh as RefreshIcon,
   MoreVert as MoreVertIcon,
   CheckCircle as CheckCircleIcon,
-  Error as ErrorIcon,
   Info as InfoIcon,
-  FilterList as FilterListIcon,
   Sort as SortIcon,
   Group as GroupIcon
 } from "@mui/icons-material";
@@ -74,7 +73,7 @@ interface AssignedLocation {
   assigned_at: string;
   competed_at: string | null;
   team_id: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+  status: 'In Progress' | 'Count Completed' | 'Assigned Checker' | 'Completed';
   team_name?: string;
   tag_from?: string;
   tag_to?: string;
@@ -92,17 +91,17 @@ interface ViewSectionsDialogProps {
 }
 
 const statusColors: Record<string, 'default' | 'primary' | 'success' | 'error'> = {
-  pending: 'default',
-  in_progress: 'primary',
-  completed: 'success',
-  cancelled: 'error'
+  'In Progress': 'primary',
+  'Count Completed': 'default',
+  'Assigned Checker': 'default',
+  'Completed': 'success'
 };
 
 const statusIcons = {
-  pending: <InfoIcon fontSize="small" />,
-  in_progress: <CircularProgress size={14} />,
-  completed: <CheckCircleIcon fontSize="small" />,
-  cancelled: <ErrorIcon fontSize="small" />
+  'In Progress': <CircularProgress size={14} />,
+  'Count Completed': <CheckCircleIcon fontSize="small" />,
+  'Assigned Checker': <AssignmentIcon fontSize="small" />,
+  'Completed': <CheckCircleIcon fontSize="small" />
 };
 
 const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
@@ -120,9 +119,16 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [assigning, setAssigning] = useState<boolean>(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [sectionToDelete, setSectionToDelete] = useState<{id: string, name: string} | null>(null);
+  const [unassignConfirmOpen, setUnassignConfirmOpen] = useState(false);
+  const [sectionToUnassign, setSectionToUnassign] = useState<{locationId: string, sectionId: string, sectionName: string, teamName: string} | null>(null);
+  const [unassigning, setUnassigning] = useState<string | null>(null);
   const [openAssignDialog, setOpenAssignDialog] = useState<boolean>(false);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>("");
+  
+  // State for success and error messages
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -185,10 +191,38 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
     }
   }, [open, fetchSections, fetchTeams, fetchAssignedLocations]);
 
-  // Filter sections based on search query
-  const filteredSections = sections.filter((section) =>
-    section.section_desc.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Filter sections based on search query and active tab
+  const filteredSections = React.useMemo(() => {
+    return sections.filter((section) => {
+      // Search filter
+      const matchesSearch = section.section_desc.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      // Status filter based on active tab
+      if (activeTab === 0) {
+        // "All" tab - show all sections
+        return matchesSearch;
+      }
+      
+      const assignment = assignedLocations.find(
+        loc => loc.sub_location_id.toString() === section.section_id.toString() && 
+               loc.location_id.toString() === location_id.toString()
+      );
+      
+      // Map tab index to status
+      const statusByTab = [
+        null, // Tab 0 = All
+        'In Progress', // Tab 1
+        'Count Completed', // Tab 2
+        'Assigned Checker', // Tab 3
+        'Completed' // Tab 4
+      ];
+      
+      const expectedStatus = statusByTab[activeTab];
+      const currentStatus = assignment?.status;
+      
+      return matchesSearch && currentStatus === expectedStatus;
+    });
+  }, [sections, searchQuery, activeTab, assignedLocations, location_id]);
 
   // Sort sections
   const sortedSections = React.useMemo(() => {
@@ -261,20 +295,132 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
 
   // Handle delete section
   const handleDeleteSection = async (id: string) => {
+    // Find the section to get its name for the confirmation dialog
+    const section = sections.find(s => s.section_id.toString() === id);
+    setSectionToDelete({
+      id: id,
+      name: section?.section_desc || `Section ${id}`
+    });
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!sectionToDelete) return;
+    
     try {
-      setDeleting(id);
-      await servicesAPI.deleteSection(id);
+      setDeleting(sectionToDelete.id);
+      setDeleteConfirmOpen(false);
+      await servicesAPI.deleteSection(sectionToDelete.id);
       // Refresh data after deletion
       fetchSections();
       fetchAssignedLocations();
       setSuccess("Section deleted successfully!");
       setTimeout(() => setSuccess(null), 3000);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error deleting section:", error);
-      setError("Failed to delete section. Please try again.");
+      const axiosError = error as { response?: { data?: { error?: string } } };
+      const errorMessage = axiosError.response?.data?.error || "Failed to delete section. Please try again.";
+      setError(errorMessage);
     } finally {
       setDeleting(null);
+      setSectionToDelete(null);
     }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteConfirmOpen(false);
+    setSectionToDelete(null);
+  };
+
+  const handleUnassignTeam = (sectionId: string) => {
+    console.log("=== DEBUGGING UNASSIGN TEAM ===");
+    console.log("handleUnassignTeam called with sectionId:", sectionId, "type:", typeof sectionId);
+    
+    // Ensure data is loaded
+    if (loading || sections.length === 0 || assignedLocations.length === 0) {
+      console.log("Data still loading or empty, aborting unassign");
+      setError("Data is still loading. Please wait and try again.");
+      return;
+    }
+    
+    // Use the same logic as getAssignedTeamInfo for consistency
+    const section = sections.find(s => s.section_id.toString() === sectionId.toString());
+    const assignment = getAssignedTeamInfo(sectionId);
+    
+    console.log("Found section:", section);
+    console.log("Found assignment using getAssignedTeamInfo:", assignment);
+    console.log("=== END DEBUG ===");
+    
+    if (section && assignment) {
+      const unassignData = {
+        locationId: location_id.toString(),
+        sectionId: sectionId.toString(),
+        sectionName: section.section_desc,
+        teamName: assignment.team_name || 'Unknown Team'
+      };
+      console.log("Setting sectionToUnassign:", unassignData);
+      setSectionToUnassign(unassignData);
+      setUnassignConfirmOpen(true);
+      console.log("Opening unassign confirmation dialog");
+    } else {
+      // Provide more specific error messages
+      if (!section) {
+        console.log("Section not found for ID:", sectionId);
+        setError(`Error: Section with ID ${sectionId} not found!`);
+      } else if (!assignment) {
+        console.log("Assignment not found for section ID:", sectionId, "and location ID:", location_id);
+        setError(`Error: No team assignment found for this section. The section may not be assigned to any team.`);
+      }
+    }
+  };
+
+  const handleUnassignConfirm = async () => {
+    if (!sectionToUnassign) {
+      console.log("No sectionToUnassign data available");
+      setError("Error: No section data available for unassignment");
+      return;
+    }
+    
+    console.log("handleUnassignConfirm called with:", sectionToUnassign);
+    console.log("Checking if servicesAPI.unassignTeam exists:", typeof servicesAPI.unassignTeam);
+    
+    if (typeof servicesAPI.unassignTeam !== 'function') {
+      console.error("servicesAPI.unassignTeam is not a function!");
+      setError("Error: API function not available!");
+      return;
+    }
+    
+    try {
+      setUnassigning(sectionToUnassign.sectionId);
+      setUnassignConfirmOpen(false);
+      console.log("Making API call to unassign team:", sectionToUnassign.locationId, sectionToUnassign.sectionId);
+      console.log("API call URL will be:", `/services/assign-team/${sectionToUnassign.locationId}/${sectionToUnassign.sectionId}`);
+      
+      const response = await servicesAPI.unassignTeam(sectionToUnassign.locationId, sectionToUnassign.sectionId);
+      console.log("API call successful, response:", response);
+      
+      // Refresh data after unassignment
+      fetchSections();
+      fetchAssignedLocations();
+      setSuccess(`Team "${sectionToUnassign.teamName}" unassigned successfully from section "${sectionToUnassign.sectionName}"!`);
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (error: unknown) {
+      console.error("Error unassigning team:", error);
+      const axiosError = error as { response?: { data?: { error?: string; message?: string } } };
+      const errorMessage = axiosError.response?.data?.error || 
+                           axiosError.response?.data?.message || 
+                           "Failed to unassign team. Please try again.";
+      setError(errorMessage);
+      console.log("Full error response:", axiosError.response?.data);
+    } finally {
+      setUnassigning(null);
+      setSectionToUnassign(null);
+    }
+  };
+
+  const handleUnassignCancel = () => {
+    setUnassignConfirmOpen(false);
+    setSectionToUnassign(null);
   };
 
   const handleRefresh = () => {
@@ -326,7 +472,10 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
   };
 
   const getStatusCount = (status: string) => {
-    return assignedLocations.filter(loc => loc.status === status).length;
+    return assignedLocations.filter(loc => 
+      loc.status === status && 
+      loc.location_id.toString() === location_id.toString()
+    ).length;
   };
 
   return (
@@ -357,7 +506,7 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
                 <RefreshIcon sx={{ mr: 1 }} /> Refresh Data
               </MenuItem>
               <MenuItem onClick={handleMenuClose}>
-                <FilterListIcon sx={{ mr: 1 }} /> Filter Sections
+                Filter Sections
               </MenuItem>
               <MenuItem onClick={handleMenuClose}>
                 <SortIcon sx={{ mr: 1 }} /> Sort Options
@@ -381,17 +530,6 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
                 <Typography variant="h6" color="primary">
                   Assignment Summary
                 </Typography>
-                <Chip 
-                  label={`${assignedLocations.length} assigned`} 
-                  color="success" 
-                  size="small" 
-                />
-                <Chip 
-                  label={`${sections.length - assignedLocations.length} available`} 
-                  color="default" 
-                  size="small" 
-                  variant="outlined"
-                />
               </Box>
               <Tabs
                 value={activeTab}
@@ -401,19 +539,28 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
               >
                 <Tab label="All" icon={<GroupIcon />} iconPosition="start" />
                 <Tab 
-                  label="Pending" 
+                  label="In Progress" 
                   icon={
-                    <Badge badgeContent={getStatusCount('pending')} color="default">
-                      <InfoIcon />
+                    <Badge badgeContent={getStatusCount('In Progress')} color="primary">
+                      <CircularProgress size={16} />
                     </Badge>
                   } 
                   iconPosition="start" 
                 />
                 <Tab 
-                  label="In Progress" 
+                  label="Count Completed" 
                   icon={
-                    <Badge badgeContent={getStatusCount('in_progress')} color="primary">
-                      <CircularProgress size={16} />
+                    <Badge badgeContent={getStatusCount('Count Completed')} color="default">
+                      <CheckCircleIcon />
+                    </Badge>
+                  } 
+                  iconPosition="start" 
+                />
+                <Tab 
+                  label="Assigned Checker" 
+                  icon={
+                    <Badge badgeContent={getStatusCount('Assigned Checker')} color="default">
+                      <AssignmentIcon />
                     </Badge>
                   } 
                   iconPosition="start" 
@@ -421,17 +568,8 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
                 <Tab 
                   label="Completed" 
                   icon={
-                    <Badge badgeContent={getStatusCount('completed')} color="success">
+                    <Badge badgeContent={getStatusCount('Completed')} color="success">
                       <CheckCircleIcon />
-                    </Badge>
-                  } 
-                  iconPosition="start" 
-                />
-                <Tab 
-                  label="Cancelled" 
-                  icon={
-                    <Badge badgeContent={getStatusCount('cancelled')} color="error">
-                      <ErrorIcon />
                     </Badge>
                   } 
                   iconPosition="start" 
@@ -471,9 +609,6 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
                   startAdornment: <SearchIcon color="action" sx={{ mr: 1 }} />
                 }}
               />
-              <Button startIcon={<FilterListIcon />} variant="outlined">
-                Filters
-              </Button>
             </Box>
           </Grid>
 
@@ -503,7 +638,6 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
                           </Tooltip>
                         </Box>
                       </TableCell>
-                      <TableCell sx={{ color: 'common.white' }}>Physical Inventory</TableCell>
                       <TableCell sx={{ color: 'common.white' }}>Assigned Team</TableCell>
                       <TableCell sx={{ color: 'common.white' }}>Status</TableCell>
                       <TableCell sx={{ color: 'common.white' }}>Assigned At</TableCell>
@@ -513,14 +647,14 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
                   <TableBody>
                     {loading ? (
                       <TableRow>
-                        <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
+                        <TableCell colSpan={5} align="center" sx={{ py: 4 }}>
                           <CircularProgress />
                           <Typography sx={{ mt: 1 }}>Loading sections...</Typography>
                         </TableCell>
                       </TableRow>
                     ) : sortedSections.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
+                        <TableCell colSpan={5} align="center" sx={{ py: 4 }}>
                           <Typography color="textSecondary">
                             {searchQuery ? 'No matching sections found' : 'No sections available'}
                           </Typography>
@@ -542,9 +676,6 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
                                   Created: {format(new Date(section.created_at), 'MMM dd, yyyy')}
                                 </Typography>
                               )}
-                            </TableCell>
-                            <TableCell>
-                              <Chip label={section.location_id} size="small" variant="outlined" />
                             </TableCell>
                             <TableCell>
                               {assignment ? (
@@ -581,9 +712,9 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
                               {isAssigned ? (
                                 <Chip
                                   label={assignment?.status.replace('_', ' ') || 'pending'}
-                                  color={statusColors[assignment?.status || 'pending'] as 'default' | 'primary' | 'success' | 'error'}
+                                  color={statusColors[assignment?.status || 'In Progress'] as 'default' | 'primary' | 'success' | 'error'}
                                   size="small"
-                                  icon={statusIcons[assignment?.status || 'pending']}
+                                  icon={statusIcons[assignment?.status || 'In Progress']}
                                   sx={{ textTransform: 'capitalize' }}
                                 />
                               ) : (
@@ -630,6 +761,28 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
                                       size="small"
                                     >
                                       <PersonAddIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                )}
+                                {isAssigned && assignment && (
+                                  <Tooltip title="Unassign Team">
+                                    <IconButton
+                                      color="warning"
+                                      onClick={() => {
+                                        console.log("=== UNASSIGN BUTTON CLICKED ===");
+                                        console.log("Section ID:", section.section_id);
+                                        console.log("Is Assigned:", isAssigned);
+                                        console.log("Assignment:", assignment);
+                                        handleUnassignTeam(section.section_id);
+                                      }}
+                                      disabled={unassigning === section.section_id || loading}
+                                      size="small"
+                                    >
+                                      {unassigning === section.section_id ? (
+                                        <CircularProgress size={20} />
+                                      ) : (
+                                        <PersonRemoveIcon fontSize="small" />
+                                      )}
                                     </IconButton>
                                   </Tooltip>
                                 )}
@@ -805,6 +958,50 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
             startIcon={assigning ? <CircularProgress size={20} /> : <PersonAddIcon />}
           >
             {assigning ? 'Assigning...' : 'Assign Team'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteConfirmOpen} onClose={handleDeleteCancel} fullWidth maxWidth="sm">
+        <DialogTitle>Confirm Deletion</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete section "{sectionToDelete?.name}"? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleDeleteCancel} variant="outlined" color="primary">
+            Cancel
+          </Button>
+          <Button onClick={handleDeleteConfirm} variant="contained" color="error" startIcon={<DeleteIcon />}>
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Unassign Confirmation Dialog */}
+      <Dialog open={unassignConfirmOpen} onClose={handleUnassignCancel} fullWidth maxWidth="sm">
+        <DialogTitle>Confirm Unassignment</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to unassign team "{sectionToUnassign?.teamName}" from section "{sectionToUnassign?.sectionName}"? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleUnassignCancel} variant="outlined" color="primary">
+            Cancel
+          </Button>
+          <Button 
+            onClick={() => {
+              console.log("=== CONFIRM UNASSIGN BUTTON CLICKED ===");
+              handleUnassignConfirm();
+            }} 
+            variant="contained" 
+            color="warning" 
+            startIcon={<AssignmentIcon />}
+          >
+            Unassign
           </Button>
         </DialogActions>
       </Dialog>

@@ -5,49 +5,46 @@ import {
   Button,
   Card,
   CardContent,
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  FormControl,
   Grid,
   IconButton,
   InputAdornment,
-  InputLabel,
-  MenuItem,
   Paper,
-  Select,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
+  TablePagination,
   TextField,
   Typography,
   Tooltip,
   Avatar,
   Skeleton,
-  LinearProgress,
-  TablePagination,
-  useMediaQuery
+  Divider,
+  useMediaQuery,
+  useTheme,
+  Alert,
+  Snackbar,
+  LinearProgress
 } from "@mui/material";
 import {
-  Search,
-  Delete,
-  Edit,
-  Refresh,
-  Visibility,
-  VisibilityOff,
-  PersonAdd,
-  CheckCircle,
-  Cancel,
-  FilterList,
-  Clear
+  Search as SearchIcon,
+  Delete as DeleteIcon,
+  Edit as EditIcon,
+  Clear as ClearIcon,
+  People as PeopleIcon,
+  CheckCircle as CheckCircleIcon,
+  Cancel as CancelIcon,
+  Refresh as RefreshIcon,
+  PersonAdd as PersonAddIcon,
+  Visibility as VisibilityIcon,
+  VisibilityOff as VisibilityOffIcon
 } from "@mui/icons-material";
-import { useTheme } from "@mui/material/styles";
-import { Snackbar, Alert } from "@mui/material";
 import { styled } from '@mui/material/styles';
 
 // Styled components for better customization
@@ -69,18 +66,10 @@ const StyledTableRow = styled(TableRow)(({ theme }) => ({
   },
 }));
 
-const StatusChip = styled(Chip)(() => ({
-  fontWeight: 500,
-  fontSize: '0.75rem',
-  borderRadius: '4px'
-}));
-
 interface User {
   user_id: number;
   user_name: string;
   full_name: string;
-  last_login?: string;
-  status?: 'active' | 'inactive';
 }
 
 interface EditUserData {
@@ -91,43 +80,48 @@ interface EditUserData {
   confirmPassword?: string;
 }
 
+interface NewUserData {
+  user_name: string;
+  full_name: string;
+  password: string;
+  confirmPassword: string;
+}
+
+interface FormErrors {
+  user_name: string;
+  full_name: string;
+  password: string;
+  confirmPassword: string;
+}
+
 const UserManagement: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [users, setUsers] = useState<User[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [openDialog, setOpenDialog] = useState(false);
-  const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
-  const [userToDelete, setUserToDelete] = useState<number | null>(null);
-  const [newUser, setNewUser] = useState({
-    user_name: "",
-    full_name: "",
-    password: "",
-    confirmPassword: ""
-  });
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [showPassword, setShowPassword] = useState(false);
-  const [errors, setErrors] = useState({
-    user_name: "",
-    full_name: "",
-    password: "",
-    confirmPassword: ""
-  });
-  const [openEditDialog, setOpenEditDialog] = useState(false);
-  const [editUser, setEditUser] = useState<EditUserData>({
-    user_id: 0,
-    user_name: "",
-    full_name: "",
-    password: "",
-    confirmPassword: ""
-  });
+  const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [isFiltered, setIsFiltered] = useState(false);
-
-  // Snackbar state
+  const [sortConfig, setSortConfig] = useState<{ key: keyof User; direction: 'asc' | 'desc' } | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editUser, setEditUser] = useState<EditUserData | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<number | null>(null);
+  const [openDialog, setOpenDialog] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [newUser, setNewUser] = useState<NewUserData>({
+    user_name: "",
+    full_name: "",
+    password: "",
+    confirmPassword: ""
+  });
+  const [errors, setErrors] = useState<FormErrors>({
+    user_name: "",
+    full_name: "",
+    password: "",
+    confirmPassword: ""
+  });
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: "",
@@ -138,205 +132,55 @@ const UserManagement: React.FC = () => {
     fetchUsers();
   }, []);
 
+  // Apply filters and sorting
   useEffect(() => {
-    const filtered = users.filter(user => {
-      const matchesSearch = 
+    let result = [...users];
+    
+    // Apply search filter
+    if (searchTerm.trim() !== '') {
+      result = result.filter(user =>
         user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (user.user_name.toLowerCase().includes(searchTerm.toLowerCase()));
-      
-      const matchesStatus = statusFilter === "all" || user.status === statusFilter;
-      
-      return matchesSearch && matchesStatus;
-    });
-    setFilteredUsers(filtered);
-    setIsFiltered(searchTerm !== "" || statusFilter !== "all");
-  }, [users, searchTerm, statusFilter]);
+        user.user_name.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+    
+    // Apply sorting
+    if (sortConfig !== null) {
+      result.sort((a, b) => {
+        const aValue = a[sortConfig.key];
+        const bValue = b[sortConfig.key];
+        
+        if (typeof aValue === 'string' && typeof bValue === 'string') {
+          const comparison = aValue.localeCompare(bValue);
+          return sortConfig.direction === 'asc' ? comparison : -comparison;
+        }
+        
+        if (typeof aValue === 'number' && typeof bValue === 'number') {
+          return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
+        }
+        
+        return 0;
+      });
+    }
+    
+    setFilteredUsers(result);
+  }, [searchTerm, users, sortConfig]);
 
   const fetchUsers = async () => {
     try {
       setLoading(true);
       const res = await servicesAPI.getUsers();
       setUsers(res.data);
+      setFilteredUsers(res.data);
     } catch (error) {
-      showSnackbar("Failed to fetch users", "error");
+      setSnackbar({
+        open: true,
+        message: "Failed to fetch users",
+        severity: "error"
+      });
     } finally {
       setLoading(false);
     }
-  };
-
-  const showSnackbar = (message: string, severity: "success" | "error" | "info" | "warning") => {
-    setSnackbar({ open: true, message, severity });
-  };
-
-  const validateForm = () => {
-    let valid = true;
-    const newErrors = {
-      user_name: "",
-      full_name: "",
-      password: "",
-      confirmPassword: "",
-    };
-
-    if (!newUser.user_name.trim()) {
-      newErrors.user_name = "Username is required";
-      valid = false;
-    }
-
-    if (!newUser.full_name.trim()) {
-      newErrors.full_name = "Full name is required";
-      valid = false;
-    }
-
-    if (!newUser.password) {
-      newErrors.password = "Password is required";
-      valid = false;
-    } else if (newUser.password.length < 6) {
-      newErrors.password = "Password must be at least 6 characters";
-      valid = false;
-    }
-
-    if (newUser.password !== newUser.confirmPassword) {
-      newErrors.confirmPassword = "Passwords do not match";
-      valid = false;
-    }
-
-    setErrors(newErrors);
-    return valid;
-  };
-
-  const handleCreateUser = async () => {
-    if (!validateForm()) return;
-
-    try {
-      await servicesAPI.createUser({
-        user_name: newUser.user_name,
-        full_name: newUser.full_name,
-        password: newUser.password
-      });
-      showSnackbar("User created successfully!", "success");
-      fetchUsers();
-      setOpenDialog(false);
-      resetForm();
-    } catch (error: any) {
-      showSnackbar(
-        error.response?.data?.message || "An error occurred while creating the user.",
-        "error"
-      );
-    }
-  };
-
-  const handleDeleteUser = async () => {
-    if (!userToDelete) return;
-
-    try {
-      await servicesAPI.deleteUser(userToDelete.toString());
-      showSnackbar("User deleted successfully!", "success");
-      fetchUsers();
-    } catch (error: any) {
-      showSnackbar(
-        error.response?.data?.message || "Failed to delete user.",
-        "error"
-      );
-    } finally {
-      setOpenDeleteDialog(false);
-      setUserToDelete(null);
-    }
-  };
-
-  const resetForm = () => {
-    setNewUser({
-      user_name: "",
-      full_name: "",
-      password: "",
-      confirmPassword: "",
-    });
-    setErrors({
-      user_name: "",
-      full_name: "",
-      password: "",
-      confirmPassword: "",
-    });
-  };
-
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return "Never logged in";
-    const date = new Date(dateString);
-    return date.toLocaleDateString() + " " + date.toLocaleTimeString();
-  };
-
-  const handleEditUser = async () => {
-    if (!validateEditForm()) return;
-  
-    try {
-      const payload: any = {
-        user_name: editUser.user_name,
-        full_name: editUser.full_name,
-      };
-  
-      if (editUser.password) {
-        payload.password = editUser.password;
-      }
-  
-      await servicesAPI.updateUser(editUser.user_id.toString(), payload);
-      showSnackbar("User updated successfully!", "success");
-      fetchUsers();
-      setOpenEditDialog(false);
-      resetEditForm();
-    } catch (error: any) {
-      showSnackbar(
-        error.response?.data?.message || "An error occurred while updating the user.",
-        "error"
-      );
-    }
-  };
-  
-  const validateEditForm = () => {
-    let valid = true;
-    const newErrors = {
-      user_name: "",
-      full_name: "",
-      password: "",
-      confirmPassword: "",
-    };
-  
-    if (!editUser.user_name.trim()) {
-      newErrors.user_name = "Username is required";
-      valid = false;
-    }
-  
-    if (!editUser.full_name.trim()) {
-      newErrors.full_name = "Full name is required";
-      valid = false;
-    }
-  
-    if (editUser.password && editUser.password.length < 6) {
-      newErrors.password = "Password must be at least 6 characters";
-      valid = false;
-    }
-  
-    if (editUser.password !== editUser.confirmPassword) {
-      newErrors.confirmPassword = "Passwords do not match";
-      valid = false;
-    }
-  
-    setErrors(newErrors);
-    return valid;
-  };
-  
-  const resetEditForm = () => {
-    setEditUser({
-      user_id: 0,
-      user_name: "",
-      full_name: "",
-      password: "",
-      confirmPassword: ""
-    });
-    setErrors({
-      user_name: "",
-      full_name: "",
-      password: "",
-      confirmPassword: ""
-    });
   };
 
   const handleChangePage = (_event: unknown, newPage: number) => {
@@ -348,10 +192,91 @@ const UserManagement: React.FC = () => {
     setPage(0);
   };
 
-  const clearFilters = () => {
-    setSearchTerm("");
-    setStatusFilter("all");
-    setIsFiltered(false);
+  const resetForm = () => {
+    setNewUser({
+      user_name: "",
+      full_name: "",
+      password: "",
+      confirmPassword: ""
+    });
+    setErrors({
+      user_name: "",
+      full_name: "",
+      password: "",
+      confirmPassword: ""
+    });
+  };
+
+  const handleCreateUser = async () => {
+    try {
+      await servicesAPI.createUser({
+        user_name: newUser.user_name,
+        full_name: newUser.full_name,
+        password: newUser.password
+      });
+      setSnackbar({
+        open: true,
+        message: "User created successfully!",
+        severity: "success"
+      });
+      fetchUsers();
+      setOpenDialog(false);
+      resetForm();
+    } catch (error: any) {
+      setSnackbar({
+        open: true,
+        message: error.response?.data?.message || "Failed to create user",
+        severity: "error"
+      });
+    }
+  };
+
+  const handleEditUser = async () => {
+    if (!editUser) return;
+
+    try {
+      await servicesAPI.updateUser(editUser.user_id.toString(), {
+        user_name: editUser.user_name,
+        full_name: editUser.full_name,
+        ...(editUser.password ? { password: editUser.password } : {})
+      });
+      setSnackbar({
+        open: true,
+        message: "User updated successfully!",
+        severity: "success"
+      });
+      fetchUsers();
+      setEditDialogOpen(false);
+      setEditUser(null);
+    } catch (error: any) {
+      setSnackbar({
+        open: true,
+        message: error.response?.data?.message || "Failed to update user",
+        severity: "error"
+      });
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return;
+
+    try {
+      await servicesAPI.deleteUser(userToDelete.toString());
+      setSnackbar({
+        open: true,
+        message: "User deleted successfully!",
+        severity: "success"
+      });
+      fetchUsers();
+      setDeleteConfirmOpen(false);
+      setUserToDelete(null);
+    } catch (error: any) {
+      setSnackbar({
+        open: true,
+        message: error.response?.data?.message || "Failed to delete user",
+        severity: "error"
+      });
+    }
   };
 
   return (
@@ -375,26 +300,26 @@ const UserManagement: React.FC = () => {
         }}>
           <Button
             variant="outlined"
-            startIcon={<Refresh />}
+            startIcon={<RefreshIcon />}
             onClick={fetchUsers}
             sx={{ 
               minWidth: isMobile ? 'auto' : 120,
               flex: isMobile ? 1 : 0
             }}
           >
-            {isMobile ? <Refresh /> : 'Refresh'}
+            {isMobile ? <RefreshIcon /> : 'Refresh'}
           </Button>
           <Button
             variant="contained"
             color="primary"
-            startIcon={<PersonAdd />}
+            startIcon={<PersonAddIcon />}
             onClick={() => setOpenDialog(true)}
             sx={{ 
               minWidth: isMobile ? 'auto' : 140,
               flex: isMobile ? 1 : 0
             }}
           >
-            {isMobile ? <PersonAdd /> : 'Add User'}
+            {isMobile ? <PersonAddIcon /> : 'Add User'}
           </Button>
         </Box>
       </Box>
@@ -403,7 +328,7 @@ const UserManagement: React.FC = () => {
       <StyledCard sx={{ mb: 3 }}>
         <CardContent>
           <Grid container spacing={2} alignItems="center">
-            <Grid item xs={12} md={6}>
+            <Grid item xs={12} md={8}>
               <TextField
                 fullWidth
                 variant="outlined"
@@ -414,56 +339,27 @@ const UserManagement: React.FC = () => {
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
-                      <Search color="action" />
-                    </InputAdornment>
-                  ),
-                  endAdornment: isFiltered && (
-                    <InputAdornment position="end">
-                      <Tooltip title="Clear filters">
-                        <IconButton
-                          size="small"
-                          onClick={clearFilters}
-                        >
-                          <Clear fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
+                      <SearchIcon color="action" />
                     </InputAdornment>
                   ),
                   sx: {
                     backgroundColor: theme.palette.background.paper,
-                    borderRadius: '8px'
+                    borderRadius: '12px'
                   }
                 }}
               />
             </Grid>
-            <Grid item xs={12} md={3}>
-              <FormControl fullWidth size="small">
-                <InputLabel>Status</InputLabel>
-                <Select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  label="Status"
-                  sx={{
-                    backgroundColor: theme.palette.background.paper,
-                    borderRadius: '8px'
-                  }}
-                  startAdornment={
-                    <InputAdornment position="start">
-                      <FilterList fontSize="small" color="action" />
-                    </InputAdornment>
-                  }
-                >
-                  <MenuItem value="all">All Statuses</MenuItem>
-                  <MenuItem value="active">Active</MenuItem>
-                  <MenuItem value="inactive">Inactive</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={12} md={3} sx={{ textAlign: isMobile ? 'left' : 'right' }}>
-              <Typography variant="body2" color="text.secondary">
-                {filteredUsers.length} {filteredUsers.length === 1 ? 'user' : 'users'} found
-                {isFiltered && ' (filtered)'}
-              </Typography>
+            <Grid item xs={12} md={4}>
+              <Box display="flex" gap={1} alignItems="center">
+                <PeopleIcon color="action" />
+                <Typography variant="body2" color="text.secondary">
+                  <strong>{users.length}</strong> users total
+                </Typography>
+                <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
+                <Typography variant="body2" color="text.secondary">
+                  <strong>{filteredUsers.length}</strong> filtered
+                </Typography>
+              </Box>
             </Grid>
           </Grid>
         </CardContent>
@@ -480,10 +376,48 @@ const UserManagement: React.FC = () => {
             }}>
               <TableRow>
                 <TableCell width="60px"></TableCell>
-                <TableCell>User</TableCell>
-                <TableCell>Username</TableCell>
-                <TableCell>Last Login</TableCell>
-                <TableCell>Status</TableCell>
+                <TableCell 
+                  onClick={() => setSortConfig({ 
+                    key: 'full_name', 
+                    direction: sortConfig?.key === 'full_name' && sortConfig.direction === 'asc' ? 'desc' : 'asc' 
+                  })}
+                  sx={{ 
+                    cursor: 'pointer',
+                    '&:hover': {
+                      backgroundColor: theme.palette.action.hover
+                    }
+                  }}
+                >
+                  <Box display="flex" alignItems="center">
+                    User
+                    {sortConfig?.key === 'full_name' && (
+                      <Typography variant="caption" sx={{ ml: 1 }}>
+                        {sortConfig.direction === 'asc' ? '↑' : '↓'}
+                      </Typography>
+                    )}
+                  </Box>
+                </TableCell>
+                <TableCell 
+                  onClick={() => setSortConfig({ 
+                    key: 'user_name', 
+                    direction: sortConfig?.key === 'user_name' && sortConfig.direction === 'asc' ? 'desc' : 'asc' 
+                  })}
+                  sx={{ 
+                    cursor: 'pointer',
+                    '&:hover': {
+                      backgroundColor: theme.palette.action.hover
+                    }
+                  }}
+                >
+                  <Box display="flex" alignItems="center">
+                    Username
+                    {sortConfig?.key === 'user_name' && (
+                      <Typography variant="caption" sx={{ ml: 1 }}>
+                        {sortConfig.direction === 'asc' ? '↑' : '↓'}
+                      </Typography>
+                    )}
+                  </Box>
+                </TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -495,8 +429,6 @@ const UserManagement: React.FC = () => {
                     <TableCell><Skeleton variant="circular" width={40} height={40} /></TableCell>
                     <TableCell><Skeleton variant="text" /></TableCell>
                     <TableCell><Skeleton variant="text" /></TableCell>
-                    <TableCell><Skeleton variant="text" /></TableCell>
-                    <TableCell><Skeleton variant="text" width="60%" /></TableCell>
                     <TableCell><Skeleton variant="text" width="80%" /></TableCell>
                   </StyledTableRow>
                 ))
@@ -525,19 +457,6 @@ const UserManagement: React.FC = () => {
                           {user.user_name}
                         </Typography>
                       </TableCell>
-                      <TableCell>
-                        <Typography variant="body2">
-                          {formatDate(user.last_login)}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <StatusChip
-                          label={user.status || "active"}
-                          color={user.status === "active" ? "success" : "default"}
-                          size="small"
-                          variant="outlined"
-                        />
-                      </TableCell>
                       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                         <Tooltip title="Edit">
                           <IconButton 
@@ -553,11 +472,11 @@ const UserManagement: React.FC = () => {
                                   password: "",
                                   confirmPassword: ""
                                 });
-                                setOpenEditDialog(true);
+                                setEditDialogOpen(true);
                               }
                             }}
                           >
-                            <Edit fontSize="small" />
+                            <EditIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
                         <Tooltip title="Delete">
@@ -565,10 +484,10 @@ const UserManagement: React.FC = () => {
                             color="error"
                             onClick={() => {
                               setUserToDelete(user.user_id);
-                              setOpenDeleteDialog(true);
+                              setDeleteConfirmOpen(true);
                             }}
                           >
-                            <Delete fontSize="small" />
+                            <DeleteIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
                       </TableCell>
@@ -576,7 +495,7 @@ const UserManagement: React.FC = () => {
                   ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
+                  <TableCell colSpan={4} align="center" sx={{ py: 4 }}>
                     <Box sx={{ 
                       display: 'flex', 
                       flexDirection: 'column', 
@@ -586,14 +505,14 @@ const UserManagement: React.FC = () => {
                       <Typography variant="body1" color="text.secondary">
                         No users found matching your criteria
                       </Typography>
-                      {isFiltered && (
+                      {searchTerm && (
                         <Button
                           variant="text"
                           size="small"
-                          onClick={clearFilters}
-                          startIcon={<Clear />}
+                          onClick={() => setSearchTerm("")}
+                          startIcon={<ClearIcon />}
                         >
-                          Clear filters
+                          Clear search
                         </Button>
                       )}
                     </Box>
@@ -639,7 +558,7 @@ const UserManagement: React.FC = () => {
           borderBottom: `1px solid ${theme.palette.divider}`
         }}>
           <Box display="flex" alignItems="center">
-            <PersonAdd sx={{ mr: 1, color: theme.palette.primary.main }} />
+            <PersonAddIcon sx={{ mr: 1, color: theme.palette.primary.main }} />
             Create New User
           </Box>
         </DialogTitle>
@@ -690,7 +609,7 @@ const UserManagement: React.FC = () => {
                         edge="end"
                         size="small"
                       >
-                        {showPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
+                        {showPassword ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
                       </IconButton>
                     </InputAdornment>
                   ),
@@ -729,7 +648,7 @@ const UserManagement: React.FC = () => {
             onClick={handleCreateUser}
             variant="contained"
             color="primary"
-            startIcon={<CheckCircle />}
+            startIcon={<CheckCircleIcon />}
             sx={{ borderRadius: '8px' }}
           >
             Create User
@@ -739,8 +658,11 @@ const UserManagement: React.FC = () => {
 
       {/* Edit User Dialog */}
       <Dialog 
-        open={openEditDialog} 
-        onClose={() => setOpenEditDialog(false)} 
+        open={editDialogOpen} 
+        onClose={() => {
+          setEditDialogOpen(false);
+          setEditUser(null);
+        }}
         maxWidth="sm" 
         fullWidth
         PaperProps={{
@@ -755,91 +677,93 @@ const UserManagement: React.FC = () => {
           borderBottom: `1px solid ${theme.palette.divider}`
         }}>
           <Box display="flex" alignItems="center">
-            <Edit sx={{ mr: 1, color: theme.palette.primary.main }} />
+            <EditIcon sx={{ mr: 1, color: theme.palette.primary.main }} />
             Edit User
           </Box>
         </DialogTitle>
         <DialogContent dividers sx={{ pt: 2 }}>
-          <Grid container spacing={2}>
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
-                label="Username *"
-                variant="outlined"
-                size="small"
-                value={editUser.user_name}
-                onChange={(e) => setEditUser({ ...editUser, user_name: e.target.value })}
-                error={!!errors.user_name}
-                helperText={errors.user_name}
-                sx={{ mb: 1 }}
-              />
+          {editUser && (
+            <Grid container spacing={2}>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Username *"
+                  variant="outlined"
+                  size="small"
+                  value={editUser.user_name}
+                  onChange={(e) => setEditUser({ ...editUser, user_name: e.target.value })}
+                  error={!!errors.user_name}
+                  helperText={errors.user_name}
+                  sx={{ mb: 1 }}
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Full Name *"
+                  variant="outlined"
+                  size="small"
+                  value={editUser.full_name}
+                  onChange={(e) => setEditUser({ ...editUser, full_name: e.target.value })}
+                  error={!!errors.full_name}
+                  helperText={errors.full_name}
+                  sx={{ mb: 1 }}
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                  Leave password fields blank to keep current password
+                </Typography>
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="New Password"
+                  variant="outlined"
+                  size="small"
+                  type={showPassword ? "text" : "password"}
+                  value={editUser.password || ""}
+                  onChange={(e) => setEditUser({ ...editUser, password: e.target.value })}
+                  error={!!errors.password}
+                  helperText={errors.password}
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          onClick={() => setShowPassword(!showPassword)}
+                          edge="end"
+                          size="small"
+                        >
+                          {showPassword ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }}
+                  sx={{ mb: 1 }}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Confirm Password"
+                  variant="outlined"
+                  size="small"
+                  type={showPassword ? "text" : "password"}
+                  value={editUser.confirmPassword || ""}
+                  onChange={(e) => setEditUser({ ...editUser, confirmPassword: e.target.value })}
+                  error={!!errors.confirmPassword}
+                  helperText={errors.confirmPassword}
+                  sx={{ mb: 1 }}
+                />
+              </Grid>
             </Grid>
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
-                label="Full Name *"
-                variant="outlined"
-                size="small"
-                value={editUser.full_name}
-                onChange={(e) => setEditUser({ ...editUser, full_name: e.target.value })}
-                error={!!errors.full_name}
-                helperText={errors.full_name}
-                sx={{ mb: 1 }}
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                Leave password fields blank to keep current password
-              </Typography>
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                label="New Password"
-                variant="outlined"
-                size="small"
-                type={showPassword ? "text" : "password"}
-                value={editUser.password}
-                onChange={(e) => setEditUser({ ...editUser, password: e.target.value })}
-                error={!!errors.password}
-                helperText={errors.password}
-                InputProps={{
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <IconButton
-                        onClick={() => setShowPassword(!showPassword)}
-                        edge="end"
-                        size="small"
-                      >
-                        {showPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
-                      </IconButton>
-                    </InputAdornment>
-                  ),
-                }}
-                sx={{ mb: 1 }}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                label="Confirm Password"
-                variant="outlined"
-                size="small"
-                type={showPassword ? "text" : "password"}
-                value={editUser.confirmPassword}
-                onChange={(e) => setEditUser({ ...editUser, confirmPassword: e.target.value })}
-                error={!!errors.confirmPassword}
-                helperText={errors.confirmPassword}
-                sx={{ mb: 1 }}
-              />
-            </Grid>
-          </Grid>
+          )}
         </DialogContent>
         <DialogActions sx={{ p: 2, borderTop: `1px solid ${theme.palette.divider}` }}>
           <Button 
             onClick={() => {
-              setOpenEditDialog(false);
-              resetEditForm();
+              setEditDialogOpen(false);
+              setEditUser(null);
             }}
             color="inherit"
             sx={{ borderRadius: '8px' }}
@@ -850,7 +774,7 @@ const UserManagement: React.FC = () => {
             onClick={handleEditUser}
             variant="contained"
             color="primary"
-            startIcon={<CheckCircle />}
+            startIcon={<CheckCircleIcon />}
             sx={{ borderRadius: '8px' }}
           >
             Update User
@@ -860,8 +784,8 @@ const UserManagement: React.FC = () => {
 
       {/* Delete Confirmation Dialog */}
       <Dialog 
-        open={openDeleteDialog} 
-        onClose={() => setOpenDeleteDialog(false)}
+        open={deleteConfirmOpen} 
+        onClose={() => setDeleteConfirmOpen(false)}
         PaperProps={{
           sx: {
             borderRadius: '12px',
@@ -877,7 +801,7 @@ const UserManagement: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button 
-            onClick={() => setOpenDeleteDialog(false)} 
+            onClick={() => setDeleteConfirmOpen(false)} 
             color="inherit"
             sx={{ borderRadius: '8px' }}
           >
@@ -887,7 +811,7 @@ const UserManagement: React.FC = () => {
             onClick={handleDeleteUser}
             variant="contained"
             color="error"
-            startIcon={<Cancel />}
+            startIcon={<CancelIcon />}
             sx={{ borderRadius: '8px' }}
           >
             Delete

@@ -713,6 +713,25 @@ const ReconciliationPage: React.FC = () => {
           const existing = consolidated.get(key)!;
           existing.qty += transaction.qty || 0;
           existing.transaction_count += 1;
+          
+          // Add section information if not already present
+          if (!existing.sections) {
+            existing.sections = [];
+          }
+          
+          // Check if this section is already in the list
+          const existingSection = existing.sections.find((s: any) => s.section_id === transaction.section_id);
+          if (existingSection) {
+            existingSection.qty += transaction.qty || 0;
+            existingSection.transaction_count += 1;
+          } else {
+            existing.sections.push({
+              section_id: transaction.section_id,
+              section_desc: transaction.section_desc,
+              qty: transaction.qty || 0,
+              transaction_count: 1
+            });
+          }
         } else {
           consolidated.set(key, {
             form: normalizedForm,
@@ -725,7 +744,13 @@ const ReconciliationPage: React.FC = () => {
             type: normalizedType,
             remarks: normalizedRemarks,
             qty: transaction.qty || 0,
-            transaction_count: 1
+            transaction_count: 1,
+            sections: [{
+              section_id: transaction.section_id,
+              section_desc: transaction.section_desc,
+              qty: transaction.qty || 0,
+              transaction_count: 1
+            }]
           });
         }
       });
@@ -1074,8 +1099,15 @@ const ReconciliationPage: React.FC = () => {
                           'Counted Not In System') : 
                         'Counted Not In System');
 
+        // Get section breakdown for export
+        const matchingChecker = showComparison ? findMatchingCheckerData(item) : null;
+        const sectionBreakdown = matchingChecker?.sections && matchingChecker.sections.length > 1 
+          ? matchingChecker.sections.map((section: any) => `${section.section_desc}: ${section.qty}`).join('; ')
+          : '';
+
         return {
           'Form': item.form,
+          'Section': item.section_desc || '-',
           'Grade': item.grade,
           'Size': item.size,
           'Finish': item.finish,
@@ -1085,10 +1117,12 @@ const ReconciliationPage: React.FC = () => {
           'Weight': item.weight,
           'Inventory Type': item.inv_type,
           'Quality Standards': item.inv_quality,
+          'Quality Standards Code': getQualityStandardCode(item.inv_quality || ''),
           'Branch': item.branch,
           'Warehouse': item.warehouse,
           'System Quantity': item.system_qty,
           'Checker Qty': checkerQty,
+          'Section Breakdown': sectionBreakdown || '-',
           'Variance': variance,
           'Status': status,
           'Total Amount': item.prd_ohd_mat_val,
@@ -1097,26 +1131,36 @@ const ReconciliationPage: React.FC = () => {
       });
 
       // Prepare orphaned data
-      const orphanedData = orphanedCheckerData.map(item => ({
-        'Form': item.form,
-        'Grade': item.grade,
-        'Size': item.size,
-        'Finish': item.finish,
-        'Extended Finish': item.ext_finish,
-        'Width': item.width,
-        'Length': item.length,
-        'Weight': '-',
-        'Inventory Type': item.type,
-        'Quality Standards': item.remarks,
-        'Branch': '-',
-        'Warehouse': '-',
-        'System Quantity': 0,
-        'Checker Qty': item.qty,
-        'Variance': item.qty,
-        'Status': 'Not in System',
-        'Total Amount': '-',
-        'Unit Cost': '-'
-      }));
+      const orphanedData = orphanedCheckerData.map(item => {
+        // Get section breakdown for orphaned items
+        const sectionBreakdown = item.sections && item.sections.length > 1 
+          ? item.sections.map((section: any) => `${section.section_desc}: ${section.qty}`).join('; ')
+          : '';
+
+        return {
+          'Form': item.form,
+          'Section': item.section_desc || '-',
+          'Grade': item.grade,
+          'Size': item.size,
+          'Finish': item.finish,
+          'Extended Finish': item.ext_finish,
+          'Width': item.width,
+          'Length': item.length,
+          'Weight': '-',
+          'Inventory Type': item.type,
+          'Quality Standards': item.remarks,
+          'Quality Standards Code': getQualityStandardCode(item.remarks || ''),
+          'Branch': '-',
+          'Warehouse': '-',
+          'System Quantity': 0,
+          'Checker Qty': item.qty,
+          'Section Breakdown': sectionBreakdown || '-',
+          'Variance': item.qty,
+          'Status': 'Not in System',
+          'Total Amount': '-',
+          'Unit Cost': '-'
+        };
+      });
 
       // Combine system data and orphaned data
       const allData = [...systemData, ...orphanedData];
@@ -1252,6 +1296,49 @@ const ReconciliationPage: React.FC = () => {
     } finally {
       setIsExporting(false);
     }
+  };
+
+  // Function to map quality standards to codes
+  const getQualityStandardCode = (quality: string): string => {
+    if (!quality) return '-';
+    
+    const qualityLower = quality.toLowerCase().trim();
+    
+    // Map quality standards to correct codes as specified
+    const qualityMap: { [key: string]: string } = {
+      'conforms to std': '-',
+      'conforms to standard': '-',
+      'conforms to std.': '-',
+      'conforms to standard.': '-',
+      'conforms': '-',
+      'standard': '-',
+      'std': '-',
+      'std.': '-',
+      'standard.': '-',
+      'secondary': 'X',
+      'mill claim': 'M',
+      'reject': 'R',
+      'rejected': 'R',
+      'scrap': 'S',
+      'price protected': 'P',
+      'price protection': 'P',
+      'protected': 'P'
+    };
+    
+    // Check for exact matches first
+    if (qualityMap[qualityLower]) {
+      return qualityMap[qualityLower];
+    }
+    
+    // Check for partial matches
+    for (const [key, code] of Object.entries(qualityMap)) {
+      if (qualityLower.includes(key) || key.includes(qualityLower)) {
+        return code;
+      }
+    }
+    
+    // If no match found, return the original value (for any other quality standards)
+    return quality;
   };
 
   if (loading) {
@@ -1716,7 +1803,18 @@ const ReconciliationPage: React.FC = () => {
                     >
                       <MenuItem value="">All</MenuItem>
                       {uniqueValues.inv_quality?.map((value: string) => (
-                        <MenuItem key={value} value={value}>{value}</MenuItem>
+                        <MenuItem key={value} value={value}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                            <span>{value}</span>
+                            <Chip 
+                              label={getQualityStandardCode(value)} 
+                              size="small" 
+                              variant="outlined"
+                              color="primary"
+                              sx={{ ml: 1, minWidth: 20 }}
+                            />
+                          </Box>
+                        </MenuItem>
                       ))}
                     </Select>
                   </FormControl>
@@ -1836,6 +1934,7 @@ const ReconciliationPage: React.FC = () => {
                 </TableCell>
               )}
               <TableCell>Form</TableCell>
+              <TableCell>Section</TableCell>
               <TableCell>Grade</TableCell>
               <TableCell>Size</TableCell>
               <TableCell>Finish</TableCell>
@@ -1844,7 +1943,7 @@ const ReconciliationPage: React.FC = () => {
               <TableCell>Length</TableCell>
               <TableCell>Weight</TableCell>
               <TableCell>Inventory Type</TableCell>
-              <TableCell>Quality Standards</TableCell>
+              <TableCell>Quality Standards Code</TableCell>
               <TableCell>Branch</TableCell>
               <TableCell>Warehouse</TableCell>
               <TableCell align="right">System Quantity</TableCell>
@@ -1863,7 +1962,7 @@ const ReconciliationPage: React.FC = () => {
           <TableBody>
             {filteredData.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={showComparison ? 19 : 15} align="center" sx={{ py: 3 }}>
+                <TableCell colSpan={showComparison ? 21 : 17} align="center" sx={{ py: 3 }}>
                   <Typography variant="body1" color="text.secondary">
                     No items found
                   </Typography>
@@ -1871,7 +1970,14 @@ const ReconciliationPage: React.FC = () => {
               </TableRow>
             ) : (
               filteredData.map((item, index) => {
-                                const matchingChecker = showComparison ? findMatchingCheckerData(item) : null;
+                const matchingChecker = showComparison ? findMatchingCheckerData(item) : null;
+                
+                // Debug: Log the matchingChecker object to see its structure
+                if (matchingChecker) {
+                  console.log('matchingChecker object:', matchingChecker);
+                  console.log('matchingChecker.size:', matchingChecker.size);
+                  console.log('matchingChecker.finish:', matchingChecker.finish);
+                }
                 
                 // Use enhanced item data if available (loaded from database), otherwise calculate from checker data
                 const variance = item.has_comparison ? (item.variance || 0) : 
@@ -1926,213 +2032,411 @@ const ReconciliationPage: React.FC = () => {
                   
                   return alpha(theme.palette.background.default, 0.8);
                 };
+
+                // Check if we need to show section breakdown
+                const hasMultipleSections = matchingChecker?.sections && matchingChecker.sections.length > 1;
                 
-                return (
-                  <TableRow 
-                    key={index} 
-                    hover
-                    sx={{ 
-                      backgroundColor: getRowBackgroundColor(),
-                      '&:hover': {
-                        backgroundColor: getRowHoverColor()
-                      }
-                    }}
-                  >
-                    {showComparison && (
-                      <TableCell padding="checkbox">
-                        <Checkbox
-                          checked={selectedItems.has(index)}
-                          onChange={() => handleItemSelection(index)}
-                          disabled={isMarkedForRecheck}
-                        />
-                      </TableCell>
-                    )}
-                    <TableCell>{item.form}</TableCell>
-                    <TableCell>{item.grade}</TableCell>
-                    <TableCell>{item.size}</TableCell>
-                    <TableCell>{item.finish}</TableCell>
-                    <TableCell>{item.ext_finish || '-'}</TableCell>
-                    <TableCell>{item.width || '-'}</TableCell>
-                    <TableCell>{item.length || '-'}</TableCell>
-                    <TableCell>{item.weight || '-'}</TableCell>
-                    <TableCell>{item.inv_type || '-'}</TableCell>
-                    <TableCell>{item.inv_quality || '-'}</TableCell>
-                    <TableCell>{item.branch}</TableCell>
-                    <TableCell>{item.warehouse}</TableCell>
-                    <TableCell align="right">{item.system_qty}</TableCell>
-                    {showComparison && (
-                      <>
-                        <TableCell align="right">
-                          {(() => {
-                            // First try to get data from enhanced item data (loaded from database)
-                            if (item.has_comparison && item.checker_qty !== undefined) {
-                              return (
-                                <Chip 
-                                  label={item.checker_qty}
-                                  color="primary"
-                                  variant="outlined"
-                                  size="small"
-                                  sx={{ fontWeight: 600 }}
-                                />
-                              );
+                if (hasMultipleSections) {
+                  // Render section breakdown rows
+                  return (
+                    <React.Fragment key={`${index}-sections`}>
+                      {/* Individual section rows */}
+                      {matchingChecker.sections.map((section: any) => (
+                        <TableRow 
+                          key={`${index}-section-${section.section_id}`}
+                          hover
+                          sx={{ 
+                            backgroundColor: alpha(theme.palette.info.main, 0.05),
+                            '&:hover': {
+                              backgroundColor: alpha(theme.palette.info.main, 0.1)
                             }
-                            // Fallback to checker data (for new comparisons)
-                            if (matchingChecker) {
-                              return (
-                                <Chip 
-                                  label={matchingChecker.qty}
-                                  color="primary"
-                                  variant="outlined"
-                                  size="small"
-                                  sx={{ fontWeight: 600 }}
-                                />
-                              );
-                            }
-                            return (
+                          }}
+                        >
+                          {showComparison && (
+                            <TableCell padding="checkbox">
+                              <Checkbox
+                                checked={selectedItems.has(index)}
+                                onChange={() => handleItemSelection(index)}
+                                disabled={isMarkedForRecheck}
+                              />
+                            </TableCell>
+                          )}
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                               <Chip 
-                                label="No Data"
-                                color="default"
-                                variant="outlined"
+                                label={`#${item.tag_id || index}`}
                                 size="small"
+                                color="info"
+                                variant="outlined"
                                 sx={{ fontWeight: 600 }}
                               />
-                            );
-                          })()}
+                              <Typography variant="caption" color="text.secondary">
+                                Section
+                              </Typography>
+                            </Box>
+                          </TableCell>
+                          <TableCell>{matchingChecker.form}</TableCell>
+                          <TableCell>
+                            <Chip 
+                              label={section.section_desc} 
+                              size="small" 
+                              variant="outlined"
+                              color="info"
+                            />
+                          </TableCell>
+                          <TableCell>{matchingChecker.grade}</TableCell>
+                          <TableCell>{matchingChecker.size}</TableCell>
+                          <TableCell>{matchingChecker.finish}</TableCell>
+                          <TableCell>{matchingChecker.ext_finish || '-'}</TableCell>
+                          <TableCell>{matchingChecker.width || '-'}</TableCell>
+                          <TableCell>{matchingChecker.length || '-'}</TableCell>
+                          <TableCell>{matchingChecker.weight || '-'}</TableCell>
+                          <TableCell>{matchingChecker.type}</TableCell>
+                          <TableCell>
+                            <Tooltip title={matchingChecker.remarks || 'No quality standard specified'} arrow>
+                              <span>{getQualityStandardCode(matchingChecker.remarks || '')}</span>
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell>{matchingChecker.branch || '-'}</TableCell>
+                          <TableCell>{matchingChecker.warehouse || '-'}</TableCell>
+                          <TableCell align="right">-</TableCell>
+                          {showComparison && (
+                            <>
+                              <TableCell align="right">
+                                <Chip 
+                                  label={section.qty}
+                                  color="info"
+                                  variant="outlined"
+                                  size="small"
+                                  sx={{ fontWeight: 600 }}
+                                />
+                              </TableCell>
+                              <TableCell align="right">-</TableCell>
+                              <TableCell>
+                                <Chip 
+                                  label="Section Count"
+                                  color="info"
+                                  size="small"
+                                />
+                              </TableCell>
+                            </>
+                          )}
+                          <TableCell align="right">-</TableCell>
+                          <TableCell align="right">-</TableCell>
+                          <TableCell>
+                            <IconButton
+                              size="small"
+                              onClick={() => handleEditCheckerQty(item)}
+                              disabled={isMarkedForRecheck}
+                            >
+                              <Edit fontSize="small" />
+                            </IconButton>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      
+                      {/* Summary row showing total comparison */}
+                      <TableRow 
+                        key={`${index}-summary`}
+                        hover
+                        sx={{ 
+                          backgroundColor: getRowBackgroundColor(),
+                          '&:hover': {
+                            backgroundColor: getRowHoverColor()
+                          },
+                          borderTop: `2px solid ${theme.palette.primary.main}`
+                        }}
+                      >
+                        {showComparison && (
+                          <TableCell padding="checkbox">
+                            <Checkbox
+                              checked={selectedItems.has(index)}
+                              onChange={() => handleItemSelection(index)}
+                              disabled={isMarkedForRecheck}
+                            />
+                          </TableCell>
+                        )}
+                        <TableCell>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Chip 
+                              label={`#${item.tag_id || index}`}
+                              size="small"
+                              color="primary"
+                              variant="outlined"
+                              sx={{ fontWeight: 600 }}
+                            />
+                            <Typography variant="caption" color="primary.main" sx={{ fontWeight: 600 }}>
+                              TOTAL
+                            </Typography>
+                          </Box>
                         </TableCell>
-                        <TableCell align="right">
+                        <TableCell>{matchingChecker.form}</TableCell>
+                        <TableCell>
+                          <Chip 
+                            label="All Sections" 
+                            size="small" 
+                            variant="outlined"
+                            color="primary"
+                          />
+                        </TableCell>
+                        <TableCell>{matchingChecker.grade}</TableCell>
+                        <TableCell>
                           {(() => {
-                            // First try to get data from enhanced item data (loaded from database)
-                            if (item.has_comparison && item.variance !== undefined) {
-                              return (
-                                <Chip 
-                                  label={item.variance}
-                                  color={
-                                    item.status === 'Match' ? 'success' :
-                                    item.status === 'Overcount' ? 'warning' :
-                                    item.status === 'Undercount' ? 'error' : 'default'
-                                  }
-                                  variant="outlined"
-                                  size="small"
-                                  sx={{ fontWeight: 600 }}
-                                />
-                              );
-                            }
-                            // Fallback to checker data (for new comparisons)
-                            if (matchingChecker) {
-                              return (
-                                <Chip 
-                                  label={variance}
-                                  color={
-                                    status === 'Match' ? 'success' :
-                                    status === 'Overcount' ? 'warning' :
-                                    status === 'Undercount' ? 'error' : 'default'
-                                  }
-                                  variant="outlined"
-                                  size="small"
-                                  sx={{ fontWeight: 600 }}
-                                />
-                              );
-                            }
-                            return (
-                              <Chip 
-                                label="N/A"
-                                color="default"
-                                variant="outlined"
-                                size="small"
-                                sx={{ fontWeight: 600 }}
-                              />
-                            );
+                            console.log('Summary row - matchingChecker.size:', matchingChecker.size);
+                            return matchingChecker.size || '-';
                           })()}
                         </TableCell>
                         <TableCell>
                           {(() => {
-                            // First try to get data from enhanced item data (loaded from database)
-                            if (item.has_comparison && item.status) {
-                              return (
-                                <Chip 
-                                  label={item.status}
-                                  color={
-                                    item.status === 'Match' ? 'success' :
-                                    item.status === 'Overcount' ? 'warning' :
-                                    item.status === 'Undercount' ? 'error' : 
-                                    item.status === 'Counted Not In System' ? 'default' : 'info'
-                                  }
-                                  size="small"
-                                />
-                              );
-                            }
-                            // Fallback to checker data (for new comparisons)
-                            return (
+                            console.log('Summary row - matchingChecker.finish:', matchingChecker.finish);
+                            return matchingChecker.finish || '-';
+                          })()}
+                        </TableCell>
+                        <TableCell>{matchingChecker.ext_finish || '-'}</TableCell>
+                        <TableCell>{matchingChecker.width || '-'}</TableCell>
+                        <TableCell>{matchingChecker.length || '-'}</TableCell>
+                        <TableCell>{matchingChecker.weight || '-'}</TableCell>
+                        <TableCell>{matchingChecker.type}</TableCell>
+                        <TableCell>
+                          <Tooltip title={matchingChecker.remarks || 'No quality standard specified'} arrow>
+                            <span>{getQualityStandardCode(matchingChecker.remarks || '')}</span>
+                          </Tooltip>
+                        </TableCell>
+                        <TableCell>{matchingChecker.branch || '-'}</TableCell>
+                        <TableCell>{matchingChecker.warehouse || '-'}</TableCell>
+                        <TableCell align="right">{item.system_qty}</TableCell>
+                        {showComparison && (
+                          <>
+                            <TableCell align="right">
+                              <Chip 
+                                label={matchingChecker.qty}
+                                color="primary"
+                                variant="outlined"
+                                size="small"
+                                sx={{ fontWeight: 600 }}
+                              />
+                            </TableCell>
+                            <TableCell align="right">
+                              <Chip 
+                                label={variance}
+                                color={
+                                  status === 'Match' ? 'success' :
+                                  status === 'Overcount' ? 'warning' :
+                                  status === 'Undercount' ? 'error' : 'default'
+                                }
+                                variant="outlined"
+                                size="small"
+                                sx={{ fontWeight: 600 }}
+                              />
+                            </TableCell>
+                            <TableCell>
                               <Chip 
                                 label={status}
                                 color={
                                   status === 'Match' ? 'success' :
                                   status === 'Overcount' ? 'warning' :
-                                  status === 'Undercount' ? 'error' : 
-                                  status === 'Counted Not In System' ? 'default' : 'info'
+                                  status === 'Undercount' ? 'error' : 'default'
                                 }
                                 size="small"
                               />
-                            );
-                          })()}
+                            </TableCell>
+                          </>
+                        )}
+                        <TableCell align="right">{item.prd_ohd_mat_val}</TableCell>
+                        <TableCell align="right">{item.prd_ohd_mat_cst}</TableCell>
+                        <TableCell>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleEditCheckerQty(item)}
+                            disabled={isMarkedForRecheck}
+                          >
+                            <Edit fontSize="small" />
+                          </IconButton>
                         </TableCell>
-                      </>
-                    )}
-                    <TableCell align="right">{item.prd_ohd_mat_val ? Number(item.prd_ohd_mat_val).toFixed(2) : '-'}</TableCell>
-                    <TableCell align="right">{item.prd_ohd_mat_cst ? Number(item.prd_ohd_mat_cst).toFixed(2) : '-'}</TableCell>
-                    <TableCell>
+                      </TableRow>
+                    </React.Fragment>
+                  );
+                } else {
+                  // Render single row (no section breakdown needed)
+                  return (
+                    <TableRow 
+                      key={index} 
+                      hover
+                      sx={{ 
+                        backgroundColor: getRowBackgroundColor(),
+                        '&:hover': {
+                          backgroundColor: getRowHoverColor()
+                        }
+                      }}
+                    >
                       {showComparison && (
-                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                          {isMarkedForRecheck ? (
-                            <>
-                              <Tooltip title="Edit checker quantity - Complete recheck">
-                                <IconButton
-                                  size="small"
-                                  onClick={() => handleEditCheckerQty(item)}
-                                  color="warning"
-                                  sx={{ 
-                                    backgroundColor: alpha(theme.palette.warning.main, 0.1),
-                                    '&:hover': {
-                                      backgroundColor: alpha(theme.palette.warning.main, 0.2)
-                                    }
-                                  }}
-                                >
-                                  <Edit />
-                                </IconButton>
-                              </Tooltip>
-                              <Chip 
-                                label="Recheck Required" 
-                                color="warning" 
-                                size="small"
-                                variant="filled"
-                                sx={{ fontWeight: 600 }}
-                              />
-                            </>
-                          ) : (
-                            <Tooltip title="Mark for recheck">
-                              <IconButton
-                                size="small"
-                                onClick={() => {
-                                  setSelectedItems(new Set([index]));
-                                  setShowRecheckDialog(true);
-                                }}
-                                color="info"
-                                sx={{ 
-                                  backgroundColor: alpha(theme.palette.info.main, 0.1),
-                                  '&:hover': {
-                                    backgroundColor: alpha(theme.palette.info.main, 0.2)
-                                  }
-                                }}
-                              >
-                                <Refresh />
-                              </IconButton>
-                            </Tooltip>
-                          )}
-                        </Box>
+                        <TableCell padding="checkbox">
+                          <Checkbox
+                            checked={selectedItems.has(index)}
+                            onChange={() => handleItemSelection(index)}
+                            disabled={isMarkedForRecheck}
+                          />
+                        </TableCell>
                       )}
-                    </TableCell>
-                  </TableRow>
-                );
+                      <TableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Chip 
+                            label={`#${item.tag_id || index}`}
+                            size="small"
+                            color="primary"
+                            variant="outlined"
+                            sx={{ fontWeight: 600 }}
+                          />
+                        </Box>
+                      </TableCell>
+                      <TableCell>{item.section_desc}</TableCell>
+                      <TableCell>{item.form}</TableCell>
+                      <TableCell>{item.grade}</TableCell>
+                      <TableCell>{item.size}</TableCell>
+                      <TableCell>{item.finish}</TableCell>
+                      <TableCell>{item.ext_finish || '-'}</TableCell>
+                      <TableCell>{item.width || '-'}</TableCell>
+                      <TableCell>{item.length || '-'}</TableCell>
+                      <TableCell>{item.weight || '-'}</TableCell>
+                      <TableCell>{item.inv_type || '-'}</TableCell>
+                      <TableCell>
+                        <Tooltip title={item.inv_quality || 'No quality standard specified'} arrow>
+                          <span>{getQualityStandardCode(item.inv_quality || '')}</span>
+                        </Tooltip>
+                      </TableCell>
+                      <TableCell>{item.branch}</TableCell>
+                      <TableCell>{item.warehouse}</TableCell>
+                      <TableCell align="right">{item.system_qty}</TableCell>
+                      {showComparison && (
+                        <>
+                          <TableCell align="right">
+                            {(() => {
+                              // First try to get data from enhanced item data (loaded from database)
+                              if (item.has_comparison && item.checker_qty !== undefined) {
+                                return (
+                                  <Chip 
+                                    label={item.checker_qty}
+                                    color="primary"
+                                    variant="outlined"
+                                    size="small"
+                                    sx={{ fontWeight: 600 }}
+                                  />
+                                );
+                              }
+                              // Fallback to checker data (for new comparisons)
+                              if (matchingChecker) {
+                                return (
+                                  <Chip 
+                                    label={matchingChecker.qty}
+                                    color="primary"
+                                    variant="outlined"
+                                    size="small"
+                                    sx={{ fontWeight: 600 }}
+                                  />
+                                );
+                              }
+                              return (
+                                <Chip 
+                                  label="No Data"
+                                  color="default"
+                                  variant="outlined"
+                                  size="small"
+                                  sx={{ fontWeight: 600 }}
+                                />
+                              );
+                            })()}
+                          </TableCell>
+                          <TableCell align="right">
+                            {(() => {
+                              // First try to get data from enhanced item data (loaded from database)
+                              if (item.has_comparison && item.variance !== undefined) {
+                                return (
+                                  <Chip 
+                                    label={item.variance}
+                                    color={
+                                      item.status === 'Match' ? 'success' :
+                                      item.status === 'Overcount' ? 'warning' :
+                                      item.status === 'Undercount' ? 'error' : 'default'
+                                    }
+                                    variant="outlined"
+                                    size="small"
+                                    sx={{ fontWeight: 600 }}
+                                  />
+                                );
+                              }
+                              // Fallback to checker data (for new comparisons)
+                              if (matchingChecker) {
+                                return (
+                                  <Chip 
+                                    label={variance}
+                                    color={
+                                      status === 'Match' ? 'success' :
+                                      status === 'Overcount' ? 'warning' :
+                                      status === 'Undercount' ? 'error' : 'default'
+                                    }
+                                    variant="outlined"
+                                    size="small"
+                                    sx={{ fontWeight: 600 }}
+                                  />
+                                );
+                              }
+                              return (
+                                <Chip 
+                                  label="N/A"
+                                  color="default"
+                                  variant="outlined"
+                                  size="small"
+                                  sx={{ fontWeight: 600 }}
+                                />
+                              );
+                            })()}
+                          </TableCell>
+                          <TableCell>
+                            {(() => {
+                              // First try to get data from enhanced item data (loaded from database)
+                              if (item.has_comparison && item.status !== undefined) {
+                                return (
+                                  <Chip 
+                                    label={item.status}
+                                    color={
+                                      item.status === 'Match' ? 'success' :
+                                      item.status === 'Overcount' ? 'warning' :
+                                      item.status === 'Undercount' ? 'error' : 'default'
+                                    }
+                                    size="small"
+                                  />
+                                );
+                              }
+                              // Fallback to checker data (for new comparisons)
+                              return (
+                                <Chip 
+                                  label={status}
+                                  color={
+                                    status === 'Match' ? 'success' :
+                                    status === 'Overcount' ? 'warning' :
+                                    status === 'Undercount' ? 'error' : 'default'
+                                  }
+                                  size="small"
+                                />
+                              );
+                            })()}
+                          </TableCell>
+                        </>
+                      )}
+                      <TableCell align="right">{item.prd_ohd_mat_val}</TableCell>
+                      <TableCell align="right">{item.prd_ohd_mat_cst}</TableCell>
+                      <TableCell>
+                        <IconButton
+                          size="small"
+                          onClick={() => handleEditCheckerQty(item)}
+                          disabled={isMarkedForRecheck}
+                        >
+                          <Edit fontSize="small" />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  );
+                }
               })
             )}
           </TableBody>
@@ -2166,6 +2470,7 @@ const ReconciliationPage: React.FC = () => {
                   }
                 }}>
                   <TableCell>Form</TableCell>
+                  <TableCell>Section</TableCell>
                   <TableCell>Grade</TableCell>
                   <TableCell>Size</TableCell>
                   <TableCell>Finish</TableCell>
@@ -2173,7 +2478,7 @@ const ReconciliationPage: React.FC = () => {
                   <TableCell>Width</TableCell>
                   <TableCell>Length</TableCell>
                   <TableCell>Type</TableCell>
-                  <TableCell>Quality Standard</TableCell>
+                  <TableCell>Quality Standard Code</TableCell>
                   <TableCell align="right">Checker Quantity</TableCell>
                   <TableCell>Status</TableCell>
                 </TableRow>
@@ -2191,6 +2496,7 @@ const ReconciliationPage: React.FC = () => {
                     }}
                   >
                     <TableCell>{item.form}</TableCell>
+                    <TableCell>{item.section_desc}</TableCell>
                     <TableCell>{item.grade}</TableCell>
                     <TableCell>{item.size}</TableCell>
                     <TableCell>{item.finish}</TableCell>
@@ -2198,7 +2504,11 @@ const ReconciliationPage: React.FC = () => {
                     <TableCell>{item.width || '-'}</TableCell>
                     <TableCell>{item.length || '-'}</TableCell>
                     <TableCell>{item.type || '-'}</TableCell>
-                    <TableCell>{item.remarks || '-'}</TableCell>
+                    <TableCell>
+                      <Tooltip title={item.remarks || 'No quality standard specified'} arrow>
+                        <span>{getQualityStandardCode(item.remarks || '')}</span>
+                      </Tooltip>
+                    </TableCell>
                     <TableCell align="right">
                       <Chip 
                         label={item.qty}

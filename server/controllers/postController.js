@@ -79,12 +79,25 @@ exports.createUser = async (req, res) => {
     const { user_name, full_name, password } = req.body;
 
     console.log(user_name,full_name, password)
-  
+
     if (!user_name || !full_name || !password) {
       return res.status(400).json({ error: "Missing required fields" });
     }
   
     try {
+      // Check if username already exists
+      const existingUser = await pool.query(
+        "SELECT user_id FROM st_users WHERE user_name = $1",
+        [user_name.toLowerCase()]
+      );
+      
+      if (existingUser.rows.length > 0) {
+        return res.status(409).json({ 
+          error: "Username already exists", 
+          message: "A user with this username already exists. Please choose a different username." 
+        });
+      }
+
       // Encrypt password (use bcrypt)
       const bcrypt = require("bcrypt");
       const hashedPassword = await bcrypt.hash(password, 10);
@@ -92,12 +105,21 @@ exports.createUser = async (req, res) => {
       const userResult = await pool.query(
         `INSERT INTO st_users (user_name, full_name, password) 
          VALUES ($1, $2, $3) RETURNING user_id`,
-        [user_name, full_name, hashedPassword]
+        [user_name.toLowerCase(), full_name, hashedPassword]
       );
   
       res.json({ message: "User created successfully" });
     } catch (error) {
       console.error("Error creating user:", error);
+      
+      // Check for unique constraint violation
+      if (error.code === '23505' && error.constraint === 'st_users_user_name_key') {
+        return res.status(409).json({ 
+          error: "Username already exists", 
+          message: "A user with this username already exists. Please choose a different username." 
+        });
+      }
+      
       res.status(500).json({ error: "Internal server error" });
     }
 };
@@ -155,7 +177,7 @@ exports.updateUser = async (req, res) => {
 
     if (user_name) {
       updateFields.push(`user_name = $${paramCount++}`);
-      updateValues.push(user_name);
+      updateValues.push(user_name.toLowerCase());
     }
     
     if (full_name) {
@@ -193,7 +215,7 @@ exports.updateUser = async (req, res) => {
       message: 'User updated successfully',
       user: {
         user_id: userIdInt,
-        user_name: user_name || currentUser.user_name,
+        user_name: user_name.toLowerCase() || currentUser.user_name,
         full_name: full_name || currentUser.full_name
       }
     });
@@ -242,7 +264,84 @@ exports.deleteUser = async (req, res) => {
     const { user_id } = req.params;
   
     try {
-      await pool.query(`DELETE FROM st_users WHERE user_id = $1`, [user_id]);
+      // Convert user_id to integer
+      const userIdInt = parseInt(user_id, 10);
+      if (isNaN(userIdInt)) {
+        return res.status(400).json({ 
+          error: "Invalid user ID", 
+          message: "User ID must be a valid number" 
+        });
+      }
+
+      // Check if user exists
+      const userCheck = await pool.query(
+        'SELECT user_id, user_name FROM st_users WHERE user_id = $1',
+        [userIdInt]
+      );
+      
+      if (userCheck.rows.length === 0) {
+        return res.status(404).json({ 
+          error: "User not found", 
+          message: "The user you are trying to delete does not exist" 
+        });
+      }
+
+      // Check for transactions linked to this user
+      const transactionsCheck = await pool.query(
+        'SELECT COUNT(*) as count FROM transactions WHERE counted_by = $1',
+        [userIdInt]
+      );
+      
+      const transactionCount = parseInt(transactionsCheck.rows[0].count);
+      
+      if (transactionCount > 0) {
+        return res.status(409).json({ 
+          error: "Cannot delete user", 
+          message: `Cannot delete user because they have ${transactionCount} transaction(s) linked to them.` 
+        });
+      }
+
+      // Check for other references (locations, sections, teams created by this user)
+      const locationsCheck = await pool.query(
+        'SELECT COUNT(*) as count FROM st_locations WHERE created_by = $1',
+        [userIdInt]
+      );
+      
+      const sectionsCheck = await pool.query(
+        'SELECT COUNT(*) as count FROM st_sections WHERE created_by = $1',
+        [userIdInt]
+      );
+      
+      const teamsCheck = await pool.query(
+        'SELECT COUNT(*) as count FROM teams WHERE created_by = $1',
+        [userIdInt]
+      );
+      
+      const reconciliationCheck = await pool.query(
+        'SELECT COUNT(*) as count FROM reconciliation_records WHERE created_by = $1',
+        [userIdInt]
+      );
+      
+      const locationsCount = parseInt(locationsCheck.rows[0].count);
+      const sectionsCount = parseInt(sectionsCheck.rows[0].count);
+      const teamsCount = parseInt(teamsCheck.rows[0].count);
+      const reconciliationCount = parseInt(reconciliationCheck.rows[0].count);
+      
+      if (locationsCount > 0 || sectionsCount > 0 || teamsCount > 0 || reconciliationCount > 0) {
+        const references = [];
+        if (locationsCount > 0) references.push(`${locationsCount} location(s)`);
+        if (sectionsCount > 0) references.push(`${sectionsCount} section(s)`);
+        if (teamsCount > 0) references.push(`${teamsCount} team(s)`);
+        if (reconciliationCount > 0) references.push(`${reconciliationCount} reconciliation record(s)`);
+        
+        return res.status(409).json({ 
+          error: "Cannot delete user", 
+          message: `Cannot delete user because they have created: ${references.join(', ')}. Please reassign these items to another user first.` 
+        });
+      }
+
+      // If no blocking references, proceed with deletion
+      await pool.query(`DELETE FROM st_users WHERE user_id = $1`, [userIdInt]);
       res.json({ message: "User deleted successfully" });
     } catch (error) {
       console.error("Error deleting user:", error);
@@ -281,12 +380,64 @@ exports.addLocation = async (req, res) => {
 
   exports.deleteSubLocation = async (req,res) => {
     try {
-        const { sub_location_id } = req.params;
-        await pool.query("DELETE FROM st_sub_locations WHERE sub_location_id = $1", [sub_location_id]);
-        res.status(200).json({ message: "Sub-location deleted successfully" });
+        console.log("=== DELETE SECTION REQUEST ===");
+        console.log("Request params:", req.params);
+        console.log("Request URL:", req.url);
+        console.log("Request method:", req.method);
+        
+        // Handle both parameter names for backward compatibility
+        const { sub_location_id, section_id } = req.params;
+        const idToDelete = section_id || sub_location_id;
+        
+        console.log("ID to delete:", idToDelete);
+        
+        if (!idToDelete) {
+            console.log("ERROR: No section ID provided");
+            return res.status(400).json({ error: "Section ID is required" });
+        }
+        
+        // Check if section exists and has any related data before deletion
+        const checkQuery = "SELECT section_id, section_desc FROM st_sections WHERE section_id = $1";
+        const checkResult = await pool.query(checkQuery, [idToDelete]);
+        
+        if (checkResult.rows.length === 0) {
+            return res.status(404).json({ error: "Section not found" });
+        }
+        
+        // Check if section has any transactions
+        const transactionCheck = await pool.query(
+            "SELECT COUNT(*) as count FROM transactions WHERE section_id = $1", 
+            [idToDelete]
+        );
+        
+        console.log(`Transaction count for section ${idToDelete}:`, transactionCheck.rows[0].count);
+        
+        if (parseInt(transactionCheck.rows[0].count) > 0) {
+            return res.status(400).json({ 
+                error: "Cannot delete section. This section has transactions recorded. Please complete or remove all transactions before deleting." 
+            });
+        }
+        
+        // Check if section has any assigned locations
+        const assignmentCheck = await pool.query(
+            "SELECT COUNT(*) as count FROM assigned_locations WHERE sub_location_id = $1", 
+            [idToDelete]
+        );
+        
+        if (parseInt(assignmentCheck.rows[0].count) > 0) {
+            return res.status(400).json({ 
+                error: "Cannot delete section. This section has assigned teams or checkers. Please unassign all teams before deleting." 
+            });
+        }
+        
+        // Delete the section
+        console.log("Executing delete query for section ID:", idToDelete);
+        await pool.query("DELETE FROM st_sections WHERE section_id = $1", [idToDelete]);
+        console.log("Section deleted successfully:", idToDelete);
+        res.status(200).json({ message: "Section deleted successfully" });
       } catch (error) {
-        console.error("Error deleting sub-location:", error);
-        res.status(500).json({ error: "Server error while deleting sub-location" });
+        console.error("Error deleting section:", error);
+        res.status(500).json({ error: "Server error while deleting section" });
       }
   }
 
@@ -363,18 +514,40 @@ exports.addLocation = async (req, res) => {
         // Trim spaces from each item
         const trimmedItems = items.map(item => item.trim());
 
-        // Prepare query for inserting items while avoiding duplicates
-        const query = `
-            INSERT INTO assigned_items (location_id, item_name) 
-            SELECT $1, unnest($2::text[]) 
-            WHERE NOT EXISTS (
-                SELECT 1 FROM assigned_items WHERE location_id = $1 AND item_name = ANY($2::text[])
-            );
+        // Check which items are already assigned
+        const existingItemsQuery = `
+            SELECT item_name FROM assigned_items 
+            WHERE location_id = $1 AND item_name = ANY($2::text[])
         `;
+        const existingItemsResult = await pool.query(existingItemsQuery, [location_id, trimmedItems]);
+        const existingItems = existingItemsResult.rows.map(row => row.item_name);
 
-        await pool.query(query, [location_id, trimmedItems]);
+        // Filter out already assigned items
+        const newItems = trimmedItems.filter(item => !existingItems.includes(item));
 
-        return res.json({ success: true, message: "Items assigned successfully" });
+        if (newItems.length === 0) {
+            return res.json({ 
+                success: true, 
+                message: "All selected items are already assigned to this location",
+                alreadyAssigned: existingItems,
+                newlyAssigned: []
+            });
+        }
+
+        // Insert only the new items
+        const insertQuery = `
+            INSERT INTO assigned_items (location_id, item_name) 
+            VALUES ${newItems.map((_, index) => `($1, $${index + 2})`).join(', ')}
+        `;
+        
+        await pool.query(insertQuery, [location_id, ...newItems]);
+
+        return res.json({ 
+            success: true, 
+            message: `Successfully assigned ${newItems.length} new item(s)`,
+            alreadyAssigned: existingItems,
+            newlyAssigned: newItems
+        });
     } catch (error) {
         console.error('Error assigning items:', error);
         return res.status(500).json({ error: 'Error assigning items. Please try again.' });
@@ -401,6 +574,90 @@ exports.deleteItem = async (req, res) => {
   }
 };
 
+exports.deleteAssignedItem = async (req, res) => {
+  const { location_id, item_id } = req.params;
+
+  console.log("=== DELETE ASSIGNED ITEM ===");
+  console.log("Location ID:", location_id);
+  console.log("Item ID:", item_id);
+
+  try {
+      // Verify the item exists and belongs to the specified location
+      const checkQuery = `
+          SELECT id, item_name FROM assigned_items 
+          WHERE id = $1 AND location_id = $2;
+      `;
+      
+      const checkResult = await pool.query(checkQuery, [item_id, location_id]);
+      
+      if (checkResult.rows.length === 0) {
+          return res.status(404).json({ 
+              error: "Item not found or does not belong to this location" 
+          });
+      }
+
+      // Delete the item
+      const deleteQuery = `
+          DELETE FROM assigned_items 
+          WHERE id = $1 AND location_id = $2;
+      `;
+
+      await pool.query(deleteQuery, [item_id, location_id]);
+
+      console.log(`Item ${item_id} deleted successfully from location ${location_id}`);
+
+      return res.json({ 
+          success: true, 
+          message: "Item removed successfully",
+          deletedItem: checkResult.rows[0]
+      });
+  } catch (error) {
+      console.error('Error removing assigned item:', error);
+      return res.status(500).json({ 
+          error: 'Error removing item. Please try again.' 
+      });
+  }
+};
+
+exports.deleteAssignedLocation = async (req, res) => {
+  const { location_id } = req.params;
+
+  console.log("=== DELETE ALL ASSIGNED ITEMS ===");
+  console.log("Location ID:", location_id);
+
+  try {
+      // Get count of items before deletion for logging
+      const countQuery = `
+          SELECT COUNT(*) as count FROM assigned_items 
+          WHERE location_id = $1;
+      `;
+      
+      const countResult = await pool.query(countQuery, [location_id]);
+      const itemCount = parseInt(countResult.rows[0].count);
+
+      // Delete all assigned items for the location
+      const deleteQuery = `
+          DELETE FROM assigned_items 
+          WHERE location_id = $1;
+      `;
+
+      const deleteResult = await pool.query(deleteQuery, [location_id]);
+
+      console.log(`${itemCount} items deleted for location ${location_id}`);
+
+      return res.json({ 
+          success: true, 
+          message: `${itemCount} items removed successfully`,
+          deletedCount: itemCount
+      });
+  } catch (error) {
+      console.error('Error removing all assigned items:', error);
+      return res.status(500).json({ 
+          error: 'Error removing items. Please try again.' 
+      });
+  }
+};
+
 exports.postTeams = async (req, res) => {
     const { teamName, tagRange, userRoles } = req.body;
 
@@ -408,6 +665,95 @@ exports.postTeams = async (req, res) => {
   
     try {
       await pool.query('BEGIN');
+
+      // Validate team name is not empty
+      if (!teamName || teamName.trim() === '') {
+        await pool.query('ROLLBACK');
+        return res.status(400).json({ 
+          success: false,
+          message: "Team name is required" 
+        });
+      }
+
+      // Validate tag range values
+      if (!tagRange.from || !tagRange.to) {
+        await pool.query('ROLLBACK');
+        return res.status(400).json({ 
+          success: false,
+          message: "Tag range (from and to) is required" 
+        });
+      }
+
+      const tagFrom = parseInt(tagRange.from);
+      const tagTo = parseInt(tagRange.to);
+
+      if (isNaN(tagFrom) || isNaN(tagTo)) {
+        await pool.query('ROLLBACK');
+        return res.status(400).json({ 
+          success: false,
+          message: "Tag range must be valid numbers" 
+        });
+      }
+
+      if (tagFrom >= tagTo) {
+        await pool.query('ROLLBACK');
+        return res.status(400).json({ 
+          success: false,
+          message: "Tag 'from' must be less than tag 'to'" 
+        });
+      }
+
+      // Check for duplicate team name
+      const existingTeamName = await pool.query(
+        'SELECT team_id FROM teams WHERE LOWER(team_name) = LOWER($1)',
+        [teamName.trim()]
+      );
+
+      if (existingTeamName.rows.length > 0) {
+        await pool.query('ROLLBACK');
+        return res.status(400).json({ 
+          success: false,
+          message: "Team name already exists. Please choose a different name." 
+        });
+      }
+
+      // Check for tag range conflicts
+      const existingTagRanges = await pool.query(`
+        SELECT team_id, team_name, tag_from, tag_to 
+        FROM teams 
+        WHERE (
+          ($1 BETWEEN CAST(tag_from AS INTEGER) AND CAST(tag_to AS INTEGER)) OR
+          ($2 BETWEEN CAST(tag_from AS INTEGER) AND CAST(tag_to AS INTEGER)) OR
+          (CAST(tag_from AS INTEGER) BETWEEN $1 AND $2) OR
+          (CAST(tag_to AS INTEGER) BETWEEN $1 AND $2)
+        )
+      `, [tagFrom, tagTo]);
+
+      if (existingTagRanges.rows.length > 0) {
+        const conflictingTeam = existingTagRanges.rows[0];
+        await pool.query('ROLLBACK');
+        return res.status(400).json({ 
+          success: false,
+          message: `Tag range ${tagFrom}-${tagTo} conflicts with existing team "${conflictingTeam.team_name}" (${conflictingTeam.tag_from}-${conflictingTeam.tag_to}). Please choose a different range.`
+        });
+      }
+
+      // Get the highest tag_to value to suggest next available range
+      const maxTagResult = await pool.query(`
+        SELECT MAX(CAST(tag_to AS INTEGER)) as max_tag_to 
+        FROM teams 
+        WHERE tag_to IS NOT NULL AND tag_to != ''
+      `);
+
+      const maxTagTo = maxTagResult.rows[0].max_tag_to;
+      if (maxTagTo && tagFrom <= maxTagTo) {
+        const suggestedFrom = maxTagTo + 1;
+        await pool.query('ROLLBACK');
+        return res.status(400).json({ 
+          success: false,
+          message: `Tag range already in use. Next available range starts from ${suggestedFrom}. Please use ${suggestedFrom} or higher for tag 'from'.`
+        });
+      }
 
       // Validate that no duplicate user-role combinations exist within the new team
       const userRoleCombinations = userRoles.map(ur => `${ur.userId}-${ur.roleId}`);
@@ -421,22 +767,40 @@ exports.postTeams = async (req, res) => {
         });
       }
 
+      console.log('About to insert team with:', { teamName, tagRange, current_tag });
+
       // Insert into teams table
       const teamResult = await pool.query(
         "INSERT INTO teams (team_name, tag_from, tag_to, current_tag) VALUES ($1, $2, $3, $4) RETURNING team_id",
-        [teamName, tagRange.from, tagRange.to, current_tag]
+        [teamName.trim(), tagRange.from, tagRange.to, current_tag]
       );
+      
+      if (!teamResult.rows || teamResult.rows.length === 0) {
+        throw new Error('Team creation failed - no team_id returned');
+      }
+      
       const teamId = teamResult.rows[0].team_id;
-  
-      // Insert team members into team_members table
-      const insertPromises = userRoles.map(({ userId, roleId }) =>
-        pool.query(
+      console.log('Team created successfully with ID:', teamId);
+
+      // Verify the team exists before creating members
+      const verifyTeam = await pool.query('SELECT team_id FROM teams WHERE team_id = $1', [teamId]);
+      if (verifyTeam.rows.length === 0) {
+        throw new Error(`Team with ID ${teamId} was not found after creation`);
+      }
+
+      console.log('About to insert team members:', userRoles);
+
+      // Insert team members into team_members table one by one for better error handling
+      for (const { userId, roleId } of userRoles) {
+        console.log(`Inserting member: userId=${userId}, roleId=${roleId}, teamId=${teamId}`);
+        await pool.query(
           "INSERT INTO team_members (team_id, user_id, role_id) VALUES ($1, $2, $3)",
           [teamId, userId, roleId]
-        )
-      );
-  
-      await Promise.all(insertPromises);
+        );
+      }
+      
+      console.log('Team members created successfully');
+      
       await pool.query('COMMIT');
   
       res.status(201).json({ 
@@ -447,9 +811,15 @@ exports.postTeams = async (req, res) => {
     } catch (error) {
       await pool.query('ROLLBACK');
       console.error("Error creating team:", error);
+      console.error("Error details:", {
+        message: error.message,
+        code: error.code,
+        detail: error.detail
+      });
       res.status(500).json({ 
         success: false,
-        error: "Internal server error" 
+        error: "Internal server error",
+        message: error.message
       });
     }
 };
@@ -608,6 +978,15 @@ exports.PostTransactions = async (req, res) => {
     // 2. Validate tag range
     const teamQuery = `SELECT tag_from, tag_to FROM teams WHERE team_id = $1`;
     const teamResult = await pool.query(teamQuery, [req.body.team_id]);
+    
+    if (!teamResult.rows || teamResult.rows.length === 0) {
+      await pool.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: "Team not found"
+      });
+    }
+    
     const { tag_from, tag_to } = teamResult.rows[0];
 
     if (currentTag > tag_to) {
@@ -1087,42 +1466,7 @@ exports.updateTransactions = async (req, res) => {
           await pool.query(bundleInsertQuery, bundleValues);
         }
 
-        // Log the transaction modification
-        const selectedUser = req.headers['x-selected-user'] || req.body.counted_by;
-        await logCheckerActivity(pool, {
-          location_id: req.body.location_id,
-          section_id: req.body.section_id,
-          team_id: req.body.team_id,
-          checker_user_id: selectedUser,
-          activity_type: 'transaction_modified',
-          transaction_id: existingTxId,
-          tag_id: req.body.tag_id,
-          old_values: {
-            form: req.body.form,
-            grade: req.body.grade,
-            size: req.body.size,
-            finish: req.body.finish,
-            ext_finish: req.body.ext_finish,
-            width: req.body.width,
-            length: req.body.length,
-            count_type: req.body.count_type,
-            qty: req.body.qty,
-            bundles: req.body.bundles || []
-          },
-          new_values: {
-            form: req.body.form,
-            grade: req.body.grade,
-            size: req.body.size,
-            finish: req.body.finish,
-            ext_finish: req.body.ext_finish,
-            width: req.body.width,
-            length: req.body.length,
-            count_type: req.body.count_type,
-            qty: req.body.qty,
-            bundles: req.body.bundles || []
-          },
-          activity_description: `Transaction modified: Tag ${req.body.tag_id}, ${req.body.form} ${req.body.grade} ${req.body.size}`
-        });
+        // Note: Removed checker_activity_logs insertion as requested
 
         // Verify the original counter transaction
         const verifyCounterQuery = `
@@ -1214,6 +1558,132 @@ exports.updateTransactions = async (req, res) => {
   }
 };
 
+// Update counter transaction
+exports.updateCounterTransaction = async (req, res) => {
+  try {
+    const {
+      id, // Use the transaction ID to identify the specific transaction
+      tag_id,
+      form,
+      type,
+      grade,
+      size,
+      width,
+      finish,
+      ext_finish,
+      length,
+      count_type,
+      qty,
+      location_id,
+      section_id,
+      bundles,
+      remarks,
+      mill,
+      heat,
+      ad_cmts
+    } = req.body;
+
+    // Get role and user from headers
+    const role = req.headers['x-selected-role'] || 'Counter';
+    const counted_by = req.headers['x-selected-user'] || null;
+    const now = new Date().toISOString();
+
+    await pool.query('BEGIN');
+
+    // Use the transaction ID to find the specific transaction
+    if (!id) {
+      await pool.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Transaction ID is required for update'
+      });
+    }
+
+    // Verify the transaction exists and is a counter transaction
+    const existingTxQuery = `
+      SELECT transaction_id FROM transactions 
+      WHERE transaction_id = $1 AND role = 'Counter'
+    `;
+    const existingTxResult = await pool.query(existingTxQuery, [id]);
+
+    if (existingTxResult.rows.length === 0) {
+      await pool.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'Counter transaction not found'
+      });
+    }
+
+    const existingTxId = existingTxResult.rows[0].transaction_id;
+
+    // Update the counter transaction
+    const updateQuery = `
+      UPDATE transactions SET
+        form = $2,
+        type = $3,
+        grade = $4,
+        size = $5,
+        width = $6,
+        finish = $7,
+        ext_finish = $8,
+        length = $9,
+        count_type = $10,
+        qty = $11,
+        mill = $12,
+        heat = $13,
+        ad_cmts = $14,
+        remarks = $15,
+        updated_at = $16
+      WHERE transaction_id = $1
+      RETURNING transaction_id
+    `;
+
+    const updateValues = [
+      existingTxId, form, type, grade, size, width, finish, ext_finish, length,
+      count_type, qty, mill, heat, ad_cmts, remarks, now
+    ];
+
+    await pool.query(updateQuery, updateValues);
+
+    // Update bundles if count_type is bundle
+    if (count_type === 'bundle' && bundles && Array.isArray(bundles)) {
+      // Delete existing bundles
+      await pool.query('DELETE FROM bundles WHERE transaction_id = $1', [existingTxId]);
+      
+      // Insert new bundles
+      if (bundles.length > 0) {
+        const bundleInsertQuery = `
+          INSERT INTO bundles (
+            transaction_id, tag_id, num_of_bundle, bundle_count, created_at
+          ) VALUES ${bundles.map((_, i) => `($${i * 5 + 1}, $${i * 5 + 2}, $${i * 5 + 3}, $${i * 5 + 4}, $${i * 5 + 5})`).join(', ')}
+        `;
+        
+        const bundleValues = bundles.flatMap(bundle => [
+          existingTxId, tag_id, bundle.num_of_bundle, bundle.bundle_count, now
+        ]);
+        
+        await pool.query(bundleInsertQuery, bundleValues);
+      }
+    }
+
+    await pool.query('COMMIT');
+    res.status(200).json({
+      success: true,
+      message: 'Counter transaction updated successfully',
+      transaction_id: existingTxId
+    });
+
+  } catch (error) {
+    await pool.query('ROLLBACK');
+    console.error('Error updating counter transaction:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update counter transaction',
+      error: error.message
+    });
+  }
+};
+
 exports.verifyTransactions = async (req, res) => {
   const { transaction_id } = req.body;
   
@@ -1253,20 +1723,7 @@ exports.verifyTransactions = async (req, res) => {
     
     const { rows } = await pool.query(updateQuery, [transaction_id]);
     
-    // Log the verification activity
-    const selectedUser = req.headers['x-selected-user'] || req.body.verified_by;
-    await logCheckerActivity(pool, {
-      location_id: transaction.location_id,
-      section_id: transaction.section_id,
-      team_id: transaction.team_id,
-      checker_user_id: selectedUser,
-      activity_type: 'transaction_verified',
-      transaction_id: transaction_id,
-      tag_id: transaction.tag_id,
-      old_values: { verified: false },
-      new_values: { verified: true },
-      activity_description: `Transaction verified: Tag ${transaction.tag_id}, ${transaction.form} ${transaction.grade} ${transaction.size}`
-    });
+    // Note: Removed checker_activity_logs insertion as requested
 
     await pool.query('COMMIT');
     
@@ -1347,6 +1804,10 @@ exports.unverifyTransactions = async (req, res) => {
       const bundleDeleteResult = await pool.query('DELETE FROM bundles WHERE transaction_id = $1', [deletedCheckerTransactionId]);
       console.log('Deleted bundles count:', bundleDeleteResult.rowCount);
       
+      // Remove associated checker activity logs (due to foreign key constraint)
+      const activityLogDeleteResult = await pool.query('DELETE FROM checker_activity_logs WHERE transaction_id = $1', [deletedCheckerTransactionId]);
+      console.log('Deleted activity logs count:', activityLogDeleteResult.rowCount);
+      
       // Remove the checker transaction entirely
       const deleteQuery = `
         DELETE FROM transactions 
@@ -1380,22 +1841,7 @@ exports.unverifyTransactions = async (req, res) => {
       rows = updateResult.rows;
     }
     
-    // Log the unverification activity
-    const selectedUser = req.headers['x-selected-user'] || req.body.unverified_by;
-    await logCheckerActivity(pool, {
-      location_id: transaction.location_id,
-      section_id: transaction.section_id,
-      team_id: transaction.team_id,
-      checker_user_id: selectedUser,
-      activity_type: deletedCheckerTransactionId ? 'checker_transaction_removed' : 'transaction_unverified',
-      transaction_id: deletedCheckerTransactionId || transaction_id,
-      tag_id: tagIdToFind,
-      old_values: { verified: true },
-      new_values: { verified: false },
-      activity_description: deletedCheckerTransactionId 
-        ? `Checker transaction removed: Tag ${tagIdToFind}, ${transaction.form} ${transaction.grade} ${transaction.size}`
-        : `Transaction unverified: Tag ${tagIdToFind}, ${transaction.form} ${transaction.grade} ${transaction.size}`
-    });
+    // Note: Removed checker_activity_logs insertion as requested
 
     await pool.query('COMMIT');
     
@@ -2112,6 +2558,9 @@ const logCheckerActivity = async (pool, logData) => {
 
 exports.addLineItem = async (req, res) => {
   try {
+    console.log('🔍 addLineItem called with body:', req.body);
+    console.log('🔍 team_id:', req.body.team_id, 'type:', typeof req.body.team_id);
+    
     await pool.query('BEGIN');
 
     // 1. FIRST get and lock the current tag
@@ -2122,11 +2571,29 @@ exports.addLineItem = async (req, res) => {
       FOR UPDATE`; // FOR UPDATE locks the row
     
     const tagResult = await pool.query(tagQuery, [req.body.team_id]);
+    
+    if (!tagResult.rows || tagResult.rows.length === 0) {
+      await pool.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: "Team not found"
+      });
+    }
+    
     const currentTag = tagResult.rows[0].current_tag;
 
     // 2. Validate tag range
     const teamQuery = `SELECT tag_from, tag_to FROM teams WHERE team_id = $1`;
     const teamResult = await pool.query(teamQuery, [req.body.team_id]);
+    
+    if (!teamResult.rows || teamResult.rows.length === 0) {
+      await pool.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: "Team not found"
+      });
+    }
+    
     const { tag_from, tag_to } = teamResult.rows[0];
 
     if (currentTag > tag_to) {
@@ -2205,31 +2672,7 @@ exports.addLineItem = async (req, res) => {
       bundles = bundleResult.rows;
     }
 
-    // 6. Log the new line item activity
-    const selectedUser = req.headers['x-selected-user'] || req.body.counted_by;
-    await logCheckerActivity(pool, {
-      location_id: req.body.location_id,
-      section_id: req.body.section_id,
-      team_id: req.body.team_id,
-      checker_user_id: selectedUser,
-      activity_type: 'new_line_added',
-      transaction_id: transactionId,
-      tag_id: currentTag,
-      old_values: null,
-      new_values: {
-        form: req.body.form,
-        grade: req.body.grade,
-        size: req.body.size,
-        finish: req.body.finish,
-        ext_finish: req.body.ext_finish,
-        width: req.body.width,
-        length: req.body.length,
-        count_type: req.body.count_type,
-        qty: req.body.qty,
-        bundles: req.body.bundles || []
-      },
-      activity_description: `New line item added: Tag ${currentTag}, ${req.body.form} ${req.body.grade} ${req.body.size}`
-    });
+    // Note: Removed checker_activity_logs insertion as requested
 
     await pool.query('COMMIT');
 
@@ -2248,6 +2691,143 @@ exports.addLineItem = async (req, res) => {
       success: false,
       message: 'Failed to create line item',
       error: error.message
+    });
+  }
+};
+
+exports.deleteTeam = async (req, res) => {
+  const { team_id } = req.params;
+
+  try {
+    await pool.query('BEGIN');
+
+    // Check if team exists
+    const teamCheck = await pool.query(
+      'SELECT team_id FROM teams WHERE team_id = $1',
+      [team_id]
+    );
+
+    if (teamCheck.rows.length === 0) {
+      await pool.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'Team not found'
+      });
+    }
+
+    // Check if team has any transactions
+    const transactionCheck = await pool.query(
+      'SELECT COUNT(*) FROM transactions WHERE team_id = $1',
+      [team_id]
+    );
+
+    if (parseInt(transactionCheck.rows[0].count) > 0) {
+      await pool.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete team: Team has existing transactions. Only teams without transactions can be deleted.'
+      });
+    }
+
+    // Check if team has any assigned locations
+    const assignedLocationsCheck = await pool.query(
+      'SELECT COUNT(*) FROM assigned_locations WHERE team_id = $1',
+      [team_id]
+    );
+
+    if (parseInt(assignedLocationsCheck.rows[0].count) > 0) {
+      await pool.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete team: Team has assigned locations. Please unassign all locations first.'
+      });
+    }
+
+    // Delete team members first (due to foreign key constraint)
+    await pool.query(
+      'DELETE FROM team_members WHERE team_id = $1',
+      [team_id]
+    );
+
+    // Delete the team
+    await pool.query(
+      'DELETE FROM teams WHERE team_id = $1',
+      [team_id]
+    );
+
+    await pool.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: 'Team deleted successfully'
+    });
+
+  } catch (error) {
+    await pool.query('ROLLBACK');
+    console.error('Error deleting team:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete team',
+      error: error.message
+    });
+  }
+};
+
+exports.unassignTeamFromSection = async (req, res) => {
+  const { location_id, section_id } = req.params;
+  
+  try {
+    await pool.query('BEGIN');
+
+    // Check if assignment exists
+    const assignmentCheck = await pool.query(
+      'SELECT * FROM assigned_locations WHERE location_id = $1 AND sub_location_id = $2',
+      [location_id, section_id]
+    );
+
+    if (assignmentCheck.rows.length === 0) {
+      await pool.query('ROLLBACK');
+      return res.status(404).json({ 
+        error: "No team assignment found for this section." 
+      });
+    }
+
+    const assignment = assignmentCheck.rows[0];
+
+    // Check if section has any transactions - prevent unassignment if transactions exist
+    const transactionCheck = await pool.query(
+      "SELECT COUNT(*) as count FROM transactions WHERE location_id = $1 AND section_id = $2", 
+      [location_id, section_id]
+    );
+
+    console.log(`Transaction count for unassign - location ${location_id}, section ${section_id}:`, transactionCheck.rows[0].count);
+
+    if (parseInt(transactionCheck.rows[0].count) > 0) {
+      await pool.query('ROLLBACK');
+      return res.status(400).json({ 
+        error: "Cannot unassign team. This section has transactions recorded. Teams cannot be unassigned after counting has started." 
+      });
+    }
+
+    // Delete the assignment
+    await pool.query(
+      'DELETE FROM assigned_locations WHERE location_id = $1 AND sub_location_id = $2',
+      [location_id, section_id]
+    );
+
+    await pool.query('COMMIT');
+
+    res.status(200).json({ 
+      success: true,
+      message: "Team unassigned successfully from section." 
+    });
+
+  } catch (error) {
+    await pool.query('ROLLBACK');
+    console.error("Error unassigning team from section:", error);
+    res.status(500).json({ 
+      error: "Server error while unassigning team from section.",
+      details: error.message 
     });
   }
 };

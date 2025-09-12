@@ -68,7 +68,7 @@ export interface FormData {
   extendedFinish: string;
   mill: string;
   heat: string;
-  quantity: number;
+  quantity: string;
   remarks?: string;
   ad_cmts?: string;
   type?: string;

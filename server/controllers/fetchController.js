@@ -334,18 +334,32 @@ exports.getAssignedItemsTotalAmount = async (req, res) => {
     
     // Updated query to include branch, warehouse, and status filters
     const sqlQuery = `
-      SELECT 
-        prd_frm,
-        COUNT(prd_ohd_mat_val) as total_count,
-        SUM(CAST(prd_ohd_mat_val AS DECIMAL(15,2))) as total_amount
+    SELECT 
+      prd_frm,
+      COUNT(prd_itm_ctl_no) as total_count,
+      sum(prd_ohd_wgt) as total_weight,
+      round(sum(case when (prd_ohd_mat_val) = 0 then (prd_ohd_qty*(acp_tot_mat_val/nullif(acp_tot_wgt,0))) else (prd_ohd_mat_val) end),2) as total_amount
       FROM intprd_rec 
+      LEFT JOIN intacp_rec
+      ON prd_cmpy_id = acp_cmpy_id
+      AND prd_avg_cst_pool =  acp_avg_cst_pool
       WHERE prd_frm IN (${formsList})
-        AND prd_brh = '${branch}'
-        AND prd_whs = '${warehouse}'
-        AND prd_invt_sts = 'S'
-      GROUP BY prd_frm
-      ORDER BY prd_frm
+      AND prd_brh = '${branch}'
+      AND prd_whs = '${warehouse}'
+      AND prd_invt_sts = 'S' 
+      group by prd_frm
     `;
+    // SELECT 
+    //     prd_frm,
+    //     COUNT(prd_ohd_mat_val) as total_count,
+    //     SUM(CAST(prd_ohd_mat_val AS DECIMAL(15,2))) as total_amount
+    //   FROM intprd_rec 
+    //   WHERE prd_frm IN (${formsList})
+    //     AND prd_brh = '${branch}'
+    //     AND prd_whs = '${warehouse}'
+    //     AND prd_invt_sts = 'S'
+    //   GROUP BY prd_frm
+    //   ORDER BY prd_frm
     
     console.log('SQL Query:', sqlQuery);
     
@@ -404,15 +418,18 @@ exports.getTotalFormValues = async (req, res) => {
     
     // Query to get total values for all forms across all locations
     const sqlQuery = `
-      SELECT 
+    SELECT 
         prd_frm,
-        COUNT(prd_ohd_mat_val) as total_count,
-        SUM(CAST(prd_ohd_mat_val AS DECIMAL(15,2))) as total_amount
+        COUNT(prd_itm_ctl_no) as total_count,
+       round(case when sum(prd_ohd_mat_val) = 0 then sum(prd_ohd_qty*(acp_tot_mat_val/acp_tot_wgt)) else sum(prd_ohd_mat_val) end,2) as total_amount
       FROM intprd_rec 
+      LEFT JOIN intacp_rec
+      ON prd_cmpy_id = acp_cmpy_id
+      AND prd_avg_cst_pool =  acp_avg_cst_pool
       WHERE prd_frm IN (${formsList})
         AND prd_invt_sts = 'S'
       GROUP BY prd_frm
-      ORDER BY prd_frm
+      ORDER BY prd_frm  
     `;
     
     console.log('SQL Query for total form values:', sqlQuery);
@@ -455,27 +472,102 @@ exports.getTotalFormValues = async (req, res) => {
   }
 };
 
+exports.getOverallWeightAndAmount = async (req, res) => {
+  const { branch, warehouse } = req.query;
+  console.log('Getting overall weight and amount for branch:', branch, 'warehouse:', warehouse);
+  
+  if (!branch || !warehouse) {
+    return res.status(400).json({ 
+      success: false, 
+      message: "Branch and warehouse parameters are required" 
+    });
+  }
+  
+  try {
+    // Query to get overall weight and amount using the provided query with dynamic branch and warehouse
+    const sqlQuery = `
+      select sum(total_weight) as overall_weight, sum(total_amount) as overall_amount from (
+        SELECT 
+          COUNT(prd_itm_ctl_no) as total_count,
+          sum(prd_ohd_wgt) as total_weight,
+          round(sum(case when (prd_ohd_mat_val) = 0 then (prd_ohd_qty*(acp_tot_mat_val/nullif(acp_tot_wgt,0))) else (prd_ohd_mat_val) end),2) as total_amount
+        FROM intprd_rec 
+        LEFT JOIN intacp_rec
+        ON prd_cmpy_id = acp_cmpy_id
+        AND prd_avg_cst_pool = acp_avg_cst_pool
+        WHERE prd_brh = '${branch}'
+        AND prd_whs = '${warehouse}'
+        AND prd_invt_sts = 'S' 
+        group by prd_frm
+      ) as tot
+    `;
+    
+    console.log('SQL Query for overall weight and amount:', sqlQuery);
+    
+    const response = await axios.post(
+      process.env.OAUTH_API_URL,
+      { sql: sqlQuery },
+      {
+        headers: {
+          Authorization: `Bearer ${req.accessToken}`,
+          "Content-Type": "application/json",
+          Database: process.env.OAUTH_DATABASE,
+        },
+      }
+    );
+
+    console.log('Overall weight and amount API Response:', response.data);
+    
+    if (response.data.Data && Array.isArray(response.data.Data) && response.data.Data.length > 0) {
+      const result = response.data.Data[0];
+      return res.status(200).json({ 
+        success: true, 
+        data: {
+          overall_weight: result.overall_weight || 0,
+          overall_amount: result.overall_amount || 0
+        }
+      });
+    } else {
+      return res.status(200).json({ 
+        success: true, 
+        data: {
+          overall_weight: 0,
+          overall_amount: 0
+        }
+      });
+    }
+    
+  } catch (error) {
+    console.error("Error fetching overall weight and amount:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Server error while fetching overall weight and amount",
+      error: error.message 
+    });
+  }
+};
+
 exports.getInventoryAnalysis = async (req, res) => {
   try {
     const { warehouse } = req.query;
     
     // Query to get inventory analysis grouped by form with warehouse information
-    let sqlQuery2 = `
-      SELECT 
-        prd_frm,
-        SUM(CAST(prd_ohd_mat_val AS DECIMAL(15,2))) as total_value,
-        SUM(CAST(prd_ohd_qty AS INTEGER)) as total_pieces,
-        COUNT(*) as record_count,
-        STRING_AGG(DISTINCT prd_whs, ', ') as warehouses
-      FROM intprd_rec 
-      WHERE prd_invt_sts = 'S'
-    `;
+    // let sqlQuery2 = `
+    //   SELECT 
+    //     prd_frm,
+    //     SUM(CAST(prd_ohd_mat_val AS DECIMAL(15,2))) as total_value,
+    //     SUM(CAST(prd_ohd_qty AS INTEGER)) as total_pieces,
+    //     COUNT(*) as record_count,
+    //     STRING_AGG(DISTINCT prd_whs, ', ') as warehouses
+    //   FROM intprd_rec 
+    //   WHERE prd_invt_sts = 'S'
+    // `;
 
     let sqlQuery = `
       SELECT
         prd_frm,
         sum(prd_ohd_wgt) as "Total Weight",
-        (sum(prd_ohd_mat_val) + sum(prd_ohd_wgt*(CASE WHEN acp_tot_wgt = 0 OR acp_tot_wgt IS NULL THEN 0 ELSE acp_tot_mat_val/acp_tot_wgt END))) as "Cost Pool Total", STRING_AGG(DISTINCT prd_whs, ', ') as warehouses
+        round(sum(case when (prd_ohd_mat_val) = 0 then (prd_ohd_qty*(acp_tot_mat_val/nullif(acp_tot_wgt,0))) else (prd_ohd_mat_val) end),2) as "Cost Pool Total", STRING_AGG(DISTINCT prd_whs, ', ') as warehouses
         FROM intprd_rec prd
         LEFT JOIN intacp_rec ACP ON (prd_avg_cst_pool =  acp_avg_cst_pool )
         where prd_invt_sts = 'S'
@@ -1529,7 +1621,7 @@ exports.GetTransactionsByTeam = async (req, res) => {
     // Query to get transactions with optional bundle data
     const query = `
       SELECT 
-        t.transaction_id,
+        t.transaction_id as id,
         t.tag_id,
         t.form,
         t.type,
@@ -1738,6 +1830,64 @@ exports.getAssignedLocations = async (req, res) => {
   }
 };
 
+exports.getLocationSummary = async (req, res) => {
+  try {
+    const query = `
+      WITH location_sections AS (
+        SELECT 
+          l.location_id,
+          l.location_desc,
+          COUNT(DISTINCT s.section_id) as total_sections,
+          COUNT(DISTINCT al.sub_location_id) as assigned_sections,
+          COUNT(DISTINCT CASE WHEN al.status = 'Count Completed' THEN al.sub_location_id END) as count_completed,
+          COUNT(DISTINCT CASE WHEN al.status = 'Completed' THEN al.sub_location_id END) as completed,
+          COUNT(DISTINCT CASE WHEN al.status = 'Assigned Checker' THEN al.sub_location_id END) as assigned_checker,
+          COUNT(DISTINCT CASE WHEN al.status = 'In Progress' THEN al.sub_location_id END) as in_progress,
+          COUNT(DISTINCT CASE WHEN al.status IS NULL OR al.status = 'No Status' THEN al.sub_location_id END) as no_status,
+          STRING_AGG(DISTINCT t.team_name, ', ') as team_names,
+          STRING_AGG(DISTINCT su.user_name, ', ') as user_names,
+          MIN(al.assigned_at) as assigned_at,
+          MAX(al.competed_at) as competed_at
+        FROM st_locations l
+        LEFT JOIN st_sections s ON l.location_id = s.location_id
+        LEFT JOIN assigned_locations al ON s.section_id = al.sub_location_id AND l.location_id = al.location_id
+        LEFT JOIN teams t ON al.team_id = t.team_id
+        LEFT JOIN team_members tm ON t.team_id = tm.team_id
+        LEFT JOIN st_users su ON tm.user_id = su.user_id
+        GROUP BY l.location_id, l.location_desc
+      )
+      SELECT 
+        location_id,
+        location_desc as location_name,
+        total_sections,
+        assigned_sections,
+        count_completed,
+        completed,
+        assigned_checker,
+        in_progress,
+        no_status,
+        team_names as team_name,
+        user_names,
+        assigned_at,
+        competed_at,
+        CASE 
+          WHEN (count_completed = total_sections OR completed = total_sections OR assigned_checker = total_sections) 
+            AND total_sections > 0 THEN 'Count Completed'
+          ELSE 'In Progress'
+        END as overall_status
+      FROM location_sections
+      WHERE total_sections > 0
+      ORDER BY location_id
+    `;
+    
+    const result = await pool.query(query);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching location summary:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 exports.getSectionsByLocation = async (req, res) => {
   const { location_id } = req.query;
 
@@ -1835,6 +1985,7 @@ exports.getSectionByLocation = async (req, res) => {
 
 exports.getTransactionsByLocationAndSection = async (req, res) => {
   const { location_id, section_id, usr_role } = req.query;
+  console.log('Review transactions request:', { location_id, section_id, usr_role, usr_role_type: typeof usr_role });
 
   if (!location_id || !section_id) {
     return res.status(400).json({ 
@@ -1843,7 +1994,19 @@ exports.getTransactionsByLocationAndSection = async (req, res) => {
   }
 
   try {
-    if (usr_role == 'checker'){
+    // First, let's check what transactions exist for this location/section
+    const debugQuery = `
+      SELECT t.role, COUNT(*) as count
+      FROM transactions t
+      JOIN st_sections ss ON t.section_id = ss.section_id
+      JOIN st_locations sl ON t.location_id = sl.location_id
+      WHERE sl.location_id = $1 AND ss.section_id = $2
+      GROUP BY t.role
+    `;
+    const debugResult = await pool.query(debugQuery, [location_id, section_id]);
+    console.log('Debug - Available transactions by role:', debugResult.rows);
+
+    if (usr_role === 'checker'){
       const query = `
       SELECT 
       t.tag_id,
@@ -1855,6 +2018,8 @@ exports.getTransactionsByLocationAndSection = async (req, res) => {
       t.ext_finish,
       t.width,
       t.length,
+      t.mill,
+      t.heat,
       t.remarks,
       t.qty,
       t.checker_count,
@@ -1883,12 +2048,14 @@ exports.getTransactionsByLocationAndSection = async (req, res) => {
   AND t.role = 'Checker'
   GROUP BY 
       t.tag_id, t.form, t.type, t.grade, t.size, t.finish, t.ext_finish, 
-      t.width, t.length, t.remarks, t.qty, t.checker_count, t.count_type, t.role,
+      t.width, t.length, t.mill, t.heat, t.remarks, t.qty, t.checker_count, t.count_type, t.role,
       su.full_name, t.created_at, t2.team_name
   ORDER BY t.created_at DESC;
     `;
 
     const { rows } = await pool.query(query, [location_id, section_id]);
+    
+    console.log('Checker query result count:', rows.length);
     
     if (rows.length === 0) {
       return res.status(404).json({ 
@@ -1899,6 +2066,44 @@ exports.getTransactionsByLocationAndSection = async (req, res) => {
     res.json(rows);
     }
     else{
+      console.log('Executing counter query for usr_role:', usr_role);
+      
+      // Let's first check what the raw counter transactions look like
+      const rawCounterQuery = `
+        SELECT t.*, ss.section_id as ss_section_id, sl.location_id as sl_location_id
+        FROM transactions t
+        JOIN st_sections ss ON t.section_id = ss.section_id
+        JOIN st_locations sl ON t.location_id = sl.location_id
+        WHERE sl.location_id = $1 
+        AND ss.section_id = $2
+        AND t.role = 'Counter'
+      `;
+      const rawResult = await pool.query(rawCounterQuery, [location_id, section_id]);
+      console.log('Raw counter transactions:', rawResult.rows.length, 'rows');
+      if (rawResult.rows.length > 0) {
+        console.log('Sample raw counter transaction:', rawResult.rows[0]);
+        
+        // Check for missing user or team references
+        const missingRefsQuery = `
+          SELECT 
+            t.transaction_id,
+            t.counted_by,
+            t.team_id,
+            CASE WHEN su.user_id IS NULL THEN 'MISSING USER' ELSE 'USER EXISTS' END as user_status,
+            CASE WHEN t2.team_id IS NULL THEN 'MISSING TEAM' ELSE 'TEAM EXISTS' END as team_status
+          FROM transactions t
+          JOIN st_sections ss ON t.section_id = ss.section_id
+          JOIN st_locations sl ON t.location_id = sl.location_id
+          LEFT JOIN st_users su ON t.counted_by = su.user_id
+          LEFT JOIN teams t2 ON t.team_id = t2.team_id
+          WHERE sl.location_id = $1 
+          AND ss.section_id = $2
+          AND t.role = 'Counter'
+        `;
+        const missingRefsResult = await pool.query(missingRefsQuery, [location_id, section_id]);
+        console.log('Missing references check:', missingRefsResult.rows);
+      }
+      
       const query = `
       SELECT 
       t.tag_id,
@@ -1910,6 +2115,8 @@ exports.getTransactionsByLocationAndSection = async (req, res) => {
       t.ext_finish,
       t.width,
       t.length,
+      t.mill,
+      t.heat,
       t.remarks,
       t.qty,
       t.checker_count,
@@ -1938,12 +2145,15 @@ exports.getTransactionsByLocationAndSection = async (req, res) => {
   AND t.role = 'Counter'
   GROUP BY 
       t.tag_id, t.form, t.type, t.grade, t.size, t.finish, t.ext_finish, 
-      t.width, t.length, t.remarks, t.qty, t.checker_count, t.count_type, t.role,
+      t.width, t.length, t.mill, t.heat, t.remarks, t.qty, t.checker_count, t.count_type, t.role,
       su.full_name, t.created_at, t2.team_name
   ORDER BY t.created_at DESC;
     `;
 
+    console.log('Executing full counter query with parameters:', [location_id, section_id]);
     const { rows } = await pool.query(query, [location_id, section_id]);
+    
+    console.log('Counter query result count:', rows.length);
     
     if (rows.length === 0) {
       return res.status(404).json({ 
@@ -2016,9 +2226,15 @@ exports.TransactionForChecker = async (req, res) =>{
   
   try {
     const result = await pool.query(`
-      SELECT * FROM transactions 
-      WHERE location_id = $1 AND section_id = $2 AND team_id = $3 AND role = 'Counter'
-      ORDER BY tag_id ASC
+      SELECT 
+        t.*,
+        l.location_desc,
+        s.section_desc
+      FROM transactions t
+      LEFT JOIN st_locations l ON t.location_id = l.location_id
+      LEFT JOIN st_sections s ON t.section_id = s.section_id
+      WHERE t.location_id = $1 AND t.section_id = $2 AND t.team_id = $3 AND t.role = 'Counter'
+      ORDER BY t.tag_id ASC
     `, [location_id, section_id, team_id]);
     
     res.json(result.rows);
@@ -2109,9 +2325,15 @@ exports.TransactionForCheck = async (req, res) =>{
   
   try {
     const result = await pool.query(`
-      SELECT * FROM transactions 
-      WHERE location_id = $1 AND section_id = $2 AND team_id = $3 AND role = 'Checker'
-      ORDER BY created_at DESC
+      SELECT 
+        t.*,
+        l.location_desc,
+        s.section_desc
+      FROM transactions t
+      LEFT JOIN st_locations l ON t.location_id = l.location_id
+      LEFT JOIN st_sections s ON t.section_id = s.section_id
+      WHERE t.location_id = $1 AND t.section_id = $2 AND t.team_id = $3 AND t.role = 'Checker'
+      ORDER BY t.created_at DESC
     `, [location_id, section_id, team_id]);
     
     console.log('TransactionForCheck found transactions:', result.rows.length);
@@ -2737,6 +2959,126 @@ exports.getCheckerActivityLogs = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch checker activity logs',
+      error: error.message
+    });
+  }
+};
+
+// Check dimension segment for form, grade, size, finish combination
+exports.checkDimensionSegment = async (req, res) => {
+  try {
+    const { prm_frm, prm_grd, prm_size, prm_fnsh } = req.query;
+
+    // Validate required parameters
+    if (!prm_frm || !prm_grd || !prm_size || !prm_fnsh) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required parameters: prm_frm, prm_grd, prm_size, prm_fnsh'
+      });
+    }
+
+    console.log('Checking dimension segment for:', { prm_frm, prm_grd, prm_size, prm_fnsh });
+
+    const sqlQuery = `
+      SELECT prm_dim_seg 
+      FROM inrprm_rec 
+      WHERE prm_frm = '${prm_frm}' 
+        AND prm_grd = '${prm_grd}' 
+        AND prm_size = '${prm_size}' 
+        AND prm_fnsh = '${prm_fnsh}'
+    `;
+
+    const response = await axios.post(
+      process.env.OAUTH_API_URL,
+      { sql: sqlQuery },
+      {
+        headers: {
+          Authorization: `Bearer ${req.accessToken}`,
+          "Content-Type": "application/json",
+          Database: process.env.OAUTH_DATABASE,
+        },
+      }
+    );
+
+    console.log('Full API Response:', {
+      status: response.status,
+      statusText: response.statusText,
+      data: response.data,
+      dataType: typeof response.data,
+      isArray: Array.isArray(response.data),
+      dataLength: Array.isArray(response.data) ? response.data.length : 'N/A'
+    });
+
+    console.log('Raw API Response Data:', JSON.stringify(response.data, null, 2));
+
+    // Check if response.data exists and has the expected structure
+    if (!response.data) {
+      console.log('No response.data found');
+      return res.json({
+        success: true,
+        prm_dim_seg: null,
+        message: 'No response data received'
+      });
+    }
+
+    // The API response has the structure: { Data: [...], Time: '7ms' }
+    const dataArray = response.data.Data;
+    
+    if (!dataArray || !Array.isArray(dataArray)) {
+      console.log('Response.data.Data is not an array, type:', typeof dataArray);
+      return res.json({
+        success: true,
+        prm_dim_seg: null,
+        message: 'Response data.Data is not an array'
+      });
+    }
+
+    if (dataArray.length === 0) {
+      console.log('Response.data.Data array is empty');
+      return res.json({
+        success: true,
+        prm_dim_seg: null,
+        message: 'No matching record found'
+      });
+    }
+
+    const firstRecord = dataArray[0];
+    console.log('First record:', JSON.stringify(firstRecord, null, 2));
+    console.log('First record keys:', Object.keys(firstRecord));
+
+    if (!firstRecord) {
+      console.log('First record is null/undefined');
+      return res.json({
+        success: true,
+        prm_dim_seg: null,
+        message: 'First record is null'
+      });
+    }
+
+    if (!firstRecord.prm_dim_seg) {
+      console.log('prm_dim_seg property not found in first record');
+      console.log('Available properties:', Object.keys(firstRecord));
+      return res.json({
+        success: true,
+        prm_dim_seg: null,
+        message: 'No dimension segment found in record'
+      });
+    }
+
+    const prm_dim_seg = firstRecord.prm_dim_seg.trim(); // Trim whitespace since we see "L  " with spaces
+    console.log('Found dimension segment:', prm_dim_seg);
+
+    res.json({
+      success: true,
+      prm_dim_seg: prm_dim_seg,
+      isLengthBased: prm_dim_seg === 'L'
+    });
+
+  } catch (error) {
+    console.error('Error checking dimension segment:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to check dimension segment',
       error: error.message
     });
   }

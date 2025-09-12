@@ -446,10 +446,10 @@ const CountReviewPage = () => {
 
   const fetchTransactions = async (sectionId: number) => {
     try {
-      const response = await servicesAPI.getReviewTransactions({
-        location_id: location_id?.toString() || '',
-        section_id: sectionId.toString()
-      });
+      const response = await servicesAPI.getReviewTransactionsForCounter(
+        location_id?.toString() || '',
+        sectionId.toString()
+      );
       setTransactions(prev => ({
         ...prev,
         [sectionId]: response.data

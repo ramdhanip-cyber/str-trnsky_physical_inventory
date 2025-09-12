@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { 
   Box, Typography, Table, TableBody, TableCell, TableContainer, 
   TableHead, TableRow, Paper, CircularProgress, IconButton,
-  Collapse, Chip, Button, Alert, Badge, Avatar, DialogContent, DialogTitle, Dialog, DialogActions
+  Collapse, Chip, Button, Alert, Badge, Avatar
 } from "@mui/material";
 import { ArrowBack, Refresh, Edit, Check, Add, CheckCircle, Close } from "@mui/icons-material";
 import { useNavigate, useParams } from "react-router-dom";
@@ -26,6 +26,8 @@ interface Transaction {
   checker_count?: number;
   location_id: number;
   section_id: number;
+  location_desc?: string;
+  section_desc?: string;
   verified?: boolean;
   remarks?: string;
   mill?: string;
@@ -47,33 +49,6 @@ interface Bundle {
   bundle_count: number;
 }
 
-interface NewLineData {
-  tag_id: number;
-  form: string;
-  grade: string;
-  size: string;
-  finish: string | null;
-  ext_finish: string | null;
-  width: number | null;
-  length: number | null;
-  mill: string | null;
-  heat: string | null;
-  remarks: string | null;
-  ad_cmts: string | null;
-  count_type: 'bundle' | 'piece';
-  qty: number;
-  counted_by: number;
-  team_id: number;
-  location_id: number;
-  section_id: number;
-  role: string | null;
-  verified: boolean;
-  bundles?: Array<{
-    tag_id: number;
-    num_of_bundle: number;
-    bundle_count: number;
-  }>;
-}
 
 const Checker: React.FC = () => {
   const { location_id, section_id, team_id } = useParams();
@@ -91,9 +66,11 @@ const Checker: React.FC = () => {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [checkerTransactions, setCheckerTransactions] = useState<Transaction[]>([]);
   const [checkerBundles, setCheckerBundles] = useState<Record<number, Bundle[]>>({});
-  const [showCheckerUpdates, setShowCheckerUpdates] = useState(false);
   const [addLineDialogOpen, setAddLineDialogOpen] = useState(false);
   const [newlyAddedTransactions, setNewlyAddedTransactions] = useState<Set<number>>(new Set());
+  const [submitting, setSubmitting] = useState(false);
+  const [verifyingTransactions, setVerifyingTransactions] = useState<Set<number>>(new Set());
+  const [unverifyingTransactions, setUnverifyingTransactions] = useState<Set<number>>(new Set());
 
   // Function to identify new line items
   const isNewLineItem = (transactionId: number): boolean => {
@@ -214,7 +191,17 @@ const Checker: React.FC = () => {
   };
 
   const handleEdit = (transaction: Transaction) => {
-    setEditingTransaction({...transaction});
+    // Initialize checker_count with the original qty if not already set
+    const transactionWithDefaultCheckerCount = {
+      ...transaction,
+      checker_count: transaction.checker_count ?? transaction.qty
+    };
+    console.log('🔍 Editing transaction:', {
+      original_qty: transaction.qty,
+      existing_checker_count: transaction.checker_count,
+      final_checker_count: transactionWithDefaultCheckerCount.checker_count
+    });
+    setEditingTransaction(transactionWithDefaultCheckerCount);
     setEditingBundles(bundles[transaction.transaction_id] || []);
     setIsEditing(true);
   };
@@ -222,6 +209,9 @@ const Checker: React.FC = () => {
 
 
   const unverifyTransaction = async (transactionId: number) => {
+    // Add to unverifying set
+    setUnverifyingTransactions(prev => new Set(prev).add(transactionId));
+    
     try {
       const selectedUser = localStorage.getItem('User ID');
       const selectedRole = localStorage.getItem('Selected Role');
@@ -275,10 +265,20 @@ const Checker: React.FC = () => {
       
       setTimeout(() => setSuccessMessage(null), 3000);
       
+      // Refresh data from server to ensure consistency
+      await fetchData();
+      
       return true;
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Unverification failed');
       return false;
+    } finally {
+      // Remove from unverifying set
+      setUnverifyingTransactions(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(transactionId);
+        return newSet;
+      });
     }
   };
 
@@ -391,6 +391,9 @@ const Checker: React.FC = () => {
   };
 
   const handleQuickVerify = async (transactionId: number) => {
+    // Add to verifying set
+    setVerifyingTransactions(prev => new Set(prev).add(transactionId));
+    
     try {
       // Find the transaction to verify
       const transaction = transactions.find(t => t.transaction_id === transactionId);
@@ -465,11 +468,25 @@ const Checker: React.FC = () => {
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to quick verify transaction');
+    } finally {
+      // Remove from verifying set
+      setVerifyingTransactions(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(transactionId);
+        return newSet;
+      });
     }
   };
 
   const handleFieldChange = (field: keyof Transaction, value: string | number) => {
     if (!editingTransaction) return;
+    
+    console.log('🔧 Field change:', {
+      field,
+      value,
+      current_checker_count: editingTransaction.checker_count,
+      current_qty: editingTransaction.qty
+    });
     
     setEditingTransaction({
       ...editingTransaction,
@@ -523,9 +540,9 @@ const Checker: React.FC = () => {
 
 
 
-  const handleAddNewLine = async (newLineData: NewLineData) => {
+  const handleAddNewLine = async (payload: any) => {
     try {
-      const response = await servicesAPI.addLineItem(newLineData);
+      const response = await servicesAPI.addLineItem(payload);
       const result = response.data;
       
       if (result.success) {
@@ -546,174 +563,46 @@ const Checker: React.FC = () => {
     }
   };
 
-  const CheckerUpdatesDialog: React.FC<{
-    open: boolean;
-    onClose: () => void;
-    transactions: Transaction[];
-    bundles: Record<number, Bundle[]>;
-    locationId: string | undefined;
-    sectionId: string | undefined;
-    navigate: ReturnType<typeof useNavigate>;
-    isNewLineItem: (transactionId: number) => boolean;
-  }> = ({ open, onClose, transactions, bundles, locationId, sectionId, navigate, isNewLineItem }) => {
-    const [submitting, setSubmitting] = useState(false);
+  // Check if all counter transactions are verified
+  const areAllCounterTransactionsVerified = () => {
+    const counterTransactions = transactions.filter(t => t.role === 'Counter');
+    const verifiedCount = counterTransactions.filter(t => t.verified).length;
+    const totalCount = counterTransactions.length;
+    
+    console.log('🔍 Verification check:', {
+      totalCounterTransactions: totalCount,
+      verifiedCounterTransactions: verifiedCount,
+      allVerified: totalCount > 0 && verifiedCount === totalCount
+    });
+    
+    return totalCount > 0 && verifiedCount === totalCount;
+  };
 
-    const handleSubmitAll = async () => {
-      if (!locationId || !sectionId) return;
-      setSubmitting(true);
-      try {
-        const response = await servicesAPI.updateCheckerStatus(locationId, sectionId);
-        if (response.data.success) {
-          setSuccessMessage('Transactions submitted successfully! Location marked as completed.');
-          setTimeout(() => setSuccessMessage(null), 3000);
-          navigate('/checker');
-        } else {
-          throw new Error(response.data.message || 'Failed to submit transactions');
-        }
-      } catch (error) {
-        console.error('Failed to submit:', error);
-        setError('Failed to submit transactions. Please try again.');
-      } finally {
-        setSubmitting(false);
+  const handleSubmitAll = async () => {
+    if (!location_id || !section_id) return;
+    
+    // Check if all counter transactions are verified before allowing submission
+    if (!areAllCounterTransactionsVerified()) {
+      setError('All counter transactions must be verified before submitting.');
+      return;
+    }
+    
+    setSubmitting(true);
+    try {
+      const response = await servicesAPI.updateCheckerStatus(location_id, section_id);
+      if (response.data.success) {
+        setSuccessMessage('Transactions submitted successfully! Location marked as completed.');
+        setTimeout(() => setSuccessMessage(null), 3000);
+        navigate('/checker');
+      } else {
+        throw new Error(response.data.message || 'Failed to submit transactions');
       }
-    };
-
-    return (
-      <Dialog open={open} onClose={onClose} maxWidth="xl" fullWidth>
-        <DialogTitle>
-          Checker Updates
-          <Typography variant="subtitle2">
-            {transactions.length} items updated by checker
-          </Typography>
-        </DialogTitle>
-        <DialogContent>
-          <TableContainer>
-            <Table stickyHeader size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Tag ID</TableCell>
-                  <TableCell>Form</TableCell>
-                  <TableCell>Grade</TableCell>
-                  <TableCell>Size</TableCell>
-                  <TableCell>Width</TableCell>
-                  <TableCell>Length</TableCell>
-                  <TableCell>Finish</TableCell>
-                  <TableCell>Ext. Finish</TableCell>
-                  <TableCell>Type</TableCell>
-                  <TableCell>Quality</TableCell>
-                  <TableCell>Comments</TableCell>
-                  <TableCell>Count Type</TableCell>
-                  <TableCell align="right">Checker Count</TableCell>
-                  <TableCell>Physical Inventory</TableCell>
-                  <TableCell>Section ID</TableCell>
-                  <TableCell>Updated At</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {transactions.map((transaction, idx) => {
-                  const isBundle = transaction.count_type === 'bundle';
-                  const transactionBundles = bundles[transaction.transaction_id] || [];
-                  const updatedAt = (transaction as Transaction & { updated_at?: string }).updated_at;
-                  return (
-                    <React.Fragment key={transaction.transaction_id}>
-                      <TableRow sx={{ backgroundColor: idx % 2 === 0 ? '#fafbfc' : 'white' }}>
-                        <TableCell>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            {transaction.tag_id}
-                            {isNewLineItem(transaction.transaction_id) && (
-                              <Chip 
-                                label="NEW" 
-                                size="small" 
-                                color="success" 
-                                variant="filled"
-                                sx={{ fontSize: '0.7rem', height: '20px' }}
-                              />
-                            )}
-                          </Box>
-                        </TableCell>
-                        <TableCell>{transaction.form}</TableCell>
-                        <TableCell>{transaction.grade}</TableCell>
-                        <TableCell>{transaction.size}</TableCell>
-                        <TableCell>{transaction.width}</TableCell>
-                        <TableCell>{transaction.length}</TableCell>
-                        <TableCell>{transaction.finish}</TableCell>
-                        <TableCell>{transaction.ext_finish}</TableCell>
-                        <TableCell>{transaction.type || '-'}</TableCell>
-                        <TableCell>{transaction.remarks || '-'}</TableCell>
-                        <TableCell>{transaction.ad_cmts || '-'}</TableCell>
-                        <TableCell>
-                          <Chip label={transaction.count_type} size="small" color={isBundle ? 'primary' : 'default'} />
-                        </TableCell>
-                        <TableCell align="right">
-                          {transaction.qty}
-                        </TableCell>
-                        {/* <TableCell align="right">{transaction.checker_count ?? '-'}</TableCell> */}
-                        {/* <TableCell>
-                          <Chip label={transaction.verified ? 'Verified' : 'Not Verified'} size="small" color={transaction.verified ? 'success' : 'default'} />
-                        </TableCell> */}
-                        <TableCell>{transaction.location_id}</TableCell>
-                        <TableCell>{transaction.section_id}</TableCell>
-                        {/* <TableCell>{createdAt ? new Date(createdAt).toLocaleString() : '-'}</TableCell> */}
-                        <TableCell>{updatedAt ? new Date(updatedAt).toLocaleString() : '-'}</TableCell>
-                      </TableRow>
-                      {isBundle && transactionBundles.length > 0 && (
-                        <TableRow>
-                          <TableCell colSpan={19} sx={{ p: 0 }}>
-                            <Box sx={{ pl: 4, py: 1, bgcolor: '#f9f9f9' }}>
-                              <Typography variant="subtitle2" gutterBottom>
-                                Bundle Details
-                              </Typography>
-                              <Table size="small">
-                                <TableHead>
-                                  <TableRow>
-                                    <TableCell>Bundle #</TableCell>
-                                    <TableCell>Count</TableCell>
-                                    <TableCell>Total</TableCell>
-                                  </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                  {transactionBundles.map((bundle, index) => (
-                                    <TableRow key={index}>
-                                      <TableCell>{bundle.num_of_bundle}</TableCell>
-                                      <TableCell>{bundle.bundle_count}</TableCell>
-                                      <TableCell>
-                                        {bundle.num_of_bundle * bundle.bundle_count}
-                                      </TableCell>
-                                    </TableRow>
-                                  ))}
-                                </TableBody>
-                              </Table>
-                            </Box>
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </DialogContent>
-        <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
-          <Button 
-            onClick={onClose}
-            variant="outlined"
-            sx={{ mr: 1 }}
-          >
-            Close
-          </Button>
-          <Button
-            onClick={handleSubmitAll}
-            variant="contained"
-            color="primary"
-            startIcon={<CheckCircle />}
-            disabled={submitting}
-          >
-            {submitting ? 'Submitting...' : 'Submit Transaction'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-    );
+    } catch (error) {
+      console.error('Failed to submit:', error);
+      setError('Failed to submit transactions. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -842,8 +731,13 @@ const Checker: React.FC = () => {
                             onClick={() => unverifyTransaction(transaction.transaction_id)}
                             color="error"
                             title="Unverify Transaction"
+                            disabled={unverifyingTransactions.has(transaction.transaction_id) || verifyingTransactions.has(transaction.transaction_id)}
                           >
-                            <Close fontSize="small" />
+                            {unverifyingTransactions.has(transaction.transaction_id) ? (
+                              <CircularProgress size={16} />
+                            ) : (
+                              <Close fontSize="small" />
+                            )}
                           </IconButton>
                         </Box>
                       ) : (
@@ -853,8 +747,13 @@ const Checker: React.FC = () => {
                             onClick={() => handleQuickVerify(transaction.transaction_id)}
                             color="success"
                             title="Quick Verify (No Edit Required)"
+                            disabled={verifyingTransactions.has(transaction.transaction_id) || unverifyingTransactions.has(transaction.transaction_id)}
                           >
-                            <Check fontSize="small" />
+                            {verifyingTransactions.has(transaction.transaction_id) ? (
+                              <CircularProgress size={16} />
+                            ) : (
+                              <Check fontSize="small" />
+                            )}
                           </IconButton>
                         </Box>
                       )}
@@ -910,6 +809,7 @@ const Checker: React.FC = () => {
                           onClick={() => handleEdit(transaction)}
                           color="primary"
                           title="Edit & Verify (Check Required)"
+                          disabled={verifyingTransactions.has(transaction.transaction_id) || unverifyingTransactions.has(transaction.transaction_id)}
                         >
                           <Edit fontSize="small" />
                         </IconButton>
@@ -985,34 +885,138 @@ const Checker: React.FC = () => {
         isSaving={isSaving}
       />
 
-      <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
-        <Button
-          variant="outlined"
-          onClick={() => setShowCheckerUpdates(true)}
-          disabled={checkerTransactions.length === 0}
-          sx={{ ml: 2 }}
-        >
-          Show Checker Updates ({checkerTransactions.length})
-        </Button>
-      </Box>
-
-      {/* Add the dialog */}
-      <CheckerUpdatesDialog
-        open={showCheckerUpdates}
-        onClose={() => setShowCheckerUpdates(false)}
-        transactions={checkerTransactions}
-        bundles={checkerBundles}
-        locationId={location_id}
-        sectionId={section_id}
-        navigate={navigate}
-        isNewLineItem={isNewLineItem}
-      />
+      {/* Checker Transactions Table */}
+      {checkerTransactions.length > 0 && (
+        <Box sx={{ mt: 4 }}>
+          <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+            Checker Updates ({checkerTransactions.length} items)
+          </Typography>
+          <TableContainer component={Paper} sx={{ maxHeight: 600 }}>
+            <Table stickyHeader size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Tag ID</TableCell>
+                  <TableCell>Form</TableCell>
+                  <TableCell>Grade</TableCell>
+                  <TableCell>Size</TableCell>
+                  <TableCell>Width</TableCell>
+                  <TableCell>Length</TableCell>
+                  <TableCell>Finish</TableCell>
+                  <TableCell>Ext. Finish</TableCell>
+                  <TableCell>Type</TableCell>
+                  <TableCell>Quality</TableCell>
+                  <TableCell>Comments</TableCell>
+                  <TableCell>Count Type</TableCell>
+                  <TableCell align="right">Checker Count</TableCell>
+                  <TableCell>Physical Inventory</TableCell>
+                  <TableCell>Section ID</TableCell>
+                  <TableCell>Updated At</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {checkerTransactions.map((transaction, idx) => {
+                  const isBundle = transaction.count_type === 'bundle';
+                  const transactionBundles = checkerBundles[transaction.transaction_id] || [];
+                  const updatedAt = (transaction as Transaction & { updated_at?: string }).updated_at;
+                  return (
+                    <React.Fragment key={transaction.transaction_id}>
+                      <TableRow sx={{ backgroundColor: idx % 2 === 0 ? '#fafbfc' : 'white' }}>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            {transaction.tag_id}
+                            {isNewLineItem(transaction.transaction_id) && (
+                              <Chip 
+                                label="NEW" 
+                                size="small" 
+                                color="success" 
+                                variant="filled"
+                                sx={{ fontSize: '0.7rem', height: '20px' }}
+                              />
+                            )}
+                          </Box>
+                        </TableCell>
+                        <TableCell>{transaction.form}</TableCell>
+                        <TableCell>{transaction.grade}</TableCell>
+                        <TableCell>{transaction.size}</TableCell>
+                        <TableCell>{transaction.width}</TableCell>
+                        <TableCell>{transaction.length}</TableCell>
+                        <TableCell>{transaction.finish}</TableCell>
+                        <TableCell>{transaction.ext_finish}</TableCell>
+                        <TableCell>{transaction.type || '-'}</TableCell>
+                        <TableCell>{transaction.remarks || '-'}</TableCell>
+                        <TableCell>{transaction.ad_cmts || '-'}</TableCell>
+                        <TableCell>
+                          <Chip label={transaction.count_type} size="small" color={isBundle ? 'primary' : 'default'} />
+                        </TableCell>
+                        <TableCell align="right">
+                          {transaction.qty}
+                        </TableCell>
+                        <TableCell>{transaction.location_desc || transaction.location_id}</TableCell>
+                        <TableCell>{transaction.section_desc || transaction.section_id}</TableCell>
+                        <TableCell>{updatedAt ? new Date(updatedAt).toLocaleString() : '-'}</TableCell>
+                      </TableRow>
+                      {isBundle && transactionBundles.length > 0 && (
+                        <TableRow>
+                          <TableCell colSpan={16} sx={{ p: 0 }}>
+                            <Box sx={{ pl: 4, py: 1, bgcolor: '#f9f9f9' }}>
+                              <Typography variant="subtitle2" gutterBottom>
+                                Bundle Details
+                              </Typography>
+                              <Table size="small">
+                                <TableHead>
+                                  <TableRow>
+                                    <TableCell>Bundle #</TableCell>
+                                    <TableCell>Count</TableCell>
+                                    <TableCell>Total</TableCell>
+                                  </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                  {transactionBundles.map((bundle, index) => (
+                                    <TableRow key={index}>
+                                      <TableCell>{bundle.num_of_bundle}</TableCell>
+                                      <TableCell>{bundle.bundle_count}</TableCell>
+                                      <TableCell>
+                                        {bundle.num_of_bundle * bundle.bundle_count}
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </Box>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          
+          {/* Submit Button */}
+          <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            {!areAllCounterTransactionsVerified() && (
+              <Typography variant="body2" color="warning.main" sx={{ fontWeight: 500 }}>
+                ⚠️ All counter transactions must be verified before submitting
+              </Typography>
+            )}
+            <Button
+              onClick={handleSubmitAll}
+              variant="contained"
+              color="primary"
+              startIcon={<CheckCircle />}
+              disabled={submitting || !areAllCounterTransactionsVerified()}
+            >
+              {submitting ? 'Submitting...' : 'Submit All Transactions'}
+            </Button>
+          </Box>
+        </Box>
+      )}
       <AddLineItemDialog
         open={addLineDialogOpen}
         onClose={() => setAddLineDialogOpen(false)}
         onSubmit={handleAddNewLine}
         locationId={location_id || ''}
-        sectionId={section_id || ''}
         teamId={team_id || ''}
       />
     </Box>

@@ -65,11 +65,12 @@ interface Location {
     prd_frm: string;
     total_count: number;
     total_amount: number;
+    total_weight: number;
   }>;
   coverage_data?: {
-    count_coverage: number;
+    weight_coverage: number;
     value_coverage: number;
-    total_forms_count: number;
+    total_forms_weight: number;
     total_forms_value: number;
   };
 }
@@ -85,10 +86,16 @@ const LocationManagement: React.FC = () => {
   const navigate = useNavigate();
   const [openDialog, setOpenDialog] = useState<boolean>(false);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [warehouses, setWarehouses] = useState<string[]>([]);
+  const [warehousesLoading, setWarehousesLoading] = useState<boolean>(false);
 
   const [locations, setLocations] = useState<Location[]>([]);
   const [filteredLocations, setFilteredLocations] = useState<Location[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string>("");
+
+  // Separate state for create location dialog
+  const [dialogBranch, setDialogBranch] = useState<string>("");
+  const [dialogWarehouse, setDialogWarehouse] = useState<string>("");
 
   const [locationDesc, setLocationDesc] = useState<string>("");
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -101,15 +108,27 @@ const LocationManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [refreshing, setRefreshing] = useState<boolean>(false);
 
-  // Fetch total form values across all locations for coverage calculation
-  const fetchTotalFormValues = async () => {
+  // Fetch total form values and overall weight/amount for a specific location's branch and warehouse
+  const fetchTotalFormValues = async (branch: string, warehouse: string) => {
     try {
-      const response = await servicesAPI.getTotalFormValues();
-      console.log('Total form values response:', response.data);
-      return response.data.success ? response.data.data : {};
+      const [formValuesResponse, overallResponse] = await Promise.all([
+        servicesAPI.getTotalFormValues(),
+        servicesAPI.getOverallWeightAndAmount(branch, warehouse)
+      ]);
+      
+      console.log('Total form values response:', formValuesResponse.data);
+      console.log('Overall weight and amount response for', branch, warehouse, ':', overallResponse.data);
+      
+      return {
+        formValues: formValuesResponse.data.success ? formValuesResponse.data.data : {},
+        overall: overallResponse.data.success ? overallResponse.data.data : { overall_weight: 0, overall_amount: 0 }
+      };
     } catch (error) {
       console.error("Error fetching total form values:", error);
-      return {};
+      return {
+        formValues: {},
+        overall: { overall_weight: 0, overall_amount: 0 }
+      };
     }
   };
 
@@ -127,6 +146,67 @@ const LocationManagement: React.FC = () => {
     fetchBranches();
   }, []);
 
+  // Fetch warehouses when branch changes
+  useEffect(() => {
+    const fetchWarehouses = async () => {
+      if (dialogBranch && dialogBranch.trim() !== '') {
+        try {
+          setWarehousesLoading(true);
+          console.log('Fetching warehouses for branch:', dialogBranch);
+          const response = await servicesAPI.getWarehouses(dialogBranch);
+          console.log('Warehouses response:', response);
+          
+          if (response && response.data) {
+            const warehouseData = response.data.Data || response.data || [];
+            console.log('Setting warehouses:', warehouseData);
+            // Extract warehouse names from the objects and ensure they're strings
+            const warehouseNames = Array.isArray(warehouseData) 
+              ? warehouseData
+                  .map(item => {
+                    if (typeof item === 'string') return item;
+                    if (item && typeof item === 'object' && item.whs_whs) return item.whs_whs;
+                    return null;
+                  })
+                  .filter(Boolean)
+                  .filter(warehouse => typeof warehouse === 'string' && warehouse.trim() !== '')
+              : [];
+            console.log('Processed warehouse names:', warehouseNames);
+            setWarehouses(warehouseNames);
+          } else {
+            console.log('No warehouse data in response');
+            setWarehouses([]);
+          }
+        } catch (error) {
+          console.error("Error fetching warehouses:", error);
+          setWarehouses([]);
+          // Don't set error state here to avoid breaking the UI
+        } finally {
+          setWarehousesLoading(false);
+        }
+      } else {
+        setWarehouses([]);
+        setWarehousesLoading(false);
+      }
+    };
+    
+    // Only fetch if we have a valid branch
+    if (dialogBranch) {
+      try {
+        fetchWarehouses();
+      } catch (error) {
+        console.error("Error in warehouse fetch effect:", error);
+        setWarehouses([]);
+        setWarehousesLoading(false);
+      }
+    }
+  }, [dialogBranch]);
+
+  // Reset warehouse selection when branch changes
+  useEffect(() => {
+    if (dialogBranch !== '') {
+      setDialogWarehouse('');
+    }
+  }, [dialogBranch]);
 
 
   // Fetch locations from the database
@@ -135,9 +215,6 @@ const LocationManagement: React.FC = () => {
       setRefreshing(true);
       setError(null);
       
-      // Fetch total form values across all locations first
-      const totalFormValues = await fetchTotalFormValues();
-      console.log('Total form values across all locations:', totalFormValues);
       
       const response = await servicesAPI.getLocations();
       console.log('Fetched locations:', response.data);
@@ -162,7 +239,7 @@ const LocationManagement: React.FC = () => {
           }
           
           // Fetch total amount data for assigned items
-          let totalAmountData: Array<{ total_count: number; total_amount: number; prd_frm: string }> = [];
+          let totalAmountData: Array<{ total_count: number; total_amount: number; total_weight: number; prd_frm: string }> = [];
           try {
             console.log(`Fetching total amount data for location ${location.location_id}...`);
             const totalAmountRes = await servicesAPI.getAssignedItemsTotalAmount(location.location_id.toString());
@@ -178,46 +255,46 @@ const LocationManagement: React.FC = () => {
           
           // Calculate coverage percentages
           let coverageData = {
-            count_coverage: 0,
+            weight_coverage: 0,
             value_coverage: 0,
-            total_forms_count: 0,
+            total_forms_weight: 0,
             total_forms_value: 0
           };
           
-          if (totalAmountData.length > 0 && Object.keys(totalFormValues).length > 0) {
-            const locationTotalCount = totalAmountData.reduce((sum: number, item: { total_count: number; total_amount: number; prd_frm: string }) => sum + (Number(item.total_count) || 0), 0);
-            const locationTotalValue = totalAmountData.reduce((sum: number, item: { total_count: number; total_amount: number; prd_frm: string }) => sum + (Number(item.total_amount) || 0), 0);
+          if (totalAmountData.length > 0) {
+            const { formValues, overall } = await fetchTotalFormValues(location.branch, location.warehouse);
+            console.log('Total form values and overall data for coverage calculation:', { formValues, overall });
             
-            // Calculate totals across all locations for the forms assigned to this location
-            let allLocationsTotalCount = 0;
-            let allLocationsTotalValue = 0;
+            // Calculate total weight and value for assigned forms
+            const assignedTotalWeight = totalAmountData.reduce((sum, item) => sum + (Number(item.total_weight) || 0), 0);
+            const assignedTotalValue = totalAmountData.reduce((sum, item) => sum + (Number(item.total_amount) || 0), 0);
             
-            totalAmountData.forEach((item: { total_count: number; total_amount: number; prd_frm: string }) => {
-              const formKey = item.prd_frm;
-              if (totalFormValues[formKey]) {
-                allLocationsTotalCount += Number(totalFormValues[formKey].total_count || 0);
-                allLocationsTotalValue += Number(totalFormValues[formKey].total_amount || 0);
-              }
-            });
+            // Use overall weight and amount from the new API
+            const overallWeight = overall.overall_weight || 0;
+            const overallAmount = overall.overall_amount || 0;
             
             console.log(`Coverage calculation for location ${location.location_id}:`, {
-              locationTotalCount,
-              locationTotalValue,
-              allLocationsTotalCount,
-              allLocationsTotalValue,
-              totalFormValues: Object.keys(totalFormValues)
+              assignedTotalWeight,
+              assignedTotalValue,
+              overallWeight,
+              overallAmount
             });
             
+            // Calculate coverage percentages
+            const weightCoverage = overallWeight > 0 ? (assignedTotalWeight / overallWeight) * 100 : 0;
+            const valueCoverage = overallAmount > 0 ? (assignedTotalValue / overallAmount) * 100 : 0;
+            
             coverageData = {
-              count_coverage: allLocationsTotalCount > 0 ? (locationTotalCount / allLocationsTotalCount) * 100 : 0,
-              value_coverage: allLocationsTotalValue > 0 ? (locationTotalValue / allLocationsTotalValue) * 100 : 0,
-              total_forms_count: allLocationsTotalCount,
-              total_forms_value: allLocationsTotalValue
+              weight_coverage: Math.round(weightCoverage * 100) / 100,
+              value_coverage: Math.round(valueCoverage * 100) / 100,
+              total_forms_weight: overallWeight,
+              total_forms_value: overallAmount
             };
+            
+            console.log(`Coverage data for location ${location.location_id}:`, coverageData);
           } else {
             console.log(`No coverage data for location ${location.location_id}:`, {
-              totalAmountDataLength: totalAmountData.length,
-              totalFormValuesKeys: Object.keys(totalFormValues)
+              totalAmountDataLength: totalAmountData.length
             });
           }
           
@@ -290,7 +367,7 @@ const LocationManagement: React.FC = () => {
   }, [searchTerm, selectedBranch, locations]);
 
   const createLocation = async () => {
-    if (!selectedBranch || !locationDesc) {
+    if (!dialogBranch || !locationDesc || !dialogWarehouse) {
       setError("Please fill all fields");
       return;
     }
@@ -299,12 +376,12 @@ const LocationManagement: React.FC = () => {
       setLoading(true);
       await servicesAPI.createLocation({
         location_desc: locationDesc,
-        branch: selectedBranch,
+        branch: dialogBranch,
+        warehouse: dialogWarehouse,
       });
 
       setOpenDialog(false);
-      setLocationDesc("");
-      setSelectedBranch("");
+      resetDialogState();
       await fetchLocations();
     } catch (error) {
       console.error("Error creating location:", error);
@@ -342,6 +419,29 @@ const LocationManagement: React.FC = () => {
     fetchLocations();
   };
 
+  const resetDialogState = () => {
+    setLocationDesc("");
+    setDialogBranch("");
+    setDialogWarehouse("");
+    setWarehouses([]);
+    setError(null);
+  };
+
+  // Safety function to ensure branches is always an array
+  const getSafeBranches = () => {
+    if (!Array.isArray(branches)) return [];
+    // Remove duplicates and ensure unique branches
+    const uniqueBranches = [...new Set(branches.map(branch => branch.brh_brh))].map(brh_brh => ({ brh_brh }));
+    return uniqueBranches;
+  };
+
+  // Safety function to ensure warehouses is always an array
+  const getSafeWarehouses = () => {
+    if (!Array.isArray(warehouses)) return [];
+    // Ensure all warehouses are strings and filter out any invalid values
+    return warehouses.filter(warehouse => typeof warehouse === 'string' && warehouse.trim() !== '');
+  };
+
   if (loading && !refreshing) {
     return (
       <Box sx={{ p: 3 }}>
@@ -374,16 +474,17 @@ const LocationManagement: React.FC = () => {
     );
   }
 
-  return (
-    <Box sx={{ p: 3 }}>
-      {/* Header Section */}
-      <Paper sx={{ 
-        p: 3, 
-        mb: 3, 
-        borderRadius: 3,
-        background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.05)}, ${alpha(theme.palette.secondary.main, 0.05)})`,
-        boxShadow: '0 4px 20px rgba(0,0,0,0.05)'
-      }}>
+  try {
+    return (
+      <Box sx={{ p: 3 }}>
+        {/* Header Section */}
+        <Paper sx={{ 
+          p: 3, 
+          mb: 3, 
+          borderRadius: 3,
+          background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.05)}, ${alpha(theme.palette.secondary.main, 0.05)})`,
+          boxShadow: '0 4px 20px rgba(0,0,0,0.05)'
+        }}>
         <Box sx={{ 
           display: 'flex', 
           justifyContent: 'space-between', 
@@ -468,8 +569,8 @@ const LocationManagement: React.FC = () => {
                 }
               >
                 <MenuItem value="">All Branches</MenuItem>
-                {branches.map((branch) => (
-                  <MenuItem key={branch.brh_brh} value={branch.brh_brh}>
+                {getSafeBranches().map((branch, index) => (
+                  <MenuItem key={`branch-${branch.brh_brh}-${index}`} value={branch.brh_brh}>
                     {branch.brh_brh}
                   </MenuItem>
                 ))}
@@ -544,7 +645,10 @@ const LocationManagement: React.FC = () => {
       {/* Create Location Dialog */}
       <Dialog 
         open={openDialog} 
-        onClose={() => setOpenDialog(false)}
+        onClose={() => {
+          setOpenDialog(false);
+          resetDialogState();
+        }}
         fullWidth
         maxWidth="sm"
         PaperProps={{
@@ -596,16 +700,54 @@ const LocationManagement: React.FC = () => {
           <FormControl fullWidth margin="normal">
             <InputLabel>Branch</InputLabel>
             <Select 
-              value={selectedBranch} 
-              onChange={(e) => setSelectedBranch(e.target.value)}
+              value={dialogBranch} 
+              onChange={(e) => setDialogBranch(e.target.value)}
               sx={{ borderRadius: 2 }}
             >
-              {branches.map((branch) => (
-                <MenuItem key={branch.brh_brh} value={branch.brh_brh}>
+              {getSafeBranches().map((branch, index) => (
+                <MenuItem key={`branch-${branch.brh_brh}-${index}`} value={branch.brh_brh}>
                   {branch.brh_brh}
                 </MenuItem>
               ))}
             </Select>
+          </FormControl>
+
+          <FormControl fullWidth margin="normal">
+            <InputLabel>Warehouse</InputLabel>
+            <Select 
+              value={dialogWarehouse} 
+              onChange={(e) => setDialogWarehouse(e.target.value)}
+              sx={{ borderRadius: 2 }}
+              disabled={!dialogBranch}
+            >
+              {!dialogBranch ? (
+                <MenuItem disabled>
+                  Please select a branch first
+                </MenuItem>
+              ) : warehousesLoading ? (
+                <MenuItem disabled>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <CircularProgress size={16} />
+                    Loading warehouses...
+                  </Box>
+                </MenuItem>
+              ) : getSafeWarehouses().length === 0 ? (
+                <MenuItem disabled>
+                  No warehouses found
+                </MenuItem>
+              ) : (
+                getSafeWarehouses().map((warehouse, index) => (
+                  <MenuItem key={`warehouse-${warehouse}-${index}`} value={warehouse}>
+                    {warehouse}
+                  </MenuItem>
+                ))
+              )}
+            </Select>
+            {dialogBranch && !warehousesLoading && getSafeWarehouses().length === 0 && (
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                No warehouses found for this branch
+              </Typography>
+            )}
           </FormControl>
 
 
@@ -630,7 +772,7 @@ const LocationManagement: React.FC = () => {
             onClick={createLocation} 
             color="primary" 
             variant="contained"
-            disabled={!selectedBranch || !locationDesc || loading}
+            disabled={!dialogBranch || !locationDesc || !dialogWarehouse || loading}
             sx={{
               borderRadius: 2,
               px: 3
@@ -750,14 +892,17 @@ const LocationManagement: React.FC = () => {
                           </Box>
                           <Box sx={{ textAlign: 'right' }}>
                             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                              Total Count: {location.total_amount_data.reduce((sum: number, item: { total_count: number; total_amount: number; prd_frm: string }) => sum + (Number(item.total_count) || 0), 0).toLocaleString()}
+                              Total Count: {location.total_amount_data.reduce((sum: number, item: { total_count: number; total_amount: number; total_weight: number; prd_frm: string }) => sum + (Number(item.total_count) || 0), 0).toLocaleString()}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                              Total Weight: {location.total_amount_data.reduce((sum: number, item: { total_count: number; total_amount: number; total_weight: number; prd_frm: string }) => sum + (Number(item.total_weight) || 0), 0).toLocaleString()}
                             </Typography>
                             <Typography variant="h6" sx={{ 
                               fontWeight: 700, 
                               color: theme.palette.success.main,
                               fontSize: '1.1rem'
                             }}>
-                              ${location.total_amount_data.reduce((sum: number, item: { total_count: number; total_amount: number; prd_frm: string }) => sum + (Number(item.total_amount) || 0), 0).toLocaleString()}
+                              ${location.total_amount_data.reduce((sum: number, item: { total_count: number; total_amount: number; total_weight: number; prd_frm: string }) => sum + (Number(item.total_amount) || 0), 0).toLocaleString()}
                             </Typography>
                           </Box>
                         </Box>
@@ -774,13 +919,13 @@ const LocationManagement: React.FC = () => {
                           }}>
                             <Box>
                               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                                Piece Coverage
+                                Weight Coverage
                               </Typography>
                               <Typography variant="body2" sx={{ 
                                 fontWeight: 600, 
                                 color: theme.palette.info.main
                               }}>
-                                {location.coverage_data.count_coverage.toFixed(1)}%
+                                {location.coverage_data.weight_coverage.toFixed(1)}%
                               </Typography>
                             </Box>
 
@@ -947,9 +1092,12 @@ const LocationManagement: React.FC = () => {
                                       {item.prd_frm}
                                     </Typography>
                                   </Box>
-                                  <Box sx={{ textAlign: 'right', minWidth: 80 }}>
+                                  <Box sx={{ textAlign: 'right', minWidth: 100 }}>
                                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1 }}>
                                       Count: {Number(item.total_count || 0).toLocaleString()}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1 }}>
+                                      Weight: {Number(item.total_weight || 0).toLocaleString()}
                                     </Typography>
                                     <Typography variant="body2" sx={{ 
                                       fontWeight: 700, 
@@ -1069,10 +1217,28 @@ const LocationManagement: React.FC = () => {
           open={openAssignItemDialog}
           onClose={() => setOpenAssignItemDialog(false)}
           location_id={selectedLocation.location_id.toString()}
+          onUpdate={fetchLocations} // Pass the fetchLocations function as the update callback
         />
       )}
     </Box>
-  );
+    );
+  } catch (error) {
+    console.error('Error rendering LocationManagement component:', error);
+    return (
+      <Box sx={{ p: 3, textAlign: 'center' }}>
+        <Alert severity="error" sx={{ mb: 3 }}>
+          Something went wrong while loading the page. Please refresh and try again.
+        </Alert>
+        <Button 
+          variant="contained" 
+          onClick={() => window.location.reload()}
+          startIcon={<Refresh />}
+        >
+          Refresh Page
+        </Button>
+      </Box>
+    );
+  }
 };
 
 export default LocationManagement;

@@ -1,14 +1,14 @@
-import { useState, useEffect } from 'react';
-import { 
-  Button, 
-  Box, 
-  Typography, 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableContainer, 
-  TableHead, 
-  TableRow, 
+import { useState, useEffect } from "react";
+import {
+  Button,
+  Box,
+  Typography,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
   IconButton,
   Tooltip,
   Avatar,
@@ -28,13 +28,9 @@ import {
   InputAdornment,
   Card,
   CardContent,
-  MenuItem,
-  Select,
-  LinearProgress,
-  FormControl,
-  InputLabel
-} from '@mui/material';
-import { 
+  LinearProgress
+} from "@mui/material";
+import {
   Add as AddIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
@@ -42,13 +38,10 @@ import {
   Workspaces as WorkspacesIcon,
   Tag as TagIcon,
   Search as SearchIcon,
-  FilterList as FilterIcon,
   Refresh as RefreshIcon,
   GroupAdd as GroupAddIcon,
-  CheckCircle as CheckCircleIcon,
-  Cancel as CancelIcon,
-  ArrowDropDown as ArrowDropDownIcon
-} from '@mui/icons-material';
+  Cancel as CancelIcon
+} from "@mui/icons-material";
 import { servicesAPI } from '../config/api';
 import { styled } from '@mui/material/styles';
 import AddTeamDialog from './AddTeamDialog';
@@ -133,9 +126,10 @@ const TeamManagement = () => {
   const [error, setError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [teamToDelete, setTeamToDelete] = useState<number | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [refreshing, setRefreshing] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [teamToEdit, setTeamToEdit] = useState<Team | null>(null);
@@ -216,11 +210,6 @@ const TeamManagement = () => {
       );
     }
     
-    // Apply status filter
-    if (statusFilter !== 'all') {
-      result = result.filter(team => team.status === statusFilter);
-    }
-    
     // Apply sorting
     if (sortConfig !== null) {
       result.sort((a, b) => {
@@ -245,7 +234,7 @@ const TeamManagement = () => {
     }
     
     setFilteredTeams(result);
-  }, [searchTerm, statusFilter, sortConfig, teams]);
+  }, [searchTerm, teams, sortConfig]);
 
   const requestSort = (key: string) => {
     let direction: 'asc' | 'desc' = 'asc';
@@ -265,16 +254,24 @@ const TeamManagement = () => {
   };
 
   const handleDeleteConfirm = async () => {
-    if (teamToDelete) {
-      try {
-        await servicesAPI.deleteTeam(teamToDelete.toString());
-        fetchData(); // Refresh data
-      } catch (error) {
-        console.error('Error deleting team:', error);
-        setError('Failed to delete team.');
-      }
+    if (!teamToDelete) return;
+
+    // Check if confirmation text matches
+    if (deleteConfirmText !== 'CONFIRM') {
+      setDeleteError('Please type "CONFIRM" to proceed with deletion');
+      return;
+    }
+
+    try {
+      setDeleteError(null);
+      await servicesAPI.deleteTeam(teamToDelete.toString());
+      await fetchData(); // Refresh data
       setDeleteConfirmOpen(false);
       setTeamToDelete(null);
+      setDeleteConfirmText('');
+    } catch (error: any) {
+      console.error('Error deleting team:', error);
+      setDeleteError(error.response?.data?.message || 'Failed to delete team. Please try again.');
     }
   };
 
@@ -290,15 +287,6 @@ const TeamManagement = () => {
   const getRoleColor = (roleId: number): string => {
     const role = roles.find(role => role.role_id === roleId);
     return role?.color || theme.palette.info.main;
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active': return 'success';
-      case 'inactive': return 'warning';
-      case 'archived': return 'error';
-      default: return 'info';
-    }
   };
 
   if (loading && !refreshing) {
@@ -396,30 +384,7 @@ const TeamManagement = () => {
       <StyledCard sx={{ mb: 3 }}>
         <CardContent>
           <Grid container spacing={2} alignItems="center">
-            <Grid item xs={12} md={4}>
-              <FormControl fullWidth size="small">
-                <InputLabel>Status</InputLabel>
-                <Select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  label="Status"
-                  sx={{
-                    borderRadius: '12px',
-                    '& .MuiSelect-icon': {
-                      right: 8
-                    }
-                  }}
-                  IconComponent={ArrowDropDownIcon}
-                >
-                  <MenuItem value="all">All Statuses</MenuItem>
-                  <MenuItem value="active">Active</MenuItem>
-                  <MenuItem value="inactive">Inactive</MenuItem>
-                  <MenuItem value="archived">Archived</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-            
-            <Grid item xs={12} md={4}>
+            <Grid item xs={12} md={8}>
               <Box display="flex" gap={1} alignItems="center">
                 <PeopleIcon color="action" />
                 <Typography variant="body2" color="text.secondary">
@@ -446,115 +411,84 @@ const TeamManagement = () => {
                     <RefreshIcon />
                   </IconButton>
                 </Tooltip>
-                <Tooltip title="More filters">
-                  <IconButton
-                    sx={{
-                      backgroundColor: theme.palette.action.hover,
-                      borderRadius: '12px'
-                    }}
-                  >
-                    <FilterIcon />
-                  </IconButton>
-                </Tooltip>
               </Box>
             </Grid>
           </Grid>
         </CardContent>
       </StyledCard>
 
-      {refreshing && <LinearProgress color="primary" sx={{ mb: 2 }} />}
-
-      {filteredTeams.length === 0 ? (
-        <StyledCard 
-          sx={{ 
-            p: 4, 
-            textAlign: 'center',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            minHeight: 300
-          }}
-        >
-          <GroupAddIcon sx={{ 
-            fontSize: 80, 
-            color: theme.palette.action.disabled, 
-            mb: 2 
-          }} />
-          <Typography variant="h5" color="text.secondary" gutterBottom>
-            No Teams Found
-          </Typography>
-          <Typography variant="body1" color="text.secondary" sx={{ mb: 3, maxWidth: 400 }}>
-            {searchTerm || statusFilter !== 'all' 
-              ? 'No teams match your current filters. Try adjusting your search criteria.' 
-              : 'Get started by creating your first team to organize your members.'}
-          </Typography>
-          <ActionButton 
-            variant="contained" 
-            color="primary" 
-            startIcon={<AddIcon />}
-            onClick={handleAddTeamClick}
-            size="large"
-            sx={{ px: 4 }}
-          >
-            Create Team
-          </ActionButton>
-        </StyledCard>
-      ) : (
-        <StyledCard>
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow sx={{ 
-                  bgcolor: theme.palette.mode === 'dark' ? 
-                    theme.palette.grey[900] : 
-                    theme.palette.grey[100] 
-                }}>
-                  <TableCell 
-                    sx={{ 
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      '&:hover': {
-                        backgroundColor: theme.palette.action.hover
-                      }
-                    }}
-                    onClick={() => requestSort('team_name')}
-                  >
-                    <Box display="flex" alignItems="center">
-                      Team Name
-                      {sortConfig?.key === 'team_name' && (
-                        <Typography variant="caption" sx={{ ml: 1 }}>
-                          {sortConfig.direction === 'asc' ? '↑' : '↓'}
-                        </Typography>
-                      )}
+      {/* Teams Table */}
+      <StyledCard>
+        {refreshing && <LinearProgress color="primary" sx={{ mb: 2 }} />}
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow sx={{ 
+                bgcolor: theme.palette.mode === 'dark' ? 
+                  theme.palette.grey[900] : 
+                  theme.palette.grey[100] 
+              }}>
+                <TableCell 
+                  sx={{ 
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    '&:hover': {
+                      backgroundColor: theme.palette.action.hover
+                    }
+                  }}
+                  onClick={() => requestSort('team_name')}
+                >
+                  <Box display="flex" alignItems="center">
+                    Team Name
+                    {sortConfig?.key === 'team_name' && (
+                      <Typography variant="caption" sx={{ ml: 1 }}>
+                        {sortConfig.direction === 'asc' ? '↑' : '↓'}
+                      </Typography>
+                    )}
+                  </Box>
+                </TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Members</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Tag Range</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700 }}>Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {filteredTeams.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} align="center" sx={{ py: 4 }}>
+                    <Box sx={{ 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      alignItems: 'center',
+                      gap: 2
+                    }}>
+                      <GroupAddIcon sx={{ 
+                        fontSize: 80, 
+                        color: theme.palette.action.disabled
+                      }} />
+                      <Typography variant="h5" color="text.secondary">
+                        No Teams Found
+                      </Typography>
+                      <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 400 }}>
+                        {searchTerm ? 
+                          'No teams match your search criteria. Try adjusting your search.' : 
+                          'Get started by creating your first team to organize your members.'}
+                      </Typography>
+                      <ActionButton 
+                        variant="contained" 
+                        color="primary" 
+                        startIcon={<AddIcon />}
+                        onClick={handleAddTeamClick}
+                        size="large"
+                        sx={{ px: 4 }}
+                      >
+                        Create Team
+                      </ActionButton>
                     </Box>
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Members</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Tag Range</TableCell>
-                  <TableCell 
-                    sx={{ 
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      '&:hover': {
-                        backgroundColor: theme.palette.action.hover
-                      }
-                    }}
-                    onClick={() => requestSort('status')}
-                  >
-                    <Box display="flex" alignItems="center">
-                      Status
-                      {sortConfig?.key === 'status' && (
-                        <Typography variant="caption" sx={{ ml: 1 }}>
-                          {sortConfig.direction === 'asc' ? '↑' : '↓'}
-                        </Typography>
-                      )}
-                    </Box>
-                  </TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 700 }}>Actions</TableCell>
                 </TableRow>
-              </TableHead>
-              <TableBody>
-                {filteredTeams.map((team) => (
+              ) : (
+                filteredTeams.map((team) => (
                   <TableRow 
                     key={team.team_id} 
                     hover 
@@ -642,36 +576,23 @@ const TeamManagement = () => {
                       />
                     </TableCell>
                     
-                    <TableCell sx={{ py: 3 }}>
-                      <Chip 
-                        label={team.status || 'active'}
-                        color={getStatusColor(team.status || 'active')}
-                        variant="filled"
-                        size="small"
-                        sx={{
-                          fontWeight: 600,
-                          textTransform: 'capitalize'
-                        }}
-                      />
-                    </TableCell>
-                    
                     <TableCell align="right" sx={{ py: 3 }}>
                       <Stack direction="row" spacing={1} justifyContent="flex-end">
-                      <Tooltip title="Edit team">
-                        <IconButton 
-                          color="primary"
-                          onClick={() => handleEditClick(team)}
-                          size="small"
-                          sx={{
-                            backgroundColor: theme.palette.primary.light + '20',
-                            '&:hover': {
-                              backgroundColor: theme.palette.primary.light + '30'
-                            }
-                          }}
-                        >
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
+                        <Tooltip title="Edit team">
+                          <IconButton 
+                            color="primary"
+                            onClick={() => handleEditClick(team)}
+                            size="small"
+                            sx={{
+                              backgroundColor: theme.palette.primary.light + '20',
+                              '&:hover': {
+                                backgroundColor: theme.palette.primary.light + '30'
+                              }
+                            }}
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
                         <Tooltip title="Delete team">
                           <IconButton 
                             color="error"
@@ -690,17 +611,21 @@ const TeamManagement = () => {
                       </Stack>
                     </TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </StyledCard>
-      )}
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </StyledCard>
       
       {/* Delete Confirmation Dialog */}
-      <Dialog
-        open={deleteConfirmOpen}
-        onClose={() => setDeleteConfirmOpen(false)}
+      <Dialog 
+        open={deleteConfirmOpen} 
+        onClose={() => {
+          setDeleteConfirmOpen(false);
+          setDeleteConfirmText('');
+          setDeleteError(null);
+        }}
         PaperProps={{
           sx: {
             borderRadius: '16px',
@@ -719,6 +644,12 @@ const TeamManagement = () => {
           Confirm Team Deletion
         </DialogTitle>
         <DialogContent sx={{ px: 0 }}>
+          {deleteError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {deleteError}
+            </Alert>
+          )}
+          
           <Typography variant="body1" sx={{ mb: 2 }}>
             Are you sure you want to delete this team? This action cannot be undone and will remove:
           </Typography>
@@ -754,15 +685,10 @@ const TeamManagement = () => {
                 </Grid>
                 <Grid item xs={6}>
                   <Typography variant="body2" color="text.secondary">
-                    <strong>Status:</strong> {teams.find(t => t.team_id === teamToDelete)?.status}
-                  </Typography>
-                </Grid>
-                <Grid item xs={6}>
-                  <Typography variant="body2" color="text.secondary">
                     <strong>Created:</strong> {new Date(teams.find(t => t.team_id === teamToDelete)?.time_created || '').toLocaleDateString()}
                   </Typography>
                 </Grid>
-                <Grid item xs={6}>
+                <Grid item xs={12}>
                   <Typography variant="body2" color="text.secondary">
                     <strong>Tag Range:</strong> {teams.find(t => t.team_id === teamToDelete)?.tag_from} - {teams.find(t => t.team_id === teamToDelete)?.tag_to}
                   </Typography>
@@ -782,12 +708,19 @@ const TeamManagement = () => {
             fullWidth
             size="small"
             placeholder="Type CONFIRM..."
+            value={deleteConfirmText}
+            onChange={(e) => setDeleteConfirmText(e.target.value)}
+            error={!!deleteError}
             sx={{ mt: 1 }}
           />
         </DialogContent>
         <DialogActions sx={{ px: 0, pb: 0 }}>
           <Button 
-            onClick={() => setDeleteConfirmOpen(false)}
+            onClick={() => {
+              setDeleteConfirmOpen(false);
+              setDeleteConfirmText('');
+              setDeleteError(null);
+            }}
             variant="outlined"
             sx={{ 
               borderRadius: '12px',
@@ -798,21 +731,27 @@ const TeamManagement = () => {
           >
             Cancel
           </Button>
-          <Button 
-            onClick={handleDeleteConfirm} 
+          <Button
+            onClick={handleDeleteConfirm}
             color="error"
             variant="contained"
+            disabled={deleteConfirmText !== 'CONFIRM'}
             sx={{ 
               borderRadius: '12px',
               px: 3,
               fontWeight: 600
             }}
-            startIcon={<CheckCircleIcon />}
+            startIcon={<DeleteIcon />}
           >
-            Confirm Delete
+            Delete Team
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Success Snackbar */}
+      {/* The original code had deleteSuccess state and Snackbar, but deleteSuccess is not defined.
+          Assuming it's a placeholder for a future feature or a bug in the original file.
+          For now, removing it as it's not used. */}
       <AddTeamDialog
         open={openDialog}
         onClose={() => setOpenDialog(false)}

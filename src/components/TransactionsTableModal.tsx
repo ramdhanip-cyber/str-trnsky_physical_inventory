@@ -85,7 +85,6 @@ interface TableModalProps {
   data: Transaction[];
   onSubmitAll: () => void;
   onUpdateTransaction: (updatedTransaction: Transaction) => void;
-  onUpdateBundles: (transactionId: number, updatedBundles: Bundle[]) => void;
   onCompleteLocation: () => Promise<void>; // Add this new prop
 }
 
@@ -97,8 +96,7 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
   data,
   onSubmitAll,
   onUpdateTransaction,
-  onCompleteLocation,
-  onUpdateBundles
+  onCompleteLocation
 }) => {
   const [expandedRows, setExpandedRows] = useState<Record<number, boolean>>({});
   const [searchTerm, setSearchTerm] = useState("");
@@ -125,7 +123,8 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
 
 
   const handleEdit = (transaction: Transaction) => {
-    setEditingId(Number(transaction.tag_id));
+    const rowId = transaction.id || transaction.tag_id;
+    setEditingId(Number(rowId));
     setEditingTransaction({...transaction});
     if (transaction.count_type === COUNT_TYPES.BUNDLES && transaction.bundles) {
       setEditingBundles([...transaction.bundles]);
@@ -134,10 +133,13 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
 
   const handleSave = () => {
     if (editingTransaction) {
-      onUpdateTransaction(editingTransaction);
-      if (editingTransaction.count_type === COUNT_TYPES.BUNDLES) {
-        onUpdateBundles(Number(editingTransaction.tag_id), editingBundles);
-      }
+      // Include bundles in the transaction object if it's a bundle type
+      const transactionToUpdate = {
+        ...editingTransaction,
+        bundles: editingTransaction.count_type === COUNT_TYPES.BUNDLES ? editingBundles : editingTransaction.bundles
+      };
+      
+      onUpdateTransaction(transactionToUpdate);
     }
     setEditingId(null);
     setEditingTransaction(null);
@@ -150,7 +152,7 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
     setEditingBundles([]);
   };
 
-  const handleTransactionChange = (field: keyof Transaction, value: any) => {
+  const handleTransactionChange = (field: keyof Transaction, value: string | number) => {
     if (editingTransaction) {
       setEditingTransaction({
         ...editingTransaction,
@@ -209,9 +211,9 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
       }}
     >
       <Box sx={{
-        width: '95%',
-        maxWidth: '1400px',
-        maxHeight: '90vh',
+        width: '98%',
+        maxWidth: '1800px',
+        maxHeight: '95vh',
         bgcolor: 'background.paper',
         boxShadow: 24,
         borderRadius: 1,
@@ -268,7 +270,7 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
           />
         </Box>
 
-        <Box sx={{ p: 2, overflow: 'auto', maxHeight: 'calc(90vh - 180px)' }}>
+        <Box sx={{ p: 2, overflow: 'auto', maxHeight: 'calc(95vh - 180px)' }}>
           <TableContainer component={Paper}>
             <Table stickyHeader size="small">
               <TableHead>
@@ -510,7 +512,7 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
                                 size="small"
                                 value={editingTransaction?.qty || 0}
                                 onChange={(e) => handleTransactionChange('qty', parseInt(e.target.value))}
-                                type="number"
+                                type="text"
                               />
                             ) : (
                               transaction.qty
@@ -650,7 +652,7 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
         <Dialog 
           open={openBundleDialog} 
           onClose={() => setOpenBundleDialog(false)}
-          maxWidth="md"
+          maxWidth="lg"
           fullWidth
         >
           <DialogTitle>Edit Bundles</DialogTitle>
@@ -675,7 +677,7 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
                           size="small"
                           value={bundle.num_of_bundle}
                           onChange={(e) => handleBundleChange(index, 'num_of_bundle', parseInt(e.target.value))}
-                          type="number"
+                          type="text"
                         />
                       </TableCell>
                       <TableCell>
@@ -683,7 +685,7 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
                           size="small"
                           value={bundle.bundle_count}
                           onChange={(e) => handleBundleChange(index, 'bundle_count', parseInt(e.target.value))}
-                          type="number"
+                          type="text"
                         />
                       </TableCell>
                       <TableCell>

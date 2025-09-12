@@ -12,8 +12,6 @@ import {
   OutlinedInput,
   Chip,
   CircularProgress,
-  TextField,
-  InputAdornment,
   Divider,
   Typography,
   Box,
@@ -25,10 +23,10 @@ import {
   IconButton,
   Avatar,
   Badge,
-  useTheme
+  useTheme,
+  SelectChangeEvent
 } from "@mui/material";
 import {
-  Search as SearchIcon,
   Close as CloseIcon,
   SelectAll as SelectAllIcon,
   Clear as ClearIcon,
@@ -44,6 +42,7 @@ interface AssignItemProps {
   open: boolean;
   onClose: () => void;
   location_id: string;
+  onUpdate?: () => Promise<void>; // Add callback for parent update
 }
 
 interface FormData {
@@ -63,21 +62,18 @@ const StyledSelect = styled(Select)(() => ({
   },
 }));
 
-const AssignItem: React.FC<AssignItemProps> = ({ open, onClose, location_id }) => {
+const AssignItem: React.FC<AssignItemProps> = ({ open, onClose, location_id, onUpdate }) => {
   const theme = useTheme();
   const [formValues, setFormValues] = useState<FormData[]>([]);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [assignedItems, setAssignedItems] = useState<AssignedItem[]>([]);
-  const [searchQuery, setSearchQuery] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
   const [selectAll, setSelectAll] = useState<boolean>(false);
 
   const filteredFormValues = useMemo(() => {
-    return formValues.filter(form =>
-      form.prd_frm.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [formValues, searchQuery]);
+    return formValues;
+  }, [formValues]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -107,7 +103,6 @@ const AssignItem: React.FC<AssignItemProps> = ({ open, onClose, location_id }) =
       fetchData();
       setSelectedItems([]);
       setSelectAll(false);
-      setSearchQuery("");
     }
   }, [open, location_id]);
 
@@ -123,13 +118,10 @@ const AssignItem: React.FC<AssignItemProps> = ({ open, onClose, location_id }) =
     }
   }, [selectedItems, filteredFormValues]);
 
-  const handleSelectChange = (event: any, _: React.ReactNode) => {
+  const handleSelectChange = (event: SelectChangeEvent<unknown>) => {
     setSelectedItems(event.target.value as string[]);
   };
 
-  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchQuery(event.target.value);
-  };
 
   const toggleSelectAll = () => {
     if (selectAll) {
@@ -164,21 +156,45 @@ const AssignItem: React.FC<AssignItemProps> = ({ open, onClose, location_id }) =
 
     try {
       setLoading(true);
-      await servicesAPI.assignForms({
+      const response = await servicesAPI.assignForms({
         location_id,
         items: selectedItems,
       });
 
-      // Update assigned items list
-      const newAssignedItems = selectedItems.map((item, index) => ({
-        id: Date.now() + index,
-        item_name: item,
-      }));
+      // Handle the response with detailed information
+      if (response.data.success) {
+        const { alreadyAssigned, newlyAssigned } = response.data;
+        
+        // Update assigned items list with only newly assigned items
+        if (newlyAssigned && newlyAssigned.length > 0) {
+          const newAssignedItems = newlyAssigned.map((item: string, index: number) => ({
+            id: Date.now() + index,
+            item_name: item,
+          }));
 
-      setAssignedItems(prev => [...prev, ...newAssignedItems]);
-      clearSelection();
-      setError("");
+          setAssignedItems(prev => [...prev, ...newAssignedItems]);
+        }
+
+        // Show appropriate message
+        if (alreadyAssigned && alreadyAssigned.length > 0 && newlyAssigned && newlyAssigned.length > 0) {
+          setError(`Successfully assigned ${newlyAssigned.length} new item(s). ${alreadyAssigned.length} item(s) were already assigned.`);
+        } else if (alreadyAssigned && alreadyAssigned.length > 0 && (!newlyAssigned || newlyAssigned.length === 0)) {
+          setError(`All selected items are already assigned to this location.`);
+        } else {
+          setError("");
+        }
+
+        clearSelection();
+        
+        // Update parent component if callback provided
+        if (onUpdate) {
+          await onUpdate();
+        }
+        
+        onClose();
+      }
     } catch (error) {
+      console.error('Error assigning items:', error);
       setError("Error assigning items. Please try again.");
     } finally {
       setLoading(false);
@@ -191,7 +207,12 @@ const AssignItem: React.FC<AssignItemProps> = ({ open, onClose, location_id }) =
       await servicesAPI.deleteAssignedItem(location_id, itemId.toString());
 
       setAssignedItems(prev => prev.filter(item => item.id !== itemId));
-    } catch (error) {
+      
+      // Update parent component if callback provided
+      if (onUpdate) {
+        await onUpdate();
+      }
+    } catch {
       setError("Error deleting item. Please try again.");
     } finally {
       setLoading(false);
@@ -204,7 +225,12 @@ const AssignItem: React.FC<AssignItemProps> = ({ open, onClose, location_id }) =
       await servicesAPI.deleteAssignedLocation(location_id);
 
       setAssignedItems([]);
-    } catch (error) {
+      
+      // Update parent component if callback provided
+      if (onUpdate) {
+        await onUpdate();
+      }
+    } catch {
       setError("Error deleting all items. Please try again.");
     } finally {
       setLoading(false);
@@ -287,40 +313,6 @@ const AssignItem: React.FC<AssignItemProps> = ({ open, onClose, location_id }) =
           </Badge>
         </Box>
 
-        <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
-          <TextField
-            fullWidth
-            variant="outlined"
-            value={searchQuery}
-            onChange={handleSearchChange}
-            placeholder="Search items..."
-            size="small"
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon color="action" />
-                </InputAdornment>
-              ),
-              endAdornment: searchQuery && (
-                <InputAdornment position="end">
-                  <IconButton 
-                    onClick={() => setSearchQuery("")} 
-                    size="small"
-                    edge="end"
-                  >
-                    <ClearIcon fontSize="small" />
-                  </IconButton>
-                </InputAdornment>
-              ),
-            }}
-            sx={{
-              '& .MuiOutlinedInput-root': {
-                borderRadius: 2,
-                backgroundColor: theme.palette.background.default,
-            }
-            }}
-          />
-        </Box>
 
         <FormControl fullWidth sx={{ mb: 3 }}>
           <InputLabel shrink>Select Items</InputLabel>

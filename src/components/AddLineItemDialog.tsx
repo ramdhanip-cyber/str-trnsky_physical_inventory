@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -34,7 +34,6 @@ interface AddLineItemDialogProps {
   onClose: () => void;
   onSubmit: (data: any) => void;
   locationId: string;
-  sectionId: string;
   teamId: string;
 }
 
@@ -64,7 +63,6 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
   onClose,
   onSubmit,
   locationId,
-  sectionId,
   teamId
 }) => {
   const { location_id, section_id, team_id } = useParams<RouteParams>();
@@ -76,18 +74,304 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
     length: '',
     finish: '',
     extendedFinish: '',
-    mill: '',
-    heat: '',
-    quantity: 0,
-    remarks: '',
+    mill: '-',
+    heat: '-',
+    quantity: '',
+    remarks: 'Conforms to Std',
     ad_cmts: '',
-    type: '',
+    type: 'M',
     location: '',
     countType: COUNT_TYPES.PIECES,
     checker_count: 0,
     bundles: [],
     tag_id: 0
   });
+
+  const [error, setError] = useState<string | null>(null);
+
+  // Field navigation refs
+  const fieldRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
+  
+  // Field navigation order
+  const fieldOrder = [
+    'form', 'grade', 'size', 'finish', 'extendedFinish', 
+    'width', 'length', 'heat', 'mill', 'location', 
+    'type', 'remarks', 'ad_cmts', 'quantity'
+  ];
+  
+  // Navigate to next field
+  const navigateToNextField = (currentField: string, currentValue?: string) => {
+    console.log(`🔍 Starting navigation from ${currentField} with currentValue: "${currentValue}"`);
+    console.log(`📊 Current form data:`, {
+      form: formData.form,
+      grade: formData.grade,
+      size: formData.size,
+      finish: formData.finish,
+      extendedFinish: formData.extendedFinish,
+      width: formData.width,
+      length: formData.length,
+      heat: formData.heat,
+      mill: formData.mill
+    });
+    
+    const currentIndex = fieldOrder.indexOf(currentField);
+    console.log(`📍 Current field index: ${currentIndex} of ${fieldOrder.length - 1}`);
+    
+    if (currentIndex < fieldOrder.length - 1) {
+      // Find the next enabled field
+      for (let i = currentIndex + 1; i < fieldOrder.length; i++) {
+        const nextField = fieldOrder[i];
+        const nextFieldRef = fieldRefs.current[nextField];
+        
+        console.log(`🔍 Checking field ${i}: ${nextField}, ref exists: ${!!nextFieldRef}`);
+        
+        // Check if the field is enabled based on its dependencies
+        let isEnabled = true;
+        
+        switch (nextField) {
+          case 'extendedFinish': {
+            // Use currentValue if we're navigating from finish field, otherwise use formData
+            const finishValue = currentField === 'finish' ? currentValue : formData.finish;
+            isEnabled = !!finishValue;
+            console.log(`🔧 Extended Finish check: finish="${finishValue}" (from ${currentField}), isEnabled=${isEnabled}`);
+            break;
+          }
+          case 'width':
+            isEnabled = !!formData.extendedFinish;
+            console.log(`🔧 Width check: extendedFinish="${formData.extendedFinish}" (${typeof formData.extendedFinish}), isEnabled=${isEnabled}`);
+            break;
+          case 'length':
+            isEnabled = !!formData.width;
+            console.log(`🔧 Length check: width="${formData.width}" (${typeof formData.width}), isEnabled=${isEnabled}`);
+            break;
+          case 'heat':
+            isEnabled = !!formData.length;
+            console.log(`🔧 Heat check: length="${formData.length}" (${typeof formData.length}), isEnabled=${isEnabled}`);
+            break;
+          case 'mill':
+            isEnabled = !!formData.heat;
+            console.log(`🔧 Mill check: heat="${formData.heat}" (${typeof formData.heat}), isEnabled=${isEnabled}`);
+            break;
+          case 'location':
+            isEnabled = !!formData.mill;
+            break;
+          case 'type':
+            isEnabled = !!formData.location;
+            break;
+          case 'remarks':
+            isEnabled = !!formData.type;
+            break;
+          case 'ad_cmts':
+            isEnabled = !!formData.remarks;
+            break;
+          case 'quantity':
+            isEnabled = !!formData.ad_cmts;
+            break;
+          default:
+            isEnabled = true;
+        }
+        
+        console.log(`📋 Field ${nextField}: isEnabled=${isEnabled}, hasRef=${!!nextFieldRef}`);
+        
+        if (isEnabled && nextFieldRef) {
+          console.log(`✅ SUCCESS: Navigating from ${currentField} to ${nextField}`);
+          nextFieldRef.focus();
+          nextFieldRef.select(); // Select all text for easy replacement
+          return;
+        } else {
+          console.log(`❌ SKIP: ${nextField} - isEnabled=${isEnabled}, hasRef=${!!nextFieldRef}`);
+        }
+      }
+      
+      console.log(`⚠️ No enabled field found after ${currentField}`);
+    } else {
+      console.log(`⚠️ Already at last field: ${currentField}`);
+    }
+  };
+  
+  // Validate field value against available options
+  const validateFieldValue = (fieldName: string, value: string): { isValid: boolean; message?: string } => {
+    // Fields that allow spaces as valid values
+    const fieldsThatAllowSpaces = ['finish', 'extendedFinish', 'width', 'length', 'heat', 'mill', 'remarks', 'ad_cmts'];
+    
+    // For fields that allow spaces, don't fail on empty/whitespace-only input
+    if (!fieldsThatAllowSpaces.includes(fieldName) && (!value || value.trim() === '')) {
+      return { isValid: false, message: `${fieldName} is required` };
+    }
+
+    const trimmedValue = value.trim();
+    
+    switch (fieldName) {
+      case 'form':
+        if (!formOptions.includes(trimmedValue)) {
+          return { isValid: false, message: `Form "${trimmedValue}" not found. Please select from available options.` };
+        }
+        break;
+      case 'grade':
+        if (!gradeOptions.includes(trimmedValue)) {
+          return { isValid: false, message: `Grade "${trimmedValue}" not found. Please select from available options.` };
+        }
+        break;
+      case 'size':
+        if (!sizeOptions.includes(trimmedValue)) {
+          return { isValid: false, message: `Size "${trimmedValue}" not found. Please select from available options.` };
+        }
+        break;
+      case 'finish':
+        // Allow empty spaces and the actual value
+        if (trimmedValue === '' || finishOptions.includes(trimmedValue)) {
+          // Valid: empty (spaces) or found in options
+        } else {
+          return { isValid: false, message: `Finish "${trimmedValue}" not found. Please select from available options.` };
+        }
+        break;
+      case 'extendedFinish':
+        // Allow empty spaces and the actual value
+        if (trimmedValue === '' || extFinishOptions.includes(trimmedValue)) {
+          // Valid: empty (spaces) or found in options
+        } else {
+          return { isValid: false, message: `Extended Finish "${trimmedValue}" not found. Please select from available options.` };
+        }
+        break;
+      case 'width':
+        // Allow empty spaces and the actual value
+        if (trimmedValue === '' || widthOptions.includes(trimmedValue)) {
+          // Valid: empty (spaces) or found in options
+        } else {
+          return { isValid: false, message: `Width "${trimmedValue}" not found. Please select from available options.` };
+        }
+        break;
+      case 'length':
+        // Allow empty spaces and the actual value
+        if (trimmedValue === '' || lengthOptions.includes(trimmedValue)) {
+          // Valid: empty (spaces) or found in options
+        } else {
+          return { isValid: false, message: `Length "${trimmedValue}" not found. Please select from available options.` };
+        }
+        break;
+      case 'heat':
+        // Allow empty spaces, dash, and actual values
+        if (trimmedValue === '' || trimmedValue === '-' || heatOptions.includes(trimmedValue)) {
+          // Valid: empty (spaces), dash, or found in options
+        } else {
+          return { isValid: false, message: `Heat "${trimmedValue}" not found. Please select from available options, use "-", or use empty space.` };
+        }
+        break;
+      case 'mill':
+        // Allow empty spaces, dash, and actual values
+        if (trimmedValue === '' || trimmedValue === '-' || millOptions.includes(trimmedValue)) {
+          // Valid: empty (spaces), dash, or found in options
+        } else {
+          return { isValid: false, message: `Mill "${trimmedValue}" not found. Please select from available options, use "-", or use empty space.` };
+        }
+        break;
+      case 'location':
+        if (!locationOptions.includes(trimmedValue)) {
+          return { isValid: false, message: `Location "${trimmedValue}" not found. Please select from available options.` };
+        }
+        break;
+      case 'type': {
+        const validTypes = typeOptions.map(t => t.value);
+        const validLabels = typeOptions.map(t => t.label);
+        // Accept both value format (e.g., "M") and label format (e.g., "M - Master")
+        if (!validTypes.includes(trimmedValue) && !validLabels.includes(trimmedValue)) {
+          return { isValid: false, message: `Type "${trimmedValue}" not found. Please select from available options.` };
+        }
+        break;
+      }
+      case 'remarks':
+        // Allow empty spaces, default value, and actual values
+        if (trimmedValue === '' || trimmedValue === 'Conforms to Std' || remarksOptions.includes(trimmedValue)) {
+          // Valid: empty (spaces), default value, or found in options
+        } else {
+          return { isValid: false, message: `Remarks "${trimmedValue}" not found. Please select from available options, use "Conforms to Std", or use empty space.` };
+        }
+        break;
+      case 'ad_cmts':
+        // Additional comments are optional - always valid
+        break;
+      case 'quantity': {
+        const qty = parseFloat(trimmedValue);
+        if (isNaN(qty) || qty <= 0) {
+          return { isValid: false, message: `Quantity must be a positive number.` };
+        }
+        break;
+      }
+    }
+    
+    return { isValid: true };
+  };
+
+  // Handle key press for field navigation with validation
+  const handleKeyPress = (fieldName: string, event: React.KeyboardEvent, currentValue?: string) => {
+    if (event.key === 'Enter' || event.key === 'Tab') {
+      event.preventDefault();
+      
+      // Get the current value from the input field if not provided
+      let valueToUse = currentValue;
+      if (!valueToUse && event.target) {
+        const target = event.target as HTMLInputElement;
+        valueToUse = target.value;
+      }
+      
+      // Validate the field value
+      const validation = validateFieldValue(fieldName, valueToUse || '');
+      
+      if (!validation.isValid) {
+        // Show validation error
+        setError(validation.message || 'Invalid value');
+        // Focus back to the current field
+        const currentFieldRef = fieldRefs.current[fieldName as keyof typeof fieldRefs.current];
+        if (currentFieldRef) {
+          currentFieldRef.focus();
+        }
+        return;
+      }
+      
+      // Clear any previous error
+      setError(null);
+      
+      // Delay navigation slightly to allow state updates to complete
+      setTimeout(() => {
+        navigateToNextField(fieldName, valueToUse);
+      }, 50);
+    }
+  };
+
+  // Check dimension segment and auto-set width for length-based products
+  const checkDimensionSegment = async (newFinish?: string) => {
+    const { form, grade, size } = formData;
+    const finish = newFinish || formData.finish;
+    
+    // Only check if all four fields are filled
+    if (!form || !grade || !size || !finish) {
+      return;
+    }
+
+    try {
+      console.log('Checking dimension segment for:', { form, grade, size, finish });
+      
+      const response = await servicesAPI.checkDimensionSegment({
+        prm_frm: form,
+        prm_grd: grade,
+        prm_size: size,
+        prm_fnsh: finish
+      });
+
+      if (response.data.success && response.data.isLengthBased) {
+        console.log('Length-based product detected, setting width to 0.00');
+        setFormData(prev => {
+          console.log('Setting width to 0.00, previous state:', prev);
+          return { ...prev, width: '0.00' };
+        });
+        
+        // Don't auto-focus Length field here - let normal field navigation handle it
+        console.log('Width auto-set to 0.00, normal field navigation will handle Length field focus');
+      }
+    } catch (error) {
+      console.error('Error checking dimension segment:', error);
+    }
+  };
 
   const [loading, setLoading] = useState({
     form: false,
@@ -104,20 +388,26 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
     submitting: false
   });
 
-  const [options, setOptions] = useState({
-    form: [] as string[],
-    grade: [] as string[],
-    size: [] as string[],
-    finish: [] as string[],
-    extFinish: [] as string[],
-    width: [] as string[],
-    length: [] as string[],
-    mill: [] as string[],
-    heat: [] as string[],
-    remarks: [] as string[],
-    type: [] as { label: string; value: string }[],
-    location: [] as string[]
-  });
+  // Individual option states like in counter
+  const [formOptions, setFormOptions] = useState<string[]>([]);
+  const [gradeOptions, setGradeOptions] = useState<string[]>([]);
+  const [sizeOptions, setSizeOptions] = useState<string[]>([]);
+  const [finishOptions, setFinishOptions] = useState<string[]>([]);
+  const [extFinishOptions, setExtFinishOptions] = useState<string[]>([]);
+  const [widthOptions, setWidthOptions] = useState<string[]>([]);
+  const [lengthOptions, setLengthOptions] = useState<string[]>([]);
+  const [millOptions, setMillOptions] = useState<string[]>([]);
+  const [heatOptions, setHeatOptions] = useState<string[]>([]);
+  const [remarksOptions, setRemarksOptions] = useState<string[]>([]);
+  const [typeOptions] = useState([
+    { value: 'D', label: 'D - Drop' },
+    { value: 'F', label: 'F - Finished' },
+    { value: 'M', label: 'M - Master' },
+    { value: 'R', label: 'R - Reject' },
+    { value: 'S', label: 'S - Scrap' },
+    { value: 'W', label: 'W - Work in Process' }
+  ]);
+  const [locationOptions, setLocationOptions] = useState<string[]>([]);
 
   const [openBundleModal, setOpenBundleModal] = useState(false);
   const [, setActiveTab] = useState(0);
@@ -136,9 +426,17 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
     }
 
     // Fetch section data
-    if (section_id) {
-      servicesAPI.getSections(section_id)
-      .then(res => setSectionData(res.data))
+    if (location_id) {
+      console.log('🔍 Fetching sections for location_id:', location_id, 'section_id:', section_id);
+      servicesAPI.getSections(location_id)
+      .then(res => {
+        console.log('📋 Sections response:', res.data);
+        // Find the specific section from the list
+        const sections = res.data;
+        const currentSection = sections.find((section: { section_id: number; section_desc: string }) => section.section_id === parseInt(section_id || "0"));
+        console.log('🎯 Found section:', currentSection);
+        setSectionData(currentSection || null);
+      })
       .catch(error => console.error('Error fetching section:', error));
     }
 
@@ -159,33 +457,16 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
         // Fetch form options
         const formResponse = await servicesAPI.getForms(locationId);
         if (formResponse.data.success) {
-          setOptions(prev => ({
-            ...prev,
-            form: formResponse.data.data.map((item: any) => item.item_name)
-          }));
+          setFormOptions(formResponse.data.data.map((item: { item_name: string }) => item.item_name));
         }
 
         // Fetch remarks options
         const remarksResponse = await servicesAPI.getRemarks();
         if (remarksResponse.data?.Data) {
-          setOptions(prev => ({
-            ...prev,
-            remarks: remarksResponse.data.Data.map((r: any) => r.inq_desc15.trim() || "null")
-          }));
+          setRemarksOptions(remarksResponse.data.Data.map((r: { inq_desc15: string }) => r.inq_desc15.trim() || "null"));
         }
 
-        // Initialize type options (same as counter page)
-        setOptions(prev => ({
-          ...prev,
-          type: [
-            { value: 'D', label: 'D - Drop' },
-            { value: 'F', label: 'F - Finished' },
-            { value: 'M', label: 'M - Master' },
-            { value: 'R', label: 'R - Reject' },
-            { value: 'S', label: 'S - Scrap' },
-            { value: 'W', label: 'W - Work in Process' }
-          ]
-        }));
+        // Type options are already initialized in state
 
         // Location options will be fetched when locationData is available
 
@@ -201,12 +482,12 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
     }
   }, [open, locationId, teamId]);
 
-  // Fetch dependent options
+  // Fetch dependent options (similar to counter)
   const fetchDependentOptions = async (
     endpoint: string,
     params: Record<string, string>,
-    optionKey: keyof typeof options,
-    loadingKey: keyof typeof loading,
+    optionSetter: React.Dispatch<React.SetStateAction<string[]>>,
+    loadingKey: string,
     fieldName?: string
   ) => {
     try {
@@ -279,7 +560,29 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
         const filteredOptions = options.filter((opt: string) => opt && opt !== 'null');
         filteredOptions.unshift(' '); // Add empty option
         
-        setOptions(prev => ({ ...prev, [optionKey]: filteredOptions }));
+        optionSetter(filteredOptions);
+        
+        // Special handling for width field - auto-select appropriate zero value
+        if (endpoint === '/services/width') {
+          // Check if current width is 0.00 (auto-set by dimension segment check)
+          if (formData.width === '0.00') {
+            const hasZeroOption = filteredOptions.includes('0.00');
+            if (hasZeroOption) {
+              console.log('Auto-selecting 0.00 from width options');
+              setFormData(prev => ({ ...prev, width: '0.00' }));
+            } else {
+              // Check for 0.0000 or other zero variations
+              const zeroVariations = filteredOptions.filter((opt: string) => 
+                opt && (opt === '0.0000' || opt === '0.00' || opt === '0' || opt.startsWith('0.0'))
+              );
+              if (zeroVariations.length > 0) {
+                const selectedZero = zeroVariations[0];
+                console.log('Auto-selecting zero variation:', selectedZero);
+                setFormData(prev => ({ ...prev, width: selectedZero }));
+              }
+            }
+          }
+        }
       }
     } catch (error) {
       console.error(`Error fetching ${loadingKey} options:`, error);
@@ -294,12 +597,12 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
       fetchDependentOptions(
         "/services/grade",
         { form: formData.form },
-        "grade",
+        setGradeOptions,
         "grade",
         "prd_grd"
       );
     } else {
-      setOptions(prev => ({ ...prev, grade: [] }));
+      setGradeOptions([]);
       setFormData(prev => ({
         ...prev,
         grade: '',
@@ -309,7 +612,7 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
         width: '',
         length: '',
         mill: '-',
-        heat: ''
+        heat: '-'
       }));
     }
   }, [formData.form]);
@@ -320,12 +623,12 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
       fetchDependentOptions(
         "/services/size",
         { form: formData.form, grade: formData.grade },
-        "size",
+        setSizeOptions,
         "size",
         "prd_size"
       );
     } else {
-      setOptions(prev => ({ ...prev, size: [] }));
+      setSizeOptions([]);
       setFormData(prev => ({
         ...prev,
         size: '',
@@ -334,7 +637,7 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
         width: '',
         length: '',
         mill: '-',
-        heat: ''
+        heat: '-'
       }));
     }
   }, [formData.grade]);
@@ -345,12 +648,12 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
       fetchDependentOptions(
         "/services/finish",
         { form: formData.form, grade: formData.grade, size: formData.size },
-        "finish",
+        setFinishOptions,
         "finish",
         "prd_fnsh"
       );
     } else {
-      setOptions(prev => ({ ...prev, finish: [] }));
+      setFinishOptions([]);
       setFormData(prev => ({
         ...prev,
         finish: '',
@@ -358,7 +661,7 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
         width: '',
         length: '',
         mill: '-',
-        heat: ''
+        heat: '-'
       }));
     }
   }, [formData.size]);
@@ -374,19 +677,19 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
           size: formData.size,
           finish: formData.finish
         },
-        "extFinish",
+        setExtFinishOptions,
         "extFinish",
         "prd_ef_svar"
       );
     } else {
-      setOptions(prev => ({ ...prev, extFinish: [] }));
+      setExtFinishOptions([]);
       setFormData(prev => ({
         ...prev,
         extendedFinish: '',
         width: '',
         length: '',
         mill: '-',
-        heat: ''
+        heat: '-'
       }));
     }
   }, [formData.finish]);
@@ -403,46 +706,118 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
           finish: formData.finish,
           extfinish: formData.extendedFinish
         },
-        "width",
+        setWidthOptions,
         "width",
         "prd_wdth"
       );
     } else {
-      setOptions(prev => ({ ...prev, width: [] }));
+      setWidthOptions([]);
       setFormData(prev => ({
         ...prev,
         width: '',
         length: '',
         mill: '-',
-        heat: ''
+        heat: '-'
       }));
     }
   }, [formData.extendedFinish]);
 
   // Fetch length options when width changes
   useEffect(() => {
+    console.log('Width useEffect triggered, width value:', formData.width);
+    console.log('All required fields:', {
+      form: formData.form,
+      grade: formData.grade,
+      size: formData.size,
+      finish: formData.finish,
+      extendedFinish: formData.extendedFinish,
+      width: formData.width
+    });
+    
     if (formData.form && formData.grade && formData.size && formData.finish && formData.extendedFinish && formData.width) {
-      fetchDependentOptions(
-        "/services/length",
-        { 
-          form: formData.form,
-          grade: formData.grade,
-          size: formData.size,
-          finish: formData.finish,
-          extfinish: formData.extendedFinish,
-          width: formData.width
-        },
-        "length",
-        "length",
-        "prd_lgth"
-      );
+      console.log('Fetching length options for width:', formData.width);
+      
+      // For length-based products, try multiple width variations to ensure we get length options
+      const fetchLengthWithWidthVariations = async (widthValue: string) => {
+        console.log('Fetching length options for width:', widthValue);
+        
+        try {
+          const response = await servicesAPI.getLength({
+            form: formData.form,
+            grade: formData.grade,
+            size: formData.size,
+            finish: formData.finish,
+            extfinish: formData.extendedFinish,
+            width: widthValue
+          });
+          
+          if (response.data?.Data) {
+            const options = response.data.Data.map((item: Record<string, unknown>) => {
+              const value = item['prd_lgth'];
+              if (value === null || value === undefined || value === '') {
+                return ' ';
+              }
+              return typeof value === 'string' ? value.trim() : String(value);
+            });
+            
+            const filteredOptions = options.filter((opt: string) => opt && opt !== 'null');
+            filteredOptions.unshift(' '); // Add empty option
+            
+            setLengthOptions(filteredOptions);
+            console.log('Successfully fetched length options for width:', widthValue);
+            return true; // Success
+          }
+        } catch (error) {
+          console.log('Failed to fetch length options for width:', widthValue, error);
+        }
+        return false; // Failed
+      };
+      
+      // Use async function to handle the await calls
+      const fetchLengthOptions = async () => {
+        // Try the current width value first
+        let success = await fetchLengthWithWidthVariations(formData.width);
+        
+        // If that failed and width is 0.00, try 0.0000
+        if (!success && formData.width === '0.00') {
+          console.log('Trying 0.0000 as width variation');
+          success = await fetchLengthWithWidthVariations('0.0000');
+          
+          // If 0.0000 worked, update the form data to use 0.0000
+          if (success) {
+            setFormData(prev => ({ ...prev, width: '0.0000' }));
+          }
+        }
+        
+        // If still no success, try other zero variations
+        if (!success && formData.width === '0.00') {
+          const zeroVariations = ['0', '0.0', '0.000'];
+          for (const variation of zeroVariations) {
+            console.log('Trying width variation:', variation);
+            success = await fetchLengthWithWidthVariations(variation);
+            if (success) {
+              setFormData(prev => ({ ...prev, width: variation }));
+              break;
+            }
+          }
+        }
+        
+        // If all attempts failed, clear length options
+        if (!success) {
+          console.log('All width variations failed, clearing length options');
+          setLengthOptions([]);
+        }
+      };
+      
+      fetchLengthOptions();
     } else {
-      setOptions(prev => ({ ...prev, length: [] }));
+      console.log('Clearing length options - missing required fields');
+      setLengthOptions([]);
       setFormData(prev => ({
         ...prev,
         length: '',
         mill: '-',
-        heat: ''
+        heat: '-'
       }));
     }
   }, [formData.width]);
@@ -457,7 +832,7 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
           { 
             form: formData.form // Only send form parameter as required by backend
           },
-          "heat",
+          setHeatOptions,
           "heat",
           "prd_heat"
         );
@@ -465,11 +840,11 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
 
       return () => clearTimeout(timeoutId);
     } else {
-      setOptions(prev => ({ ...prev, heat: [] }));
+      setHeatOptions([]);
     }
     
-    // Clear mill when heat changes, but preserve default value if heat is default
-    setFormData(prev => ({ ...prev, mill: formData.heat === '-' ? '-' : '' }));
+    // Always set mill to default value when heat changes
+    setFormData(prev => ({ ...prev, mill: '-' }));
   }, [formData.form, formData.grade, formData.size, formData.finish, formData.extendedFinish, formData.width, formData.length]);
 
   // Fetch mill options when heat changes (based on heat and location)
@@ -481,12 +856,12 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
           heat: formData.heat,
           location_id: locationId
         },
-        "mill",
+        setMillOptions,
         "mill",
         "het_mill" // fieldName
       );
     } else {
-      setOptions(prev => ({ ...prev, mill: [] }));
+      setMillOptions([]);
       // Clear mill field when heat is empty, but preserve default value
       setFormData(prev => ({ ...prev, mill: '-' }));
     }
@@ -502,12 +877,12 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
           const responseData = locationResponse.data;
           if (responseData?.Data) {
             const locations = responseData.Data
-              .map((loc: any) => loc.prd_loc)
-              .filter((loc: any) => loc !== null && loc !== undefined) // Filter out null/undefined first
-              .map((loc: any) => loc.trim()) // Then trim the valid values
-              .filter((loc: any) => loc && loc !== 'null' && loc !== '') // Final filter for empty strings
+              .map((loc: { prd_loc: string }) => loc.prd_loc)
+              .filter((loc: string) => loc !== null && loc !== undefined) // Filter out null/undefined first
+              .map((loc: string) => loc.trim()) // Then trim the valid values
+              .filter((loc: string) => loc && loc !== 'null' && loc !== '') // Final filter for empty strings
               .sort(); // Sort alphabetically for better UX
-            setOptions(prev => ({ ...prev, location: locations }));
+            setLocationOptions(locations);
             console.log('Fetched location options:', locations);
             console.log('Number of location options:', locations.length);
             console.log('First few options:', locations.slice(0, 5));
@@ -516,7 +891,7 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
           }
         } catch (error) {
           console.error('Error fetching location options:', error);
-          setOptions(prev => ({ ...prev, location: [] }));
+          setLocationOptions([]);
         } finally {
           setLoading(prev => ({ ...prev, location: false }));
         }
@@ -531,7 +906,7 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
     setFormData(prev => ({
       ...prev,
       countType: newCountType,
-      quantity: 0,
+      quantity: '',
       bundles: newCountType === COUNT_TYPES.BUNDLES ? [] : prev.bundles
     }));
     setActiveTab(newValue);
@@ -572,7 +947,7 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
       return {
         ...prev,
         bundles: newBundles,
-        quantity: totalQuantity
+        quantity: totalQuantity.toString()
       };
     });
   };
@@ -586,7 +961,7 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
       return {
         ...prev,
         bundles: updatedBundles,
-        quantity: updatedBundles.reduce((sum, bundle) => sum + (bundle.num_of_bundle * bundle.bundle_count), 0)
+        quantity: updatedBundles.reduce((sum, bundle) => sum + (bundle.num_of_bundle * bundle.bundle_count), 0).toString()
       };
     });
   };
@@ -606,15 +981,17 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
       length: formData.length ? parseFloat(formData.length) : null,
       mill: formData.mill || null,
       heat: formData.heat || null,
+      type: formData.type || 'M',
+      location: formData.location || null,
       remarks: formData.remarks || null,
       ad_cmts: formData.ad_cmts || null,
       count_type: formData.countType,
-      qty: formData.countType === COUNT_TYPES.PIECES ? formData.quantity : 
+      qty: formData.countType === COUNT_TYPES.PIECES ? parseInt(formData.quantity) || 0 : 
            formData.bundles.reduce((sum, b) => sum + (b.num_of_bundle * b.bundle_count), 0),
       counted_by: parseInt(selectedUser || "0"),
       team_id: parseInt(teamId || "0"),
       location_id: parseInt(locationId || "0"),
-      section_id: parseInt(sectionId || "0"),
+      section_id: parseInt(section_id || "0"),
       role: selectedRole,
       verified: false,
       bundles: formData.countType === COUNT_TYPES.BUNDLES ? 
@@ -625,9 +1002,14 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
         undefined
     };
 
+    console.log('📤 Submitting payload:', payload);
+    console.log('🔍 Form data type field:', formData.type);
+    console.log('🔍 Form data location field:', formData.location);
+
     try {
       setLoading(prev => ({ ...prev, submitting: true }));
       await onSubmit(payload);
+      resetForm();
       onClose();
     } finally {
       setLoading(prev => ({ ...prev, submitting: false }));
@@ -638,8 +1020,40 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
     setFormData(prev => ({ ...prev, form: value || '' }));
   };
 
+  // Reset form to initial state
+  const resetForm = () => {
+    setFormData({
+      form: '',
+      grade: '',
+      size: '',
+      width: '',
+      length: '',
+      finish: '',
+      extendedFinish: '',
+      mill: '-',
+      heat: '-',
+      quantity: '',
+      remarks: 'Conforms to Std',
+      ad_cmts: '',
+      type: 'M',
+      location: '',
+      countType: COUNT_TYPES.PIECES,
+      checker_count: 0,
+      bundles: [],
+      tag_id: 0
+    });
+    setError(null); // Clear any validation errors
+    setOpenBundleModal(false);
+  };
+
+  // Handle dialog close with form reset
+  const handleClose = () => {
+    resetForm();
+    onClose();
+  };
+
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
       <DialogTitle>
         Add New Line Item
         <Typography variant="subtitle1" color="text.secondary">
@@ -656,13 +1070,21 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
       </DialogTitle>
       <DialogContent>
         {loading.general && <LinearProgress sx={{ mb: 2 }} />}
+        
+        {error && (
+          <Box sx={{ mb: 2, p: 2, backgroundColor: 'error.light', borderRadius: 1, color: 'error.contrastText' }}>
+            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+              ⚠️ {error}
+            </Typography>
+          </Box>
+        )}
 
         <Grid container spacing={2} sx={{ mt: 1 }}>
           {/* Form Field */}
           <Grid item xs={12} sm={6}>
             <Autocomplete
               freeSolo
-              options={options.form}
+              options={formOptions}
               value={formData.form}
               onChange={handleFormChange}
               loading={loading.form}
@@ -671,6 +1093,10 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
                   {...params}
                   label="Form"
                   fullWidth
+                  inputRef={(input) => {
+                    fieldRefs.current.form = input;
+                  }}
+                  onKeyDown={(e) => handleKeyPress('form', e)}
                   required
                   InputProps={{
                     ...params.InputProps,
@@ -690,7 +1116,7 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
           <Grid item xs={12} sm={6}>
             <Autocomplete
               freeSolo
-              options={options.grade}
+              options={gradeOptions}
               value={formData.grade}
               onChange={(_, value) => {
                 setFormData(prev => ({ ...prev, grade: value || '' }));
@@ -702,6 +1128,10 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
                   {...params}
                   label="Grade"
                   fullWidth
+                  inputRef={(input) => {
+                    fieldRefs.current.grade = input;
+                  }}
+                  onKeyDown={(e) => handleKeyPress('grade', e)}
                   required
                   InputProps={{
                     ...params.InputProps,
@@ -721,7 +1151,7 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
           <Grid item xs={12} sm={6}>
             <Autocomplete
               freeSolo
-              options={options.size}
+              options={sizeOptions}
               value={formData.size}
               onChange={(_, value) => {
                 setFormData(prev => ({ ...prev, size: value || '' }));
@@ -733,6 +1163,10 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
                   {...params}
                   label="Size"
                   fullWidth
+                  inputRef={(input) => {
+                    fieldRefs.current.size = input;
+                  }}
+                  onKeyDown={(e) => handleKeyPress('size', e)}
                   required
                   InputProps={{
                     ...params.InputProps,
@@ -752,10 +1186,13 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
           <Grid item xs={12} sm={6}>
             <Autocomplete
               freeSolo
-              options={options.finish}
+              options={finishOptions}
               value={formData.finish}
-              onChange={(_, value) => {
-                setFormData(prev => ({ ...prev, finish: value || '' }));
+              onChange={async (_, value) => {
+                const newFinish = value || '';
+                setFormData(prev => ({ ...prev, finish: newFinish }));
+                // Check dimension segment with the new finish value
+                checkDimensionSegment(newFinish);
               }}
               loading={loading.finish}
               disabled={!formData.size}
@@ -764,6 +1201,10 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
                   {...params}
                   label="Finish"
                   fullWidth
+                  inputRef={(input) => {
+                    fieldRefs.current.finish = input;
+                  }}
+                  onKeyDown={(e) => handleKeyPress('finish', e)}
                   required
                   InputProps={{
                     ...params.InputProps,
@@ -783,7 +1224,7 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
           <Grid item xs={12} sm={6}>
             <Autocomplete
               freeSolo
-              options={options.extFinish}
+              options={extFinishOptions}
               value={formData.extendedFinish}
               onChange={(_, value) => {
                 setFormData(prev => ({ ...prev, extendedFinish: value || '' }));
@@ -795,6 +1236,10 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
                   {...params}
                   label="Extended Finish"
                   fullWidth
+                  inputRef={(input) => {
+                    fieldRefs.current.extendedFinish = input;
+                  }}
+                  onKeyDown={(e) => handleKeyPress('extendedFinish', e)}
                   InputProps={{
                     ...params.InputProps,
                     endAdornment: (
@@ -813,10 +1258,11 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
           <Grid item xs={12} sm={6}>
             <Autocomplete
               freeSolo
-              options={options.width}
+              options={widthOptions}
               value={formData.width}
               onChange={(_, value) => {
                 setFormData(prev => ({ ...prev, width: value || '' }));
+                // Let normal field navigation handle focus
               }}
               loading={loading.width}
               disabled={!formData.extendedFinish}
@@ -825,6 +1271,10 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
                   {...params}
                   label="Width"
                   fullWidth
+                  inputRef={(input) => {
+                    fieldRefs.current.width = input;
+                  }}
+                  onKeyDown={(e) => handleKeyPress('width', e)}
                   InputProps={{
                     ...params.InputProps,
                     endAdornment: (
@@ -843,7 +1293,7 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
           <Grid item xs={12} sm={6}>
             <Autocomplete
               freeSolo
-              options={options.length}
+              options={lengthOptions}
               value={formData.length}
               onChange={(_, value) => {
                 setFormData(prev => ({ ...prev, length: value || '' }));
@@ -855,6 +1305,10 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
                   {...params}
                   label="Length"
                   fullWidth
+                  inputRef={(input) => {
+                    fieldRefs.current.length = input;
+                  }}
+                  onKeyDown={(e) => handleKeyPress('length', e)}
                   InputProps={{
                     ...params.InputProps,
                     endAdornment: (
@@ -873,10 +1327,10 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
           <Grid item xs={12} sm={6}>
             <Autocomplete
               freeSolo
-              options={options.heat}
-              value={formData.heat || (options.heat.length ? options.heat[1] : '')}
+              options={heatOptions}
+              value={formData.heat || (heatOptions.length ? heatOptions[1] : '-')}
               onChange={(_, value) => {
-                setFormData(prev => ({ ...prev, heat: value || '' }));
+                setFormData(prev => ({ ...prev, heat: value || '-' }));
               }}
               loading={loading.heat}
               disabled={!formData.length}
@@ -894,6 +1348,10 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
                   {...params}
                   label="Heat"
                   fullWidth
+                  inputRef={(input) => {
+                    fieldRefs.current.heat = input;
+                  }}
+                  onKeyDown={(e) => handleKeyPress('heat', e)}
                   placeholder="Type to search heat values..."
                   InputProps={{
                     ...params.InputProps,
@@ -913,8 +1371,8 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
           <Grid item xs={12} sm={6}>
             <Autocomplete
               freeSolo
-              options={options.mill}
-              value={formData.mill}
+              options={millOptions}
+              value={formData.mill || '-'}
               onChange={(_, value) => {
                 setFormData(prev => ({ ...prev, mill: value || '-' }));
               }}
@@ -926,6 +1384,10 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
                   label="Mill *"
                   required
                   fullWidth
+                  inputRef={(input) => {
+                    fieldRefs.current.mill = input;
+                  }}
+                  onKeyDown={(e) => handleKeyPress('mill', e)}
                   sx={{
                     '& .MuiOutlinedInput-root': {
                       borderColor: 'primary.main',
@@ -954,14 +1416,21 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
           {/* Location Field */}
           <Grid item xs={12} sm={6}>
             <Autocomplete
-              options={options.location}
+              freeSolo
+              options={locationOptions}
               value={formData.location}
               onChange={(_, value) => {
                 console.log('Location selected:', value);
                 setFormData(prev => ({ ...prev, location: value || '' }));
               }}
+              onInputChange={(_, value) => {
+                // Handle when user types a custom value
+                if (value !== null) {
+                  setFormData(prev => ({ ...prev, location: value }));
+                }
+              }}
               loading={loading.location}
-              onOpen={() => console.log('Autocomplete opened, options:', options.location)}
+              onOpen={() => console.log('Autocomplete opened, options:', locationOptions)}
               onClose={() => console.log('Autocomplete closed')}
               filterOptions={(options, { inputValue }) => {
                 if (!inputValue) return options.slice(0, 50); // Show first 50 when no input
@@ -976,6 +1445,10 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
                   {...params}
                   label="Location"
                   fullWidth
+                  inputRef={(input) => {
+                    fieldRefs.current.location = input;
+                  }}
+                  onKeyDown={(e) => handleKeyPress('location', e)}
                   placeholder="Select location..."
                   InputProps={{
                     ...params.InputProps,
@@ -991,12 +1464,12 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
             />
             {/* Debug info - remove this later */}
             <Typography variant="caption" color="text.secondary">
-              Options: {options.location.length} | Loading: {loading.location ? 'Yes' : 'No'} | Selected: {formData.location}
+              Options: {locationOptions.length} | Loading: {loading.location ? 'Yes' : 'No'} | Selected: {formData.location}
             </Typography>
             <Button 
               size="small" 
               onClick={() => {
-                console.log('Current locationOptions:', options.location);
+                console.log('Current locationOptions:', locationOptions);
                 console.log('Current formData.location:', formData.location);
               }}
               sx={{ mt: 1 }}
@@ -1008,30 +1481,60 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
           {/* Type Field */}
           <Grid item xs={12} sm={6}>
             <Autocomplete
-              options={options.type}
-              getOptionLabel={(option) => option.label}
-              value={options.type.find(option => option.value === formData.type) || null}
+              freeSolo
+              options={typeOptions}
+              getOptionLabel={(option) => typeof option === 'string' ? option : option.label}
+              value={typeOptions.find(option => option.value === formData.type) || null}
               onChange={(_, value) => {
                 console.log('Type selected:', value);
-                setFormData(prev => ({ ...prev, type: value ? value.value : '' }));
+                if (value && typeof value === 'object' && 'value' in value) {
+                  setFormData(prev => ({ ...prev, type: value.value }));
+                } else if (typeof value === 'string') {
+                  setFormData(prev => ({ ...prev, type: value }));
+                } else {
+                  setFormData(prev => ({ ...prev, type: 'M' }));
+                }
+              }}
+              onInputChange={(_, value) => {
+                // Handle when user types a custom value
+                if (value !== null) {
+                  // Check if it's a label format (e.g., "M - Master")
+                  const foundOption = typeOptions.find(option => option.label === value);
+                  if (foundOption) {
+                    setFormData(prev => ({ ...prev, type: foundOption.value }));
+                  } else {
+                    // Check if it's a value format (e.g., "M")
+                    const foundByValue = typeOptions.find(option => option.value === value);
+                    if (foundByValue) {
+                      setFormData(prev => ({ ...prev, type: foundByValue.value }));
+                    } else {
+                      // Store the typed value as-is for validation
+                      setFormData(prev => ({ ...prev, type: value }));
+                    }
+                  }
+                }
               }}
               renderInput={(params) => (
                 <TextField
                   {...params}
                   label="Type"
                   fullWidth
+                  inputRef={(input) => {
+                    fieldRefs.current.type = input;
+                  }}
+                  onKeyDown={(e) => handleKeyPress('type', e)}
                   placeholder="Select type..."
                 />
               )}
             />
             {/* Debug info - remove this later */}
             <Typography variant="caption" color="text.secondary">
-              Options: {options.type.length} | Selected: {formData.type}
+              Options: {typeOptions.length} | Selected: {formData.type}
             </Typography>
             <Button 
               size="small" 
               onClick={() => {
-                console.log('Current typeOptions:', options.type);
+                console.log('Current typeOptions:', typeOptions);
                 console.log('Current formData.type:', formData.type);
               }}
               sx={{ mt: 1 }}
@@ -1044,16 +1547,20 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
           <Grid item xs={12} sm={6}>
             <Autocomplete
               freeSolo
-              options={options.remarks}
-              value={formData.remarks}
+              options={remarksOptions}
+              value={formData.remarks || 'Conforms to Std'}
               onChange={(_, value) => {
-                setFormData(prev => ({ ...prev, remarks: value || '' }));
+                setFormData(prev => ({ ...prev, remarks: value || 'Conforms to Std' }));
               }}
               renderInput={(params) => (
                 <TextField
                   {...params}
                   label="Quality Standard"
                   fullWidth
+                  inputRef={(input) => {
+                    fieldRefs.current.remarks = input;
+                  }}
+                  onKeyDown={(e) => handleKeyPress('remarks', e)}
                 />
               )}
             />
@@ -1065,6 +1572,10 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
               label="Additional Comments"
               fullWidth
               multiline
+              inputRef={(input) => {
+                fieldRefs.current.ad_cmts = input;
+              }}
+              onKeyDown={(e) => handleKeyPress('ad_cmts', e)}
               rows={2}
               value={formData.ad_cmts}
               onChange={(e) => setFormData(prev => ({
@@ -1093,15 +1604,18 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
             {formData.countType === COUNT_TYPES.PIECES ? (
               <TextField
                 label="Quantity (Pieces)"
-                type="number"
+                type="text"
                 value={formData.quantity}
+                inputRef={(input) => {
+                  fieldRefs.current.quantity = input;
+                }}
+                onKeyDown={(e) => handleKeyPress('quantity', e)}
                 onChange={(e) => setFormData(prev => ({
                   ...prev,
-                  quantity: parseInt(e.target.value) || 0
+                  quantity: e.target.value
                 }))}
                 fullWidth
                 required
-                inputProps={{ min: 1 }}
               />
             ) : (
               <>
@@ -1144,12 +1658,12 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
         </Grid>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={handleClose}>Cancel</Button>
         <Button 
           onClick={handleSubmit}
           variant="contained"
           color="primary"
-          disabled={!formData.form || !formData.quantity || loading.submitting}
+          disabled={!formData.form || !formData.quantity || formData.quantity === '' || loading.submitting}
           startIcon={loading.submitting ? <CircularProgress size={20} /> : <Save />}
         >
           {loading.submitting ? 'Submitting...' : 'Add Line Item'}

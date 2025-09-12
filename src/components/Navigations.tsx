@@ -22,7 +22,6 @@ import {
   DialogContentText,
   DialogTitle,
   Avatar,
-  Badge,
   Menu,
   MenuItem,
   styled,
@@ -47,22 +46,12 @@ import {
   ChevronLeft,
   ChevronRight,
   Menu as MenuIcon,
-  Notifications,
   AccountCircle
 } from "@mui/icons-material";
 
 const drawerWidth = 280;
 const collapsedWidth = 80;
 
-const StyledBadge = styled(Badge)(({ theme }) => ({
-  '& .MuiBadge-badge': {
-    right: -3,
-    top: 13,
-    border: `2px solid ${theme.palette.background.paper}`,
-    padding: '0 4px',
-    backgroundColor: theme.palette.error.main,
-  },
-}));
 
 const ModernAvatar = styled(Avatar)(({ theme }) => ({
   width: 40,
@@ -458,12 +447,6 @@ export default function ModernNavigation({ children }: NavigationProps) {
           <Box sx={{ flexGrow: 1 }} />
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <StyledBadge badgeContent={4} color="error">
-              <IconButton color="inherit">
-                <Notifications />
-              </IconButton>
-            </StyledBadge>
-
             <Box>
               <IconButton onClick={handleMenuOpen}>
                 <ModernAvatar>

@@ -38,7 +38,10 @@ import {
   Search,
   ListAlt,
   KeyboardArrowDown,
-  KeyboardArrowUp
+  KeyboardArrowUp,
+  Edit,
+  Save,
+  Cancel
 } from '@mui/icons-material';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSnackbar } from 'notistack';
@@ -56,6 +59,9 @@ interface Transaction {
   ext_finish?: string;
   width?: string;
   length?: string;
+  mill?: string;
+  heat?: string;
+  location?: string;
   qty: number;
   checker_count?: number;
   count_type: string;
@@ -135,6 +141,10 @@ const CheckerReviewPageImproved: React.FC = () => {
 
   // State for expanded rows
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+
+  // State for editing checker transactions
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   // Fetch sections
   const fetchSections = async () => {
@@ -432,6 +442,7 @@ const CheckerReviewPageImproved: React.FC = () => {
           checker_count_type: checker?.count_type || '',
           checker_team: checker?.team_name || '',
           checker_counted_by: checker?.counted_by || '',
+          checker_role: checker?.role || '',
           checker_date: checker?.created_at ? new Date(checker.created_at).toLocaleString() : '',
           checker_has_changes: checker?.changes && checker.changes.length > 0 ? 'Yes' : 'No',
           checker_changes_count: checker?.changes?.length || 0,
@@ -442,6 +453,7 @@ const CheckerReviewPageImproved: React.FC = () => {
           counter_count_type: counter?.count_type || '',
           counter_team: counter?.team_name || '',
           counter_counted_by: counter?.counted_by || '',
+          counter_role: counter?.role || '',
           counter_date: counter?.created_at ? new Date(counter.created_at).toLocaleString() : '',
           
           // Comparison
@@ -558,6 +570,59 @@ const CheckerReviewPageImproved: React.FC = () => {
       );
     } finally {
       setLoading(prev => ({ ...prev, transactions: false }));
+    }
+  };
+
+  // Edit handler functions
+  const handleEdit = (transaction: Transaction) => {
+    setEditingId(transaction.tag_id);
+    setEditingTransaction({ ...transaction });
+  };
+
+  const handleSave = async () => {
+    if (!editingTransaction) return;
+
+    try {
+      // Call the checker update API
+      const response = await servicesAPI.updateTransaction(editingTransaction);
+      
+      if (response.data.success) {
+        // Update the transaction in the local state
+        setTransactions(prev => 
+          prev.map(transaction => 
+            transaction.tag_id === editingTransaction.tag_id 
+              ? { ...editingTransaction, changes: detectChanges(editingTransaction, null) }
+              : transaction
+          )
+        );
+        
+        enqueueSnackbar('Transaction updated successfully!', { variant: 'success' });
+      } else {
+        throw new Error(response.data.message || 'Failed to update transaction');
+      }
+    } catch (error) {
+      console.error('Error updating transaction:', error);
+      enqueueSnackbar(
+        `Failed to update transaction: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { variant: 'error' }
+      );
+    } finally {
+      setEditingId(null);
+      setEditingTransaction(null);
+    }
+  };
+
+  const handleCancel = () => {
+    setEditingId(null);
+    setEditingTransaction(null);
+  };
+
+  const handleTransactionChange = (field: keyof Transaction, value: string | number) => {
+    if (editingTransaction) {
+      setEditingTransaction({
+        ...editingTransaction,
+        [field]: value
+      });
     }
   };
 
@@ -839,13 +904,17 @@ const CheckerReviewPageImproved: React.FC = () => {
                   <TableCell>Ext Finish</TableCell>
                   <TableCell>Width</TableCell>
                   <TableCell>Length</TableCell>
+                  <TableCell>Mill</TableCell>
+                  <TableCell>Heat</TableCell>
                   <TableCell>Qty</TableCell>
                   <TableCell>Count Type</TableCell>
                   <TableCell>Type</TableCell>
                   <TableCell>Quality Standard</TableCell>
                   <TableCell>Team</TableCell>
                   <TableCell>Counted By</TableCell>
+                  <TableCell>Role</TableCell>
                   <TableCell>Date</TableCell>
+                  <TableCell>Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -854,6 +923,7 @@ const CheckerReviewPageImproved: React.FC = () => {
                   
                   const isExpanded = expandedRows.has(tagId);
                   const hasCounter = !!counter;
+                  const isEditing = editingId === tagId;
                   
                   return (
                     <React.Fragment key={tagId}>
@@ -904,52 +974,179 @@ const CheckerReviewPageImproved: React.FC = () => {
                           />
                         </TableCell>
                         <TableCell sx={{ bgcolor: getCellBackgroundColor('form', checker, counter) }}>
-                          <Chip 
-                            label={checker.form} 
-                            size="small" 
-                            variant="outlined"
-                            sx={{ fontWeight: 500 }}
-                          />
+                          {isEditing ? (
+                            <TextField
+                              size="small"
+                              value={editingTransaction?.form || ''}
+                              onChange={(e) => handleTransactionChange('form', e.target.value)}
+                              sx={{ minWidth: 80 }}
+                            />
+                          ) : (
+                            <Chip 
+                              label={checker.form} 
+                              size="small" 
+                              variant="outlined"
+                              sx={{ fontWeight: 500 }}
+                            />
+                          )}
                         </TableCell>
                         <TableCell sx={{ bgcolor: getCellBackgroundColor('grade', checker, counter) }}>
-                          {checker.grade || '-'}
+                          {isEditing ? (
+                            <TextField
+                              size="small"
+                              value={editingTransaction?.grade || ''}
+                              onChange={(e) => handleTransactionChange('grade', e.target.value)}
+                              sx={{ minWidth: 80 }}
+                            />
+                          ) : (
+                            checker.grade || '-'
+                          )}
                         </TableCell>
                         <TableCell sx={{ bgcolor: getCellBackgroundColor('size', checker, counter) }}>
-                          {checker.size || '-'}
+                          {isEditing ? (
+                            <TextField
+                              size="small"
+                              value={editingTransaction?.size || ''}
+                              onChange={(e) => handleTransactionChange('size', e.target.value)}
+                              sx={{ minWidth: 80 }}
+                            />
+                          ) : (
+                            checker.size || '-'
+                          )}
                         </TableCell>
                         <TableCell sx={{ bgcolor: getCellBackgroundColor('finish', checker, counter) }}>
-                          {checker.finish || '-'}
+                          {isEditing ? (
+                            <TextField
+                              size="small"
+                              value={editingTransaction?.finish || ''}
+                              onChange={(e) => handleTransactionChange('finish', e.target.value)}
+                              sx={{ minWidth: 80 }}
+                            />
+                          ) : (
+                            checker.finish || '-'
+                          )}
                         </TableCell>
                         <TableCell sx={{ bgcolor: getCellBackgroundColor('ext_finish', checker, counter) }}>
-                          {checker.ext_finish || '-'}
+                          {isEditing ? (
+                            <TextField
+                              size="small"
+                              value={editingTransaction?.ext_finish || ''}
+                              onChange={(e) => handleTransactionChange('ext_finish', e.target.value)}
+                              sx={{ minWidth: 80 }}
+                            />
+                          ) : (
+                            checker.ext_finish || '-'
+                          )}
                         </TableCell>
                         <TableCell sx={{ bgcolor: getCellBackgroundColor('width', checker, counter) }}>
-                          {checker.width || '-'}
+                          {isEditing ? (
+                            <TextField
+                              size="small"
+                              value={editingTransaction?.width || ''}
+                              onChange={(e) => handleTransactionChange('width', e.target.value)}
+                              sx={{ minWidth: 80 }}
+                            />
+                          ) : (
+                            checker.width || '-'
+                          )}
                         </TableCell>
                         <TableCell sx={{ bgcolor: getCellBackgroundColor('length', checker, counter) }}>
-                          {checker.length || '-'}
+                          {isEditing ? (
+                            <TextField
+                              size="small"
+                              value={editingTransaction?.length || ''}
+                              onChange={(e) => handleTransactionChange('length', e.target.value)}
+                              sx={{ minWidth: 80 }}
+                            />
+                          ) : (
+                            checker.length || '-'
+                          )}
+                        </TableCell>
+                        <TableCell sx={{ bgcolor: getCellBackgroundColor('mill', checker, counter) }}>
+                          {isEditing ? (
+                            <TextField
+                              size="small"
+                              value={editingTransaction?.mill || ''}
+                              onChange={(e) => handleTransactionChange('mill', e.target.value)}
+                              sx={{ minWidth: 80 }}
+                            />
+                          ) : (
+                            checker.mill || '-'
+                          )}
+                        </TableCell>
+                        <TableCell sx={{ bgcolor: getCellBackgroundColor('heat', checker, counter) }}>
+                          {isEditing ? (
+                            <TextField
+                              size="small"
+                              value={editingTransaction?.heat || ''}
+                              onChange={(e) => handleTransactionChange('heat', e.target.value)}
+                              sx={{ minWidth: 80 }}
+                            />
+                          ) : (
+                            checker.heat || '-'
+                          )}
                         </TableCell>
                         <TableCell sx={{ bgcolor: getCellBackgroundColor('qty', checker, counter) }}>
-                          <Chip 
-                            label={checker.qty || 0}
-                            color={checker.count_type === 'bundle' ? 'primary' : 'default'}
-                            variant="outlined"
-                            size="small"
-                            sx={{ fontWeight: 600 }}
-                          />
+                          {isEditing ? (
+                            <TextField
+                              size="small"
+                              type="text"
+                              value={editingTransaction?.qty || 0}
+                              onChange={(e) => handleTransactionChange('qty', parseInt(e.target.value) || 0)}
+                              sx={{ minWidth: 80 }}
+                            />
+                          ) : (
+                            <Chip 
+                              label={checker.qty || 0}
+                              color={checker.count_type === 'bundle' ? 'primary' : 'default'}
+                              variant="outlined"
+                              size="small"
+                              sx={{ fontWeight: 600 }}
+                            />
+                          )}
                         </TableCell>
                         <TableCell sx={{ bgcolor: getCellBackgroundColor('count_type', checker, counter) }}>
-                          <Chip 
-                            label={checker.count_type}
-                            size="small"
-                            color={checker.count_type === 'bundle' ? 'primary' : 'secondary'}
-                          />
+                          {isEditing ? (
+                            <FormControl size="small" sx={{ minWidth: 100 }}>
+                              <Select
+                                value={editingTransaction?.count_type || ''}
+                                onChange={(e) => handleTransactionChange('count_type', e.target.value)}
+                              >
+                                <MenuItem value="pcs">Pieces</MenuItem>
+                                <MenuItem value="bundle">Bundles</MenuItem>
+                              </Select>
+                            </FormControl>
+                          ) : (
+                            <Chip 
+                              label={checker.count_type}
+                              size="small"
+                              color={checker.count_type === 'bundle' ? 'primary' : 'secondary'}
+                            />
+                          )}
                         </TableCell>
                         <TableCell sx={{ bgcolor: getCellBackgroundColor('type', checker, counter) }}>
-                          {checker.type || '-'}
+                          {isEditing ? (
+                            <TextField
+                              size="small"
+                              value={editingTransaction?.type || ''}
+                              onChange={(e) => handleTransactionChange('type', e.target.value)}
+                              sx={{ minWidth: 80 }}
+                            />
+                          ) : (
+                            checker.type || '-'
+                          )}
                         </TableCell>
                         <TableCell sx={{ bgcolor: getCellBackgroundColor('remarks', checker, counter) }}>
-                          {checker.remarks || '-'}
+                          {isEditing ? (
+                            <TextField
+                              size="small"
+                              value={editingTransaction?.remarks || ''}
+                              onChange={(e) => handleTransactionChange('remarks', e.target.value)}
+                              sx={{ minWidth: 120 }}
+                            />
+                          ) : (
+                            checker.remarks || '-'
+                          )}
                         </TableCell>
                         <TableCell>
                           <Chip 
@@ -974,9 +1171,37 @@ const CheckerReviewPageImproved: React.FC = () => {
                           </Box>
                         </TableCell>
                         <TableCell>
+                          <Chip 
+                            label={checker.role || '-'} 
+                            size="small" 
+                            color={checker.role === 'Checker' ? 'primary' : 'secondary'}
+                            variant="outlined"
+                          />
+                        </TableCell>
+                        <TableCell>
                           <Typography variant="body2" noWrap>
                             {checker.created_at ? new Date(checker.created_at).toLocaleDateString() : '-'}
                           </Typography>
+                        </TableCell>
+                        <TableCell>
+                          {isEditing ? (
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                              <IconButton size="small" onClick={handleSave} color="primary">
+                                <Save />
+                              </IconButton>
+                              <IconButton size="small" onClick={handleCancel} color="error">
+                                <Cancel />
+                              </IconButton>
+                            </Box>
+                          ) : (
+                            <IconButton 
+                              size="small" 
+                              onClick={() => handleEdit(checker)}
+                              color="primary"
+                            >
+                              <Edit />
+                            </IconButton>
+                          )}
                         </TableCell>
                       </TableRow>
                       
@@ -1015,6 +1240,8 @@ const CheckerReviewPageImproved: React.FC = () => {
                           <TableCell>{counter.ext_finish || '-'}</TableCell>
                           <TableCell>{counter.width || '-'}</TableCell>
                           <TableCell>{counter.length || '-'}</TableCell>
+                          <TableCell>{counter.mill || '-'}</TableCell>
+                          <TableCell>{counter.heat || '-'}</TableCell>
                           <TableCell>
                             <Chip 
                               label={counter.qty || 0}
@@ -1056,9 +1283,20 @@ const CheckerReviewPageImproved: React.FC = () => {
                             </Box>
                           </TableCell>
                           <TableCell>
+                            <Chip 
+                              label={counter.role || '-'} 
+                              size="small" 
+                              color={counter.role === 'Counter' ? 'info' : 'secondary'}
+                              variant="outlined"
+                            />
+                          </TableCell>
+                          <TableCell>
                             <Typography variant="body2" noWrap>
                               {counter.created_at ? new Date(counter.created_at).toLocaleDateString() : '-'}
                             </Typography>
+                          </TableCell>
+                          <TableCell>
+                            {/* Empty cell for counter row - no edit functionality */}
                           </TableCell>
                         </TableRow>
                       )}
