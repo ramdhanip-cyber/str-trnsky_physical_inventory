@@ -16,5 +16,6 @@ router.post('/recheck/mark-items', reconciliationController.markItemsForRecheck)
 router.get('/recheck/items/:location_id', reconciliationController.getRecheckItems);
   router.put('/recheck/items/:item_id', reconciliationController.updateRecheckItem);
   router.post('/recheck/complete/:item_id', reconciliationController.completeRecheckItem);
+  router.delete('/recheck/items/:item_id', reconciliationController.removeFromRecheck);
 
 module.exports = router; 

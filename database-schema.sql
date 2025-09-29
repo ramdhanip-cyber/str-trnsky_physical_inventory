@@ -187,7 +187,8 @@ CREATE TABLE recheck_items (
     rechecked_by INT REFERENCES st_users(user_id),
     rechecked_at TIMESTAMPTZ,
     recheck_count INT DEFAULT 0,
-    original_transaction_ids TEXT -- JSON array of original transaction IDs
+    tag_id VARCHAR(255),
+    transaction_id INT REFERENCES transactions(transaction_id)
 );
 
 -- =================================================================

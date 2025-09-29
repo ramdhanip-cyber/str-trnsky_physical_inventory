@@ -21,13 +21,14 @@ exports.reconcileInventory = async (req, res) => {
         prd_ef_svar as ext_finish,
         prd_wdth as width,
         prd_lgth as length,
+        prd_loc as location,
         sum(prd_ohd_wgt) as weight,
         prd_brh as branch,
         prd_whs as warehouse,
         prd_invt_typ as inv_type,
         prd_invt_qlty as inv_quality,
-        sum(prd_ohd_qty) as system_qty,
-        sum(prd_ohd_pcs) as total_qty,
+        CAST(sum(prd_ohd_qty) AS INTEGER) as system_qty,
+        CAST(sum(COALESCE(prd_ohd_pcs, prd_ohd_qty)) AS INTEGER) as total_qty,
         round(case when sum(prd_ohd_mat_val) = 0 then sum(prd_ohd_qty*(acp_tot_mat_val/nullif(acp_tot_wgt,0))) else sum(prd_ohd_mat_val) end,2) as prd_ohd_mat_val,
         round((case when sum(prd_ohd_mat_val) = 0 then sum(prd_ohd_qty*(acp_tot_mat_val/nullif(acp_tot_wgt,0))) else sum(prd_ohd_mat_val) end/nullif(sum(prd_ohd_qty),0))*100,2) as prd_ohd_mat_cst
       FROM intprd_rec 
@@ -43,10 +44,17 @@ form,
         ext_finish,
         width,
         length,
+        location,
         branch,
         warehouse,
         inv_type,
         inv_quality) as tst
+ORDER BY form ASC, 
+  CASE 
+    WHEN size ~ '^[0-9]+\.?[0-9]*$' THEN CAST(size AS NUMERIC)
+    ELSE 999999999
+  END ASC,
+  size ASC
 
     `;
 
@@ -114,12 +122,14 @@ form,
       ext_finish: item.ext_finish,
       width: item.width,
       length: item.length,
+      location: item.location,
       weight: item.weight,
       inv_type: item.inv_type,
       inv_quality: mapQualityStandards(item.inv_quality),
       branch: item.branch,
       warehouse: item.warehouse,
       system_qty: item.system_qty,
+      total_qty: item.total_qty,
       prd_ohd_mat_val: item.prd_ohd_mat_val,
       prd_ohd_mat_cst: item.prd_ohd_mat_cst
     }));
@@ -217,6 +227,10 @@ exports.saveReconciliationWithComparison = async (req, res) => {
       comparison_date: new Date().toISOString()
     };
 
+    // Debug logging
+    console.log('Received checker_data:', JSON.stringify(checker_data, null, 2));
+    console.log('Sample checker item:', checker_data?.[0]);
+    
     // Enhance items_data with comparison results (checker quantities, variance, status)
     const enhancedItemsData = items_data.map(systemItem => {
       // Find matching checker data
@@ -242,6 +256,9 @@ exports.saveReconciliationWithComparison = async (req, res) => {
         const systemLength = String(Number(systemItem.length || 0)).trim();
         const checkerLength = String(Number(checker.length || 0)).trim();
         
+        const systemLocation = String(systemItem.location || '').trim();
+        const checkerLocation = String(checker.location || '').trim();
+        
         const systemType = String(systemItem.inv_type || '').trim();
         const checkerType = String(checker.type || '').trim();
         
@@ -256,21 +273,31 @@ exports.saveReconciliationWithComparison = async (req, res) => {
           systemExtFinish === checkerExtFinish &&
           systemWidth === checkerWidth &&
           systemLength === checkerLength &&
+          systemLocation === checkerLocation &&
           systemType === checkerType &&
           systemQuality === checkerQuality
         );
       });
 
       const checkerQty = matchingChecker ? matchingChecker.qty : 0;
-      const variance = checkerQty - (systemItem.system_qty || 0);
+      const systemQty = systemItem.total_qty || 0; // Use total_qty as the system quantity
+      const variance = checkerQty - systemQty;
+      
+      // Debug logging
+      if (matchingChecker) {
+        console.log(`Item: ${systemItem.form}-${systemItem.grade}-${systemItem.size}, Checker Qty: ${matchingChecker.qty}, System Qty: ${systemQty}, Variance: ${variance}`);
+      } else {
+        console.log(`No matching checker found for: ${systemItem.form}-${systemItem.grade}-${systemItem.size}`);
+      }
       const status = matchingChecker ? 
-        (checkerQty === systemItem.system_qty ? 'Match' : 
-         checkerQty > systemItem.system_qty ? 'Over Count' : 'Under Count') : 
+        (checkerQty === systemQty ? 'Match' : 
+         checkerQty > systemQty ? 'Over Count' : 'Under Count') : 
         'No Match';
 
       // Return enhanced item with comparison data
       return {
         ...systemItem,
+        system_qty: systemQty, // Store the system quantity (total_qty) for consistency
         checker_qty: checkerQty,
         variance: variance,
         status: status,
@@ -491,8 +518,8 @@ exports.markItemsForRecheck = async (req, res) => {
       const query = `
         INSERT INTO recheck_items 
         (location_id, form, grade, size, finish, ext_finish, width, length, 
-         system_qty, counted_qty, variance, recheck_reason, marked_by)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         system_qty, counted_qty, variance, recheck_reason, marked_by, tag_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         RETURNING id
       `;
 
@@ -509,7 +536,8 @@ exports.markItemsForRecheck = async (req, res) => {
         item.counted_qty || 0,
         item.variance || 0,
         recheck_reason || 'Marked for recheck during reconciliation',
-        marked_by
+        marked_by,
+        item.tag_id
       ];
 
       const result = await pool.query(query, values);
@@ -683,7 +711,7 @@ exports.completeRecheckItem = async (req, res) => {
     }
 
     const recheckItem = getResult.rows[0];
-    const newVariance = new_counted_qty - recheckItem.system_qty;
+    const newVariance = new_counted_qty - (recheckItem.system_qty || 0);
 
     // Update the recheck item with new quantity and mark as completed
     const updateQuery = `
@@ -759,6 +787,9 @@ exports.completeRecheckItem = async (req, res) => {
               const systemLength = String(Number(recheckItem.length || 0)).trim();
               const checkerLength = String(Number(checker.length || 0)).trim();
               
+              const systemLocation = String(recheckItem.location || '').trim();
+              const checkerLocation = String(checker.location || '').trim();
+              
               const systemType = String(recheckItem.inv_type || '').trim();
               const checkerType = String(checker.type || '').trim();
               
@@ -773,6 +804,7 @@ exports.completeRecheckItem = async (req, res) => {
                 systemExtFinish === checkerExtFinish &&
                 systemWidth === checkerWidth &&
                 systemLength === checkerLength &&
+                systemLocation === checkerLocation &&
                 systemType === checkerType &&
                 systemQuality === checkerQuality
               );
@@ -810,6 +842,9 @@ exports.completeRecheckItem = async (req, res) => {
             const systemLength = String(Number(recheckItem.length || 0)).trim();
             const itemLength = String(Number(item.length || 0)).trim();
             
+            const systemLocation = String(recheckItem.location || '').trim();
+            const itemLocation = String(item.location || '').trim();
+            
             const systemType = String(recheckItem.inv_type || '').trim();
             const itemType = String(item.inv_type || '').trim();
             
@@ -824,14 +859,16 @@ exports.completeRecheckItem = async (req, res) => {
               systemExtFinish === itemExtFinish &&
               systemWidth === itemWidth &&
               systemLength === itemLength &&
+              systemLocation === itemLocation &&
               systemType === itemType &&
               systemQuality === itemQuality
             );
 
             if (isMatch && item.has_comparison) {
-              const newVariance = new_counted_qty - (item.system_qty || 0);
-              const newStatus = new_counted_qty === item.system_qty ? 'Match' : 
-                               new_counted_qty > item.system_qty ? 'Over Count' : 'Under Count';
+              const systemQty = item.total_qty || 0; // Use total_qty as the system quantity
+              const newVariance = new_counted_qty - systemQty;
+              const newStatus = new_counted_qty === systemQty ? 'Match' : 
+                               new_counted_qty > systemQty ? 'Over Count' : 'Under Count';
               
               console.log('Updating items_data - found matching item, updating quantity from', item.checker_qty, 'to', new_counted_qty);
               return { 
@@ -877,6 +914,7 @@ exports.completeRecheckItem = async (req, res) => {
         ext_finish: recheckItem.ext_finish,
         width: recheckItem.width,
         length: recheckItem.length,
+        location: recheckItem.location,
         mill: recheckItem.mill,
         heat: recheckItem.heat,
         system_qty: recheckItem.system_qty,
@@ -889,6 +927,47 @@ exports.completeRecheckItem = async (req, res) => {
     console.error('Complete recheck item error:', error);
     res.status(500).json({ 
       error: "Failed to complete recheck item",
+      details: error.message 
+    });
+  }
+};
+
+// Remove item from recheck
+exports.removeFromRecheck = async (req, res) => {
+  try {
+    const { item_id } = req.params;
+
+    if (!item_id) {
+      return res.status(400).json({ 
+        error: "Item ID is required" 
+      });
+    }
+
+    // Delete the recheck item
+    const deleteQuery = `
+      DELETE FROM recheck_items 
+      WHERE id = $1
+      RETURNING *
+    `;
+
+    const result = await pool.query(deleteQuery, [item_id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ 
+        error: "Recheck item not found" 
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Item removed from recheck successfully",
+      item: result.rows[0]
+    });
+
+  } catch (error) {
+    console.error('Remove from recheck error:', error);
+    res.status(500).json({ 
+      error: "Failed to remove item from recheck",
       details: error.message 
     });
   }

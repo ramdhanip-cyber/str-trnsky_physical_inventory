@@ -190,8 +190,50 @@ const CounterPage: React.FC = () => {
       if (nextFieldRef) {
         nextFieldRef.focus();
         nextFieldRef.select(); // Select all text for easy replacement
+      } else {
+        // If the next field ref is not available, try to find it after a short delay
+        // This handles cases where the field might be conditionally rendered
+        setTimeout(() => {
+          const delayedRef = fieldRefs.current[nextField];
+          if (delayedRef) {
+            delayedRef.focus();
+            delayedRef.select();
+          }
+        }, 100);
       }
     }
+  };
+
+  // Length unit conversion functions
+  const convertToInches = (value: string, unit: 'inches' | 'feet'): string => {
+    const numValue = parseFloat(value);
+    if (isNaN(numValue)) return value;
+    
+    if (unit === 'feet') {
+      return (numValue * 12).toFixed(4);
+    }
+    return numValue.toFixed(4);
+  };
+
+  const convertFromInches = (value: string, unit: 'inches' | 'feet'): string => {
+    const numValue = parseFloat(value);
+    if (isNaN(numValue)) return value;
+    
+    if (unit === 'feet') {
+      return (numValue / 12).toFixed(4);
+    }
+    return numValue.toFixed(4);
+  };
+
+  const convertLengthOptions = (options: string[], unit: 'inches' | 'feet'): string[] => {
+    if (unit === 'inches') {
+      return options;
+    }
+    return options.map(option => {
+      const numValue = parseFloat(option);
+      if (isNaN(numValue)) return option;
+      return (numValue / 12).toFixed(4);
+    });
   };
   
   // Validate field value against available options
@@ -264,7 +306,8 @@ const CounterPage: React.FC = () => {
         break;
       case 'length':
         // Allow empty spaces and the actual value
-        if (trimmedValue === '' || lengthOptions.includes(trimmedValue)) {
+        const convertedLengthOptions = convertLengthOptions(lengthOptions, lengthUnit);
+        if (trimmedValue === '' || convertedLengthOptions.includes(trimmedValue)) {
           // Valid: empty (spaces) or found in options
         } else {
           // Check if the value is a valid number that could be formatted
@@ -272,7 +315,7 @@ const CounterPage: React.FC = () => {
           if (!isNaN(numValue)) {
             // Check if any length option matches when converted to the same format
             // API returns values like "240.0000" but user might type "240"
-            const hasMatchingOption = lengthOptions.some(option => {
+            const hasMatchingOption = convertedLengthOptions.some(option => {
               const optionNum = parseFloat(option);
               return !isNaN(optionNum) && Math.abs(optionNum - numValue) < 0.0001;
             });
@@ -414,6 +457,7 @@ const CounterPage: React.FC = () => {
   const [locationOptions, setLocationOptions] = useState<string[]>([]);
   const [remarksOptions, setRemarksOptions] = useState<string[]>([]);
   const [locationData, setLocationData] = useState<LocationData | null>(null);
+  const [lengthUnit, setLengthUnit] = useState<'inches' | 'feet'>('inches');
   
   // Cache for heat options to avoid repeated API calls
   const heatCache = React.useRef<Map<string, string[]>>(new Map());
@@ -1362,20 +1406,50 @@ const CounterPage: React.FC = () => {
 
               {/* Length Field */}
               <Grid item xs={12} sm={6}>
+                <Box sx={{ mb: 1 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                    Length Unit:
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button
+                      variant={lengthUnit === 'inches' ? 'contained' : 'outlined'}
+                      size="small"
+                      onClick={() => {
+                        setLengthUnit('inches');
+                      }}
+                    >
+                      Inches
+                    </Button>
+                    <Button
+                      variant={lengthUnit === 'feet' ? 'contained' : 'outlined'}
+                      size="small"
+                      onClick={() => {
+                        setLengthUnit('feet');
+                      }}
+                    >
+                      Feet
+                    </Button>
+                  </Box>
+                </Box>
                 <Autocomplete
                   freeSolo
-                  options={lengthOptions}
-                  value={formData.length !== '' ? Number(formData.length).toFixed(4) : ''}
+                  options={convertLengthOptions(lengthOptions, lengthUnit)}
+                  value={formData.length !== '' ? convertFromInches(formData.length, 'inches') : ''}
                   onChange={(_, value) => {
-                    const formattedValue = value !== null && value !== '' ? Number(value).toFixed(4) : '';
-                    setFormData(prev => ({ ...prev, length: formattedValue }));
+                    if (value !== null && value !== '') {
+                      // Convert the entered value to inches for storage
+                      const convertedValue = convertToInches(value, lengthUnit);
+                      setFormData(prev => ({ ...prev, length: convertedValue }));
+                    } else {
+                      setFormData(prev => ({ ...prev, length: '' }));
+                    }
                   }}
                   loading={loading.length}
                   disabled={!formData.width}
                   renderInput={(params) => (
                     <TextField
                       {...params}
-                      label="Length"
+                      label={`Length`}
                       fullWidth
                       inputRef={(input) => {
                         fieldRefs.current.length = input;
@@ -1397,6 +1471,7 @@ const CounterPage: React.FC = () => {
 
               {/* Heat Field */}
               <Grid item xs={12} sm={6}>
+                <Box sx={{ height: '64px' }} />
                 <Autocomplete
                   freeSolo
                   options={heatOptions}

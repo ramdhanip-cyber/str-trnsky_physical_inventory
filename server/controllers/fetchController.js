@@ -1641,6 +1641,7 @@ exports.GetTransactionsByTeam = async (req, res) => {
         t.section_id,
         t.mill,
         t.heat,
+        t.location,
         t.created_at as counted_at,
         COALESCE(
           json_agg(
@@ -2009,6 +2010,7 @@ exports.getTransactionsByLocationAndSection = async (req, res) => {
     if (usr_role === 'checker'){
       const query = `
       SELECT 
+      t.transaction_id,
       t.tag_id,
       t.form,
       t.type,
@@ -2020,11 +2022,14 @@ exports.getTransactionsByLocationAndSection = async (req, res) => {
       t.length,
       t.mill,
       t.heat,
+      t.location,
       t.remarks,
       t.qty,
       t.checker_count,
       t.count_type,
       t.role,
+      t.location_id,
+      t.section_id,
       su.full_name AS counted_by,
       t.created_at,
       t2.team_name,
@@ -2047,10 +2052,15 @@ exports.getTransactionsByLocationAndSection = async (req, res) => {
   AND ss.section_id = $2
   AND t.role = 'Checker'
   GROUP BY 
-      t.tag_id, t.form, t.type, t.grade, t.size, t.finish, t.ext_finish, 
-      t.width, t.length, t.mill, t.heat, t.remarks, t.qty, t.checker_count, t.count_type, t.role,
-      su.full_name, t.created_at, t2.team_name
-  ORDER BY t.created_at DESC;
+      t.transaction_id, t.tag_id, t.form, t.type, t.grade, t.size, t.finish, t.ext_finish, 
+      t.width, t.length, t.mill, t.heat, t.location, t.remarks, t.qty, t.checker_count, t.count_type, t.role,
+      t.location_id, t.section_id, su.full_name, t.created_at, t2.team_name
+  ORDER BY t.form ASC, 
+  CASE 
+    WHEN t.size ~ '^[0-9]+\.?[0-9]*$' THEN CAST(t.size AS NUMERIC)
+    ELSE 999999999
+  END ASC,
+  t.size ASC, t.created_at DESC;
     `;
 
     const { rows } = await pool.query(query, [location_id, section_id]);
@@ -2117,6 +2127,7 @@ exports.getTransactionsByLocationAndSection = async (req, res) => {
       t.length,
       t.mill,
       t.heat,
+      t.location,
       t.remarks,
       t.qty,
       t.checker_count,
@@ -2145,9 +2156,14 @@ exports.getTransactionsByLocationAndSection = async (req, res) => {
   AND t.role = 'Counter'
   GROUP BY 
       t.tag_id, t.form, t.type, t.grade, t.size, t.finish, t.ext_finish, 
-      t.width, t.length, t.mill, t.heat, t.remarks, t.qty, t.checker_count, t.count_type, t.role,
+      t.width, t.length, t.mill, t.heat, t.location, t.remarks, t.qty, t.checker_count, t.count_type, t.role,
       su.full_name, t.created_at, t2.team_name
-  ORDER BY t.created_at DESC;
+  ORDER BY t.form ASC, 
+  CASE 
+    WHEN t.size ~ '^[0-9]+\.?[0-9]*$' THEN CAST(t.size AS NUMERIC)
+    ELSE 999999999
+  END ASC,
+  t.size ASC, t.created_at DESC;
     `;
 
     console.log('Executing full counter query with parameters:', [location_id, section_id]);
@@ -2295,6 +2311,49 @@ exports.itemCount = async (req, res) =>{
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+// Get transaction ID by tag_id and location_id
+exports.getTransactionIdByTagAndLocation = async (req, res) => {
+  const { tag_id, location_id } = req.query;
+  
+  if (!tag_id || !location_id) {
+    return res.status(400).json({ 
+      success: false,
+      error: 'Both tag_id and location_id are required' 
+    });
+  }
+
+  try {
+    const query = `
+      SELECT transaction_id 
+      FROM transactions 
+      WHERE tag_id = $1::text AND location_id = $2::integer AND role = 'Checker'
+      ORDER BY created_at DESC 
+      LIMIT 1
+    `;
+    
+    const result = await pool.query(query, [tag_id, location_id]);
+    
+    if (result.rows.length > 0) {
+      res.json({
+        success: true,
+        transaction_id: result.rows[0].transaction_id
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        error: 'Transaction not found'
+      });
+    }
+  } catch (error) {
+    console.error('Error fetching transaction ID:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch transaction ID',
+      details: error.message
+    });
   }
 };
 

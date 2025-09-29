@@ -23,6 +23,7 @@ import Checker from './pages/checker';
 import CheckerLogs from './pages/checkerLogs';
 import ReconciliationRecords from './pages/reconciliationRecords';
 import ReconciliationPage from './pages/reconciliation';
+import AdjustmentPage from './pages/adjustment';
 // import Checker from './pages/checker_sku';
 // import CheckerHomeSky from "./pages/checkerHome_sky";
 
@@ -108,6 +109,7 @@ function App() {
                   <Route path="/check-review/:location_id" element={<CheckReviewPage />} />
                   <Route path="/reconciliation/:location_id" element={<ReconciliationPage />} />
                   <Route path="/reconciliation-records/:locationId" element={<ReconciliationRecords />} />
+                  <Route path="/adjustment" element={<AdjustmentPage />} />
                   {/* <Route path="/checker/12" element={<CheckerPage />} /> */}
                   <Route path="/assigned-counters" element={<AssignedPage />} />
                   <Route path="/assigned-checkers" element={<AssignedChecker />} />

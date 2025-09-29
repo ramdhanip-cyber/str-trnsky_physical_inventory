@@ -28,6 +28,7 @@ interface Transaction {
   section_id: number;
   location_desc?: string;
   section_desc?: string;
+  location?: string;
   verified?: boolean;
   remarks?: string;
   mill?: string;
@@ -427,7 +428,8 @@ const Checker: React.FC = () => {
         heat: transaction.heat,
         ad_cmts: transaction.ad_cmts,
         role: selectedRole, // This will be 'Checker'
-        counted_by: selectedUser ? parseInt(selectedUser) : undefined
+        counted_by: selectedUser ? parseInt(selectedUser) : undefined,
+        location: transaction.location // Copy location from counter transaction
       };
 
       // Create new checker transaction
@@ -692,6 +694,7 @@ const Checker: React.FC = () => {
               <TableCell>Ext. Finish</TableCell>
               <TableCell>Length</TableCell>
               <TableCell>Type</TableCell>
+              <TableCell>Location</TableCell>
               <TableCell>Quality</TableCell>
               <TableCell>Comments</TableCell>
               <TableCell>Count Type</TableCell>
@@ -782,6 +785,7 @@ const Checker: React.FC = () => {
                     <TableCell>{transaction.ext_finish}</TableCell>
                     <TableCell>{transaction.length}</TableCell>
                     <TableCell>{transaction.type || '-'}</TableCell>
+                    <TableCell>{transaction.location || '-'}</TableCell>
                     <TableCell>{transaction.remarks || '-'}</TableCell>
                     <TableCell>{transaction.ad_cmts || '-'}</TableCell>
                     <TableCell>
@@ -904,6 +908,7 @@ const Checker: React.FC = () => {
                   <TableCell>Finish</TableCell>
                   <TableCell>Ext. Finish</TableCell>
                   <TableCell>Type</TableCell>
+                  <TableCell>Location</TableCell>
                   <TableCell>Quality</TableCell>
                   <TableCell>Comments</TableCell>
                   <TableCell>Count Type</TableCell>
@@ -943,6 +948,7 @@ const Checker: React.FC = () => {
                         <TableCell>{transaction.finish}</TableCell>
                         <TableCell>{transaction.ext_finish}</TableCell>
                         <TableCell>{transaction.type || '-'}</TableCell>
+                        <TableCell>{transaction.location || '-'}</TableCell>
                         <TableCell>{transaction.remarks || '-'}</TableCell>
                         <TableCell>{transaction.ad_cmts || '-'}</TableCell>
                         <TableCell>
@@ -957,7 +963,7 @@ const Checker: React.FC = () => {
                       </TableRow>
                       {isBundle && transactionBundles.length > 0 && (
                         <TableRow>
-                          <TableCell colSpan={16} sx={{ p: 0 }}>
+                          <TableCell colSpan={17} sx={{ p: 0 }}>
                             <Box sx={{ pl: 4, py: 1, bgcolor: '#f9f9f9' }}>
                               <Typography variant="subtitle2" gutterBottom>
                                 Bundle Details

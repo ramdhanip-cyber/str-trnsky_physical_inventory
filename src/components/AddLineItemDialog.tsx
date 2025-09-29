@@ -165,7 +165,7 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
             isEnabled = !!formData.remarks;
             break;
           case 'quantity':
-            isEnabled = !!formData.ad_cmts;
+            isEnabled = true; // Quantity is always enabled as it's required
             break;
           default:
             isEnabled = true;
@@ -187,6 +187,38 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
     } else {
       console.log(`⚠️ Already at last field: ${currentField}`);
     }
+  };
+
+  // Length unit conversion functions
+  const convertToInches = (value: string, unit: 'inches' | 'feet'): string => {
+    const numValue = parseFloat(value);
+    if (isNaN(numValue)) return value;
+    
+    if (unit === 'feet') {
+      return (numValue * 12).toFixed(4);
+    }
+    return numValue.toFixed(4);
+  };
+
+  const convertFromInches = (value: string, unit: 'inches' | 'feet'): string => {
+    const numValue = parseFloat(value);
+    if (isNaN(numValue)) return value;
+    
+    if (unit === 'feet') {
+      return (numValue / 12).toFixed(4);
+    }
+    return numValue.toFixed(4);
+  };
+
+  const convertLengthOptions = (options: string[], unit: 'inches' | 'feet'): string[] => {
+    if (unit === 'inches') {
+      return options;
+    }
+    return options.map(option => {
+      const numValue = parseFloat(option);
+      if (isNaN(numValue)) return option;
+      return (numValue / 12).toFixed(4);
+    });
   };
   
   // Validate field value against available options
@@ -241,14 +273,32 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
           return { isValid: false, message: `Width "${trimmedValue}" not found. Please select from available options.` };
         }
         break;
-      case 'length':
+      case 'length': {
         // Allow empty spaces and the actual value
-        if (trimmedValue === '' || lengthOptions.includes(trimmedValue)) {
+        const convertedLengthOptions = convertLengthOptions(lengthOptions, lengthUnit);
+        if (trimmedValue === '' || convertedLengthOptions.includes(trimmedValue)) {
           // Valid: empty (spaces) or found in options
         } else {
-          return { isValid: false, message: `Length "${trimmedValue}" not found. Please select from available options.` };
+          // Check if the value is a valid number that could be formatted
+          const numValue = parseFloat(trimmedValue);
+          if (!isNaN(numValue)) {
+            // Check if any length option matches when converted to the same format
+            // API returns values like "240.0000" but user might type "240"
+            const hasMatchingOption = convertedLengthOptions.some(option => {
+              const optionNum = parseFloat(option);
+              return !isNaN(optionNum) && Math.abs(optionNum - numValue) < 0.0001;
+            });
+            if (hasMatchingOption) {
+              // Valid: numeric value that matches an option
+            } else {
+              return { isValid: false, message: `Length "${trimmedValue}" not found. Please select from available options.` };
+            }
+          } else {
+            return { isValid: false, message: `Length "${trimmedValue}" not found. Please select from available options.` };
+          }
         }
         break;
+      }
       case 'heat':
         // Allow empty spaces, dash, and actual values
         if (trimmedValue === '' || trimmedValue === '-' || heatOptions.includes(trimmedValue)) {
@@ -399,6 +449,7 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
   const [millOptions, setMillOptions] = useState<string[]>([]);
   const [heatOptions, setHeatOptions] = useState<string[]>([]);
   const [remarksOptions, setRemarksOptions] = useState<string[]>([]);
+  const [lengthUnit, setLengthUnit] = useState<'inches' | 'feet'>('inches');
   const [typeOptions] = useState([
     { value: 'D', label: 'D - Drop' },
     { value: 'F', label: 'F - Finished' },
@@ -757,7 +808,10 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
               if (value === null || value === undefined || value === '') {
                 return ' ';
               }
-              return typeof value === 'string' ? value.trim() : String(value);
+              
+              // Special handling for length field - format to 4 decimal places like counter page
+              const numValue = Number(value);
+              return isNaN(numValue) ? ' ' : numValue.toFixed(4);
             });
             
             const filteredOptions = options.filter((opt: string) => opt && opt !== 'null');
@@ -1291,19 +1345,74 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
 
           {/* Length Field */}
           <Grid item xs={12} sm={6}>
+            <Box sx={{ mb: 1 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Length Unit:
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button
+                  variant={lengthUnit === 'inches' ? 'contained' : 'outlined'}
+                  size="small"
+                  onClick={() => {
+                    setLengthUnit('inches');
+                  }}
+                >
+                  Inches
+                </Button>
+                <Button
+                  variant={lengthUnit === 'feet' ? 'contained' : 'outlined'}
+                  size="small"
+                  onClick={() => {
+                    setLengthUnit('feet');
+                  }}
+                >
+                  Feet
+                </Button>
+              </Box>
+            </Box>
             <Autocomplete
               freeSolo
-              options={lengthOptions}
-              value={formData.length}
+              options={convertLengthOptions(lengthOptions, lengthUnit)}
+              value={formData.length !== '' ? convertFromInches(formData.length, 'inches') : ''}
               onChange={(_, value) => {
-                setFormData(prev => ({ ...prev, length: value || '' }));
+                if (value !== null && value !== '') {
+                  const numValue = parseFloat(value);
+                  if (!isNaN(numValue)) {
+                    // Check if any length option matches when converted to the same format
+                    const convertedOptions = convertLengthOptions(lengthOptions, lengthUnit);
+                    const hasMatchingOption = convertedOptions.some(option => {
+                      const optionNum = parseFloat(option);
+                      return !isNaN(optionNum) && Math.abs(optionNum - numValue) < 0.0001;
+                    });
+                    if (hasMatchingOption) {
+                      // Find the exact matching option and use its formatted value
+                      const matchingOption = convertedOptions.find(option => {
+                        const optionNum = parseFloat(option);
+                        return !isNaN(optionNum) && Math.abs(optionNum - numValue) < 0.0001;
+                      });
+                      // Convert the matching option to inches for storage
+                      const convertedValue = convertToInches(matchingOption || value, lengthUnit);
+                      setFormData(prev => ({ ...prev, length: convertedValue }));
+                    } else {
+                      // Convert the entered value to inches for storage
+                      const convertedValue = convertToInches(value, lengthUnit);
+                      setFormData(prev => ({ ...prev, length: convertedValue }));
+                    }
+                  } else {
+                    // Convert the entered value to inches for storage
+                    const convertedValue = convertToInches(value, lengthUnit);
+                    setFormData(prev => ({ ...prev, length: convertedValue }));
+                  }
+                } else {
+                  setFormData(prev => ({ ...prev, length: '' }));
+                }
               }}
               loading={loading.length}
               disabled={!formData.width}
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label="Length"
+                  label={`Length (${lengthUnit})`}
                   fullWidth
                   inputRef={(input) => {
                     fieldRefs.current.length = input;
@@ -1325,6 +1434,7 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
 
           {/* Heat Field */}
           <Grid item xs={12} sm={6}>
+            <Box sx={{ height: '64px' }} />
             <Autocomplete
               freeSolo
               options={heatOptions}

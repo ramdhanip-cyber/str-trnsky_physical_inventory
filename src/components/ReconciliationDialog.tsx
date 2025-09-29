@@ -165,72 +165,290 @@ const ReconciliationDialog: React.FC<ReconciliationDialogProps> = ({
 
       const workbook = XLSX.utils.book_new();
       
-      // Summary Sheet
+      // Summary Sheet with enhanced formatting
       const summaryData = [
-        ['Reconciliation Summary'],
+        ['INVENTORY RECONCILIATION REPORT'],
+        [''],
+        ['Report Generated:', new Date().toLocaleString()],
+        ['Location ID:', locationId],
+        [''],
+        ['SUMMARY STATISTICS'],
         ['Total System Items', safeData.summary.total_system_items],
         ['Total Counted Items', safeData.summary.total_counted_items],
         ['Items Matched', safeData.summary.items_matched],
         ['Overcounts', safeData.summary.overcounts],
         ['Undercounts', safeData.summary.undercounts],
-        ['Not Counted', safeData.summary.not_counted]
+        ['Not Counted', safeData.summary.not_counted],
+        [''],
+        ['VARIANCE ANALYSIS'],
+        ['Total System Quantity', safeData.items.reduce((sum, item) => sum + (item.system_qty || 0), 0)],
+        ['Total Checker Quantity', safeData.items.reduce((sum, item) => sum + (item.counted_qty || 0), 0)],
+        ['Total Variance', safeData.items.reduce((sum, item) => sum + ((item.counted_qty || 0) - (item.system_qty || 0)), 0)],
+        ['Total Value Variance', safeData.items.reduce((sum, item) => sum + (item.prd_ohd_mat_val || 0), 0)]
       ];
       
       const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
+      
+      // Style the summary sheet
+      const summaryRange = XLSX.utils.decode_range(summarySheet['!ref'] || 'A1');
+      for (let row = summaryRange.s.r; row <= summaryRange.e.r; row++) {
+        for (let col = summaryRange.s.c; col <= summaryRange.e.c; col++) {
+          const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+          if (!summarySheet[cellAddress]) continue;
+          
+          if (row === 0) {
+            // Header row
+            summarySheet[cellAddress].s = {
+              font: { bold: true, size: 16, color: { rgb: "FFFFFF" } },
+              fill: { fgColor: { rgb: "2E7D32" } },
+              alignment: { horizontal: "center", vertical: "center" }
+            };
+          } else if (row === 5 || row === 13) {
+            // Section headers
+            summarySheet[cellAddress].s = {
+              font: { bold: true, size: 12, color: { rgb: "FFFFFF" } },
+              fill: { fgColor: { rgb: "1976D2" } },
+              alignment: { horizontal: "left", vertical: "center" }
+            };
+          } else if (row > 0 && col === 0 && summarySheet[cellAddress].v && typeof summarySheet[cellAddress].v === 'string') {
+            // Labels
+            summarySheet[cellAddress].s = {
+              font: { bold: true },
+              alignment: { horizontal: "left" }
+            };
+          }
+        }
+      }
+      
       XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary');
 
-      // Details Sheet
+      // Enhanced Details Sheet with all requested columns
       if (safeData.items.length > 0) {
-        // Group items by all fields except section_desc
-        const groupKey = (item: typeof safeData.items[0]) => [item.form, item.grade, item.size, item.width, item.length, item.finish, item.ext_finish, item.mill, item.heat, item.branch].join('|');
+        const exportRows: Array<Record<string, string | number>> = [];
+        
+        // Add header row
+        exportRows.push({
+          'Form': 'Form',
+          'Grade': 'Grade', 
+          'Size': 'Size',
+          'Finish': 'Finish',
+          'Extended Finish': 'Extended Finish',
+          'Width': 'Width',
+          'Length': 'Length',
+          'Location': 'Location',
+          'Weight': 'Weight',
+          'Inventory Type': 'Inventory Type',
+          'Quality Standards': 'Quality Standards',
+          'Quality Standards Code': 'Quality Standards Code',
+          'Branch': 'Branch',
+          'Warehouse': 'Warehouse',
+          'System Qty': 'System Qty',
+          'Checker Qty': 'Checker Qty',
+          'Section Breakdown': 'Section Breakdown',
+          'Tag ID': 'Tag ID',
+          'Variance': 'Variance',
+          'Status': 'Status',
+          'Total Amount': 'Total Amount',
+          'Unit Cost': 'Unit Cost'
+        });
+
+        // Group items by all fields except section_desc and tag_id
+        const groupKey = (item: typeof safeData.items[0]) => 
+          [item.form, item.grade, item.size, item.width, item.length, item.finish, item.ext_finish, item.mill, item.heat, item.branch, item.warehouse].join('|');
+        
         const groups: Record<string, typeof safeData.items> = {};
         safeData.items.forEach((item) => {
           const key = groupKey(item);
           if (!groups[key]) groups[key] = [];
           groups[key].push(item);
         });
-        const exportRows: Array<Record<string, string | number>> = [];
+
         Object.values(groups).forEach((groupItems: typeof safeData.items) => {
-          // Output all item-section rows
-          groupItems.forEach((item) => {
-            exportRows.push({
-              'Group': item.form ?? '',
-              'Size': item.size ?? '',
-              'Grade': item.grade ?? '',
-              'Width': item.width ?? '',
-              'Length': item.length ?? '',
-              'Whs': item.branch ?? '',
-              'Phy Pcs': item.counted_qty ?? 0,
-              'Value': item.section_desc ?? '',
-              'OH PCS': item.system_qty ?? 0,
-              'OH VAL': item.prd_ohd_mat_val ?? 0,
-              'VAR PCS': (item.counted_qty ?? 0) - (item.system_qty ?? 0),
-            });
-          });
-          // Totals row
-          const sum = (field: keyof typeof groupItems[0]) => groupItems.reduce((acc, item) => acc + Number(item[field] ?? 0), 0);
+          // Calculate totals for the group
+          const totalSystemQty = groupItems.reduce((sum, item) => sum + (item.system_qty || 0), 0);
+          const totalCheckerQty = groupItems.reduce((sum, item) => sum + (item.counted_qty || 0), 0);
+          const totalVariance = totalCheckerQty - totalSystemQty;
+          const totalValue = groupItems.reduce((sum, item) => sum + (item.prd_ohd_mat_val || 0), 0);
+          const unitCost = totalSystemQty > 0 ? totalValue / totalSystemQty : 0;
+          
+          // Determine status
+          let status = 'Match';
+          if (totalVariance > 0) status = 'Overcount';
+          else if (totalVariance < 0) status = 'Undercount';
+          else if (totalCheckerQty === 0) status = 'Not Counted';
+          else if (totalSystemQty === 0) status = 'Not In System';
+
+          // Create section breakdown string
+          const sectionBreakdown = groupItems.map(item => 
+            `${item.section_desc || 'Unknown Section'}: ${item.counted_qty || 0}`
+          ).join('; ');
+
+          // Create tag ID string
+          const tagIds = groupItems.map(item => item.tag_id || 'N/A').join(', ');
+
+          // Get first item for common properties
+          const firstItem = groupItems[0];
+
+          // Add main consolidated row
           exportRows.push({
-            'Group': '',
-            'Size': '',
-            'Grade': '',
-            'Width': '',
-            'Length': '',
-            'Whs': '',
-            'Phy Pcs': sum('counted_qty'),
-            'Value': 'Totals:',
-            'OH PCS': sum('system_qty'),
-            'OH VAL': sum('prd_ohd_mat_val'),
-            'VAR PCS': sum('counted_qty') - sum('system_qty'),
+            'Form': firstItem.form || '',
+            'Grade': firstItem.grade || '',
+            'Size': firstItem.size || '',
+            'Finish': firstItem.finish || '',
+            'Extended Finish': firstItem.ext_finish || '',
+            'Width': firstItem.width || '',
+            'Length': firstItem.length || '',
+            'Location': firstItem.location || '',
+            'Weight': firstItem.weight || '',
+            'Inventory Type': firstItem.inv_type || '',
+            'Quality Standards': firstItem.inv_quality || '',
+            'Quality Standards Code': (firstItem as any).quality_code || '',
+            'Branch': firstItem.branch || '',
+            'Warehouse': firstItem.warehouse || '',
+            'System Qty': totalSystemQty,
+            'Checker Qty': totalCheckerQty,
+            'Section Breakdown': sectionBreakdown,
+            'Tag ID': tagIds,
+            'Variance': totalVariance,
+            'Status': status,
+            'Total Amount': totalValue,
+            'Unit Cost': unitCost
           });
-          // Blank row
+
+          // Add individual section rows if there are multiple sections
+          if (groupItems.length > 1) {
+            groupItems.forEach((item) => {
+              const itemVariance = (item.counted_qty || 0) - (item.system_qty || 0);
+              let itemStatus = 'Match';
+              if (itemVariance > 0) itemStatus = 'Overcount';
+              else if (itemVariance < 0) itemStatus = 'Undercount';
+              else if ((item.counted_qty || 0) === 0) itemStatus = 'Not Counted';
+              else if ((item.system_qty || 0) === 0) itemStatus = 'Not In System';
+
+              const itemValue = item.prd_ohd_mat_val || 0;
+              const itemUnitCost = (item.system_qty || 0) > 0 ? itemValue / (item.system_qty || 0) : 0;
+
+              exportRows.push({
+                'Form': '',
+                'Grade': '',
+                'Size': '',
+                'Finish': '',
+                'Extended Finish': '',
+                'Width': '',
+                'Length': '',
+                'Location': '',
+                'Weight': '',
+                'Inventory Type': '',
+                'Quality Standards': '',
+                'Quality Standards Code': '',
+                'Branch': '',
+                'Warehouse': '',
+                'System Qty': item.system_qty || 0,
+                'Checker Qty': item.counted_qty || 0,
+                'Section Breakdown': `  └─ ${item.section_desc || 'Unknown Section'}`,
+                'Tag ID': item.tag_id || 'N/A',
+                'Variance': itemVariance,
+                'Status': itemStatus,
+                'Total Amount': itemValue,
+                'Unit Cost': itemUnitCost
+              });
+            });
+          }
+
+          // Add separator row
           exportRows.push({});
         });
+
         const ws = XLSX.utils.json_to_sheet(exportRows);
-        XLSX.utils.book_append_sheet(workbook, ws, 'Details');
+        
+        // Style the details sheet
+        const detailsRange = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+        for (let row = detailsRange.s.r; row <= detailsRange.e.r; row++) {
+          for (let col = detailsRange.s.c; col <= detailsRange.e.c; col++) {
+            const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+            if (!ws[cellAddress]) continue;
+            
+            if (row === 0) {
+              // Header row
+              ws[cellAddress].s = {
+                font: { bold: true, size: 11, color: { rgb: "FFFFFF" } },
+                fill: { fgColor: { rgb: "1976D2" } },
+                alignment: { horizontal: "center", vertical: "center" },
+                border: {
+                  top: { style: "thin", color: { rgb: "000000" } },
+                  bottom: { style: "thin", color: { rgb: "000000" } },
+                  left: { style: "thin", color: { rgb: "000000" } },
+                  right: { style: "thin", color: { rgb: "000000" } }
+                }
+              };
+            } else if (row > 0) {
+              // Data rows
+              ws[cellAddress].s = {
+                font: { size: 10 },
+                alignment: { horizontal: "left", vertical: "center" },
+                border: {
+                  top: { style: "thin", color: { rgb: "CCCCCC" } },
+                  bottom: { style: "thin", color: { rgb: "CCCCCC" } },
+                  left: { style: "thin", color: { rgb: "CCCCCC" } },
+                  right: { style: "thin", color: { rgb: "CCCCCC" } }
+                }
+              };
+              
+              // Highlight variance rows
+              if (ws[cellAddress].v && typeof ws[cellAddress].v === 'number' && col === 18) { // Variance column
+                if (ws[cellAddress].v > 0) {
+                  ws[cellAddress].s.fill = { fgColor: { rgb: "FFEBEE" } }; // Light red
+                } else if (ws[cellAddress].v < 0) {
+                  ws[cellAddress].s.fill = { fgColor: { rgb: "FFF3E0" } }; // Light orange
+                }
+              }
+              
+              // Highlight status column
+              if (ws[cellAddress].v && typeof ws[cellAddress].v === 'string' && col === 19) { // Status column
+                if (ws[cellAddress].v === 'Overcount') {
+                  ws[cellAddress].s.font = { color: { rgb: "D32F2F" }, bold: true };
+                } else if (ws[cellAddress].v === 'Undercount') {
+                  ws[cellAddress].s.font = { color: { rgb: "F57C00" }, bold: true };
+                } else if (ws[cellAddress].v === 'Match') {
+                  ws[cellAddress].s.font = { color: { rgb: "388E3C" }, bold: true };
+                }
+              }
+            }
+          }
+        }
+        
+        // Set column widths
+        ws['!cols'] = [
+          { wch: 8 },  // Form
+          { wch: 12 }, // Grade
+          { wch: 10 }, // Size
+          { wch: 10 }, // Finish
+          { wch: 15 }, // Extended Finish
+          { wch: 8 },  // Width
+          { wch: 8 },  // Length
+          { wch: 15 }, // Location
+          { wch: 8 },  // Weight
+          { wch: 15 }, // Inventory Type
+          { wch: 15 }, // Quality Standards
+          { wch: 20 }, // Quality Standards Code
+          { wch: 10 }, // Branch
+          { wch: 12 }, // Warehouse
+          { wch: 12 }, // System Qty
+          { wch: 12 }, // Checker Qty
+          { wch: 25 }, // Section Breakdown
+          { wch: 15 }, // Tag ID
+          { wch: 10 }, // Variance
+          { wch: 12 }, // Status
+          { wch: 15 }, // Total Amount
+          { wch: 12 }  // Unit Cost
+        ];
+        
+        XLSX.utils.book_append_sheet(workbook, ws, 'Reconciliation Details');
       }
 
-      XLSX.writeFile(workbook, `Inventory_Reconciliation_${locationId}_${new Date().toISOString().slice(0,10)}.xlsx`);
-      enqueueSnackbar('Report exported successfully', { variant: 'success' });
+      const fileName = `Inventory_Reconciliation_Report_${locationId}_${new Date().toISOString().slice(0,10)}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+      enqueueSnackbar('Comprehensive reconciliation report exported successfully', { variant: 'success' });
     } catch (error) {
       console.error('Export error:', error);
       enqueueSnackbar('Failed to export report', { variant: 'error' });

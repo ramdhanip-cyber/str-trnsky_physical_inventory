@@ -51,9 +51,8 @@ import {
   Edit,
   CheckCircleOutline,
   CompareArrows,
-  Visibility,
-  VisibilityOff,
-  KeyboardArrowDown
+  KeyboardArrowDown,
+  Tune
 } from '@mui/icons-material';
 import * as XLSX from 'xlsx';
 import { useSnackbar } from 'notistack';
@@ -76,9 +75,8 @@ const ReconciliationPage: React.FC = () => {
   const [orphanedCheckerData, setOrphanedCheckerData] = useState<any[]>([]);
   const [loadingChecker, setLoadingChecker] = useState(false);
   const [showComparison, setShowComparison] = useState(false);
-  const [showOrphanedData, setShowOrphanedData] = useState(false);
 
-  const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
+  const [selectedItems, setSelectedItems] = useState<Set<number | string>>(new Set());
   const [recheckItems, setRecheckItems] = useState<any[]>([]);
   const [loadingRecheck, setLoadingRecheck] = useState(false);
   const [showRecheckDialog, setShowRecheckDialog] = useState(false);
@@ -86,8 +84,21 @@ const ReconciliationPage: React.FC = () => {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
   const [editCheckerQty, setEditCheckerQty] = useState('');
+  const [editForm, setEditForm] = useState('');
+  const [editGrade, setEditGrade] = useState('');
+  const [editSize, setEditSize] = useState('');
+  const [editFinish, setEditFinish] = useState('');
+  const [editExtFinish, setEditExtFinish] = useState('');
+  const [editWidth, setEditWidth] = useState('');
+  const [editLength, setEditLength] = useState('');
+  const [editMill, setEditMill] = useState('');
+  const [editHeat, setEditHeat] = useState('');
+  const [editLocation, setEditLocation] = useState('');
+  const [editQualityType, setEditQualityType] = useState('');
+  const [editType, setEditType] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
   const [exportMenuAnchor, setExportMenuAnchor] = useState<null | HTMLElement>(null);
+  const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
 
   
   // Filter states
@@ -100,6 +111,7 @@ const ReconciliationPage: React.FC = () => {
     ext_finish: '',
     width: '',
     length: '',
+    location: '',
     inv_type: '',
     inv_quality: '',
     branch: '',
@@ -109,16 +121,12 @@ const ReconciliationPage: React.FC = () => {
 
   useEffect(() => {
     if (location_id) {
-      console.log('Reconciliation page loaded:', { location_id, hasStateData: !!location.state?.reconciliationData });
-      
       // Check if data was passed via navigation state
       const stateData = location.state?.reconciliationData;
       if (stateData) {
-        console.log('Using state data');
         setReconciliationData(stateData);
       setLoading(false);
       } else {
-        console.log('No state data found');
         setLoading(false);
       }
     }
@@ -182,21 +190,13 @@ const ReconciliationPage: React.FC = () => {
     try {
       setLoadingChecker(true);
       
-      console.log('Loading existing data for record:', record);
-      
       // Call the API to load the full reconciliation data
       const response = await servicesAPI.loadReconciliationData(record.id.toString());
-      
-      console.log('Load response:', response.data);
       
       if (response.data.success) {
         const loadedRecord = response.data.record;
         
-        console.log('Loaded record:', loadedRecord);
-        
         // Set the reconciliation data
-        console.log('Setting reconciliation data - summary:', loadedRecord.summary);
-        console.log('Setting reconciliation data - items sample:', loadedRecord.items?.[0]);
         setReconciliationData({
           summary: loadedRecord.summary,
           items: loadedRecord.items
@@ -204,28 +204,20 @@ const ReconciliationPage: React.FC = () => {
         
         // Set checker data if available
         if (loadedRecord.checker_data && loadedRecord.checker_data.length > 0) {
-          console.log('Setting checker data:', loadedRecord.checker_data);
-          console.log('Sample checker item structure:', loadedRecord.checker_data[0]);
           setCheckerData(loadedRecord.checker_data);
           setShowComparison(true);
-        } else {
-          console.log('No checker data found in loaded record');
         }
         
         // Check if items have comparison data (enhanced items_data approach)
         if (loadedRecord.items && loadedRecord.items.length > 0) {
           const hasComparisonData = loadedRecord.items.some((item: any) => item.has_comparison);
           if (hasComparisonData) {
-            console.log('Found items with comparison data - enhanced items_data approach');
             setShowComparison(true);
-          } else {
-            console.log('No comparison data found in loaded items');
           }
         }
         
         // Set orphaned data if available
         if (loadedRecord.orphaned_checker_data && loadedRecord.orphaned_checker_data.length > 0) {
-          console.log('Setting orphaned data:', loadedRecord.orphaned_checker_data);
           setOrphanedCheckerData(loadedRecord.orphaned_checker_data);
         }
         
@@ -272,7 +264,6 @@ const ReconciliationPage: React.FC = () => {
       setLoadingRecheck(true);
       const response = await servicesAPI.getRecheckItems(location_id);
       if (response.data.success) {
-        console.log('Loaded recheck items:', response.data.items);
         setRecheckItems(response.data.items);
       }
     } catch (error) {
@@ -320,10 +311,7 @@ const ReconciliationPage: React.FC = () => {
       );
       
       if (isMatch) {
-        console.log('Found matching recheck item:', {
-          item: { form: itemForm, grade: itemGrade, size: itemSize },
-          recheckItem: { form: recheckForm, grade: recheckGrade, size: recheckSize }
-        });
+        return true;
       }
       
       return isMatch;
@@ -333,7 +321,7 @@ const ReconciliationPage: React.FC = () => {
   };
 
   // Handle item selection for recheck
-  const handleItemSelection = (index: number) => {
+  const handleItemSelection = (index: number | string) => {
     const newSelected = new Set(selectedItems);
     if (newSelected.has(index)) {
       newSelected.delete(index);
@@ -341,6 +329,23 @@ const ReconciliationPage: React.FC = () => {
       newSelected.add(index);
     }
     setSelectedItems(newSelected);
+  };
+
+  // Check if an item can be marked for recheck (only reconciled items and orphaned items)
+  const canMarkForRecheck = (item: any) => {
+    if (!showComparison) return false;
+    
+    // For orphaned items, they can always be marked for recheck
+    if (item.is_orphaned) return true;
+    
+    // For system items, only if they have matching checker data (reconciled)
+    const matchingChecker = findMatchingCheckerData(item);
+    return matchingChecker !== null;
+  };
+
+  // Check if an item can be selected for adjustment (all items can be adjusted)
+  const canSelectForAdjustment = (item: any) => {
+    return showComparison; // All items can be selected for adjustment when comparison is shown
   };
 
   // Mark selected items for recheck
@@ -353,23 +358,66 @@ const ReconciliationPage: React.FC = () => {
     try {
       setLoadingRecheck(true);
       
-      const itemsToMark = Array.from(selectedItems).map(index => {
-        const item = filteredData[index];
-        return {
-          form: item.form,
-          grade: item.grade,
-          size: item.size,
-          finish: item.finish,
-          ext_finish: item.ext_finish,
-          width: item.width,
-          length: item.length,
-          system_qty: item.system_qty,
-          counted_qty: showComparison ? 
-            (findMatchingCheckerData(item)?.qty || 0) : 0,
-          variance: showComparison ? 
-            ((findMatchingCheckerData(item)?.qty || 0) - (item.system_qty || 0)) : 0
-        };
-      });
+      const itemsToMark = Array.from(selectedItems)
+        .filter(index => typeof index === 'number') // Only process main items, not sections
+        .map(index => {
+          const item = filteredData[index];
+          
+          // Handle orphaned items
+          if (item.is_orphaned) {
+            return {
+              form: item.form,
+              grade: item.grade,
+              size: item.size,
+              finish: item.finish,
+              ext_finish: item.ext_finish,
+              width: item.width,
+              length: item.length,
+              system_qty: 0, // Orphaned items have no system quantity
+              counted_qty: item.qty,
+              variance: item.qty, // Full quantity is variance for orphaned items
+              unit_cost: 0,
+              total_cost: 0,
+              prd_ohd_mat_val: 0,
+              prd_ohd_mat_cst: 0,
+              branch: item.branch,
+              warehouse: item.warehouse,
+              location: item.location,
+              type: item.type,
+              remarks: item.remarks,
+              tag_id: item.tag_id,
+              transaction_id: item.transaction_id
+            };
+          }
+          
+          // Handle regular system items
+          const matchingChecker = findMatchingCheckerData(item);
+          return {
+            form: item.form,
+            grade: item.grade,
+            size: item.size,
+            finish: item.finish,
+            ext_finish: item.ext_finish,
+            width: item.width,
+            length: item.length,
+            system_qty: item.total_qty,
+            counted_qty: showComparison ? 
+              (matchingChecker?.qty || 0) : 0,
+            variance: showComparison ? 
+              ((matchingChecker?.qty || 0) - (item.total_qty || 0)) : 0,
+            unit_cost: (item as any).unit_cost || 0,
+            total_cost: (item as any).total_cost || 0,
+            prd_ohd_mat_val: item.prd_ohd_mat_val,
+            prd_ohd_mat_cst: item.prd_ohd_mat_cst,
+            branch: item.branch,
+            warehouse: item.warehouse,
+            location: item.location,
+            type: (item as any).type || '',
+            remarks: item.remarks,
+            tag_id: matchingChecker?.tag_id, // Use checker's tag_id
+            transaction_id: matchingChecker?.transaction_id // Use checker's transaction_id
+          };
+        });
 
       const response = await servicesAPI.markItemsForRecheck({
         location_id,
@@ -401,12 +449,111 @@ const ReconciliationPage: React.FC = () => {
     }
   };
 
-  // Edit checker quantity
-  const handleEditCheckerQty = (item: any) => {
-    const matchingChecker = findMatchingCheckerData(item);
-    setEditingItem(item);
-    setEditCheckerQty(matchingChecker ? matchingChecker.qty.toString() : '0');
-    setShowEditDialog(true);
+  // Toggle expanded state for consolidated items
+  const toggleExpanded = (index: number) => {
+    setExpandedItems(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(index)) {
+        newSet.delete(index);
+      } else {
+        newSet.add(index);
+      }
+      return newSet;
+    });
+  };
+
+  // Remove item from recheck
+  const handleRemoveFromRecheck = async (item: any) => {
+    if (!item || !recheckItems.length) return;
+    
+    try {
+      // Find the recheck item
+      const recheckItem = recheckItems.find(recheckItem => {
+        return recheckItem.form === item.form &&
+               recheckItem.grade === item.grade &&
+               recheckItem.size === item.size &&
+               recheckItem.finish === item.finish &&
+               recheckItem.ext_finish === item.ext_finish &&
+               recheckItem.width === item.width &&
+               recheckItem.length === item.length;
+      });
+      
+      if (!recheckItem) {
+        enqueueSnackbar('Recheck item not found', { variant: 'error' });
+        return;
+      }
+      
+      // Call API to remove from recheck
+      const response = await servicesAPI.removeFromRecheck(recheckItem.id);
+      
+      if (response.data.success) {
+        enqueueSnackbar('Item removed from recheck successfully', { variant: 'success' });
+        // Refresh recheck items
+        await loadRecheckItems();
+      } else {
+        enqueueSnackbar('Failed to remove item from recheck', { variant: 'error' });
+      }
+    } catch (error) {
+      console.error('Error removing item from recheck:', error);
+      enqueueSnackbar('Failed to remove item from recheck', { variant: 'error' });
+    }
+  };
+
+  // Handle adjust items navigation
+  const handleAdjustItems = () => {
+    if (selectedItems.size === 0) {
+      enqueueSnackbar('Please select items to adjust', { variant: 'warning' });
+      return;
+    }
+
+    // Get selected items data with matching checker information
+    const selectedItemsData = filteredData.filter((_, index) => 
+      selectedItems.has(index)
+    ).map(item => {
+      const matchingChecker = showComparison ? findMatchingCheckerData(item) : null;
+      
+      // For orphaned items, use the item's own data
+      if (item.is_orphaned) {
+        return {
+          ...item,
+          section_desc: item.section_desc,
+          tag_id: item.tag_id,
+          tag_ids: item.tag_ids || (item.tag_id ? [item.tag_id] : [])
+        };
+      }
+      
+      // For system items, use matching checker data if available
+      if (matchingChecker) {
+        return {
+          ...item,
+          section_desc: matchingChecker.sections && matchingChecker.sections.length > 0 
+            ? matchingChecker.sections[0].section_desc 
+            : item.section_desc,
+          tag_id: matchingChecker.tag_id,
+          tag_ids: matchingChecker.tag_ids || (matchingChecker.tag_id ? [matchingChecker.tag_id] : [])
+        };
+      }
+      
+      // Fallback to item's own data
+      return {
+        ...item,
+        section_desc: item.section_desc,
+        tag_id: item.tag_id,
+        tag_ids: item.tag_ids || (item.tag_id ? [item.tag_id] : [])
+      };
+    });
+
+    console.log('Selected items data for adjustment:', selectedItemsData);
+
+    // Navigate to adjustment page with selected items
+    navigate('/adjustment', { 
+      state: { 
+        selectedItems: selectedItemsData,
+        location_id: location_id,
+        branch: reconciliationData?.summary?.branch,
+        warehouse: reconciliationData?.summary?.warehouse
+      } 
+    });
   };
 
   const saveEditCheckerQty = async () => {
@@ -420,130 +567,120 @@ const ReconciliationPage: React.FC = () => {
         return;
       }
 
-      // Check if this item is marked for recheck
-      const recheckItem = recheckItems.find(item => 
-        item.form === editingItem.form &&
-        item.grade === editingItem.grade &&
-        item.size === editingItem.size &&
-        item.finish === editingItem.finish &&
-        item.ext_finish === editingItem.ext_finish &&
-        item.width === editingItem.width &&
-        item.length === editingItem.length
-      );
-
-      if (recheckItem) {
-        // This is a recheck item - complete the recheck workflow
-        console.log('Completing recheck for item:', recheckItem);
-        
-        const response = await servicesAPI.completeRecheckItem(recheckItem.id.toString(), {
-          new_counted_qty: newQty,
-          recheck_reason: 'Quantity updated during reconciliation',
-          location_id: location_id
-        });
-
-        if (response.data.success) {
-          // Update the checker data with new quantity
-          const updatedCheckerData = checkerData.map(checker => {
-            const isMatch = findMatchingCheckerData(editingItem) === checker;
-            if (isMatch) {
-              console.log('Found matching checker item, updating quantity from', checker.qty, 'to', newQty);
-              return { ...checker, qty: newQty };
-            }
-            return checker;
-          });
-
-          setCheckerData(updatedCheckerData);
-          
-          // Update reconciliation data items if they have comparison data
-          if (reconciliationData?.items) {
-            const updatedItems = reconciliationData.items.map(item => {
-              const isMatch = findMatchingCheckerData(editingItem) === findMatchingCheckerData(item);
-              if (isMatch && item.has_comparison) {
-                const newVariance = newQty - (item.system_qty || 0);
-                const newStatus = (newQty === item.system_qty ? 'Match' : 
-                                 newQty > item.system_qty ? 'Overcount' : 'Undercount') as 'Match' | 'Overcount' | 'Undercount';
-                
-                console.log('Updating items_data - found matching item, updating quantity from', item.checker_qty, 'to', newQty);
-                return { 
-                  ...item, 
-                  checker_qty: newQty,
-                  variance: newVariance,
-                  status: newStatus
-                };
-              }
-              return item;
-            });
-            
-            setReconciliationData(prev => prev ? {
-              ...prev,
-              items: updatedItems
-            } : null);
-          }
-          
-          // Save the updated reconciliation data to database
-          await saveReconciliationData();
-          
-          // Refresh recheck items to remove the completed item
-          await loadRecheckItems();
-          
-          // Refresh reconciliation data to show updated values
-          await refreshReconciliationData();
-          
-          enqueueSnackbar('Recheck completed successfully - item removed from recheck queue and data saved', { variant: 'success' });
-        } else {
-          enqueueSnackbar('Failed to complete recheck', { variant: 'error' });
-        }
-      } else {
-        // Regular item - update the checker data
-        const updatedCheckerData = checkerData.map(checker => {
-          const isMatch = findMatchingCheckerData(editingItem) === checker;
-          if (isMatch) {
-            console.log('Found matching checker item, updating quantity from', checker.qty, 'to', newQty);
-            return { ...checker, qty: newQty };
-          }
-          return checker;
-        });
-
-        setCheckerData(updatedCheckerData);
-        
-        // Update reconciliation data items if they have comparison data
-        if (reconciliationData?.items) {
-          const updatedItems = reconciliationData.items.map(item => {
-            const isMatch = findMatchingCheckerData(editingItem) === findMatchingCheckerData(item);
-            if (isMatch && item.has_comparison) {
-              const newVariance = newQty - (item.system_qty || 0);
-              const newStatus = (newQty === item.system_qty ? 'Match' : 
-                               newQty > item.system_qty ? 'Overcount' : 'Undercount') as 'Match' | 'Overcount' | 'Undercount';
-              
-              console.log('Updating items_data - found matching item, updating quantity from', item.checker_qty, 'to', newQty);
-              return { 
-                ...item, 
-                checker_qty: newQty,
-                variance: newVariance,
-                status: newStatus
-              };
-            }
-            return item;
-          });
-          
-          setReconciliationData(prev => prev ? {
-            ...prev,
-            items: updatedItems
-          } : null);
-        }
-        
-        // Save the updated reconciliation data to database
-        await saveReconciliationData();
-        
-        // Refresh reconciliation data to show updated values
-        await refreshReconciliationData();
-        
-        enqueueSnackbar('Checker quantity updated successfully and data saved', { variant: 'success' });
+      // Get the matching checker data to find the transaction_id
+      const matchingChecker = findMatchingCheckerData(editingItem);
+      if (!matchingChecker) {
+        enqueueSnackbar('No matching checker data found', { variant: 'error' });
+        return;
       }
+
+      // Update the actual transaction in the database
+      const updateTransactionData = {
+        tag_id: matchingChecker.tag_id,
+        form: editForm,
+        type: editType,
+        grade: editGrade,
+        size: editSize,
+        width: editWidth,
+        finish: editFinish,
+        ext_finish: editExtFinish,
+        length: editLength,
+        count_type: matchingChecker.count_type || 'piece',
+        checker_count: newQty,
+        location_id: location_id,
+        section_id: matchingChecker.section_id,
+        location: editLocation,
+        mill: editMill,
+        heat: editHeat,
+        remarks: matchingChecker.remarks || '',
+        ad_cmts: matchingChecker.ad_cmts || ''
+      };
+
+      const updateResponse = await servicesAPI.updateTransaction(updateTransactionData);
+
+      if (!updateResponse.data.success) {
+        enqueueSnackbar('Failed to update transaction in database', { variant: 'error' });
+        return;
+      }
+
+      // Re-reconcile after transaction update to re-match items
+      await reReconcileAfterUpdate();
+
+
+      // Update the checker data with new values
+      const updatedCheckerData = checkerData.map(checker => {
+        const isMatch = findMatchingCheckerData(editingItem) === checker;
+        if (isMatch) {
+          return { 
+            ...checker, 
+            qty: newQty,
+            form: editForm,
+            grade: editGrade,
+            size: editSize,
+            finish: editFinish,
+            ext_finish: editExtFinish,
+            width: editWidth,
+            length: editLength,
+            mill: editMill,
+            heat: editHeat,
+            location: editLocation,
+            quality_type: editQualityType,
+            type: editType
+          };
+        }
+        return checker;
+      });
+
+      setCheckerData(updatedCheckerData);
+      
+      // Update reconciliation data items if they have comparison data
+      if (reconciliationData?.items) {
+        const updatedItems = reconciliationData.items.map(item => {
+          const isMatch = findMatchingCheckerData(editingItem) === findMatchingCheckerData(item);
+          if (isMatch && item.has_comparison) {
+            const newVariance = newQty - (item.total_qty || 0);
+            const newStatus = (newQty === item.total_qty ? 'Match' : 
+                             newQty > item.total_qty ? 'Overcount' : 'Undercount') as 'Match' | 'Overcount' | 'Undercount';
+            
+            return { 
+              ...item, 
+              checker_qty: newQty,
+              variance: newVariance,
+              status: newStatus
+            };
+          }
+          return item;
+        });
+        
+        setReconciliationData(prev => prev ? {
+          ...prev,
+          items: updatedItems
+        } : null);
+      }
+      
+      // Save the updated reconciliation data to database
+      await saveReconciliationData();
+      
+      // Refresh reconciliation data to show updated values
+      await refreshReconciliationData();
+      
+      enqueueSnackbar('Transaction updated successfully, items re-matched, and data saved', { variant: 'success' });
 
       setShowEditDialog(false);
       setEditingItem(null);
       setEditCheckerQty('');
+      setEditForm('');
+      setEditGrade('');
+      setEditSize('');
+      setEditFinish('');
+      setEditExtFinish('');
+      setEditWidth('');
+      setEditLength('');
+      setEditMill('');
+      setEditHeat('');
+      setEditLocation('');
+      setEditQualityType('');
+      setEditType('');
     } catch (error) {
       console.error('Error updating checker quantity:', error);
       enqueueSnackbar('Failed to update checker quantity', { variant: 'error' });
@@ -582,12 +719,6 @@ const ReconciliationPage: React.FC = () => {
     }
   };
 
-  // Debug effect to monitor showComparison changes
-  useEffect(() => {
-    console.log('showComparison changed to:', showComparison);
-    console.log('checkerData length:', checkerData.length);
-    console.log('orphanedCheckerData length:', orphanedCheckerData.length);
-  }, [showComparison, checkerData, orphanedCheckerData]);
 
   // Save reconciliation data with comparison
   const saveReconciliationData = async () => {
@@ -605,7 +736,7 @@ const ReconciliationPage: React.FC = () => {
         summary_data: reconciliationData.summary,
         items_data: reconciliationData.items,
         checker_data: showComparison ? checkerData : [],
-        orphaned_checker_data: showOrphanedData ? orphanedCheckerData : [],
+        orphaned_checker_data: orphanedCheckerData,
         notes: 'Auto-saved during comparison'
       };
       
@@ -670,6 +801,7 @@ const ReconciliationPage: React.FC = () => {
       const consolidated = new Map<string, any>();
       
       allCheckerTransactions.forEach(transaction => {
+        
         // Normalize the key fields to match system data format
         const normalizedForm = String(transaction.form || '').trim();
         const normalizedGrade = String(transaction.grade || '').trim();
@@ -678,41 +810,24 @@ const ReconciliationPage: React.FC = () => {
         const normalizedExtFinish = String(transaction.ext_finish || '').trim();
         const normalizedWidth = String(Number(transaction.width || 0)).trim();
         const normalizedLength = String(Number(transaction.length || 0)).trim();
+        const normalizedLocation = String(transaction.location || '').trim();
         const normalizedType = String(transaction.type || '').trim();
         const normalizedRemarks = String(transaction.remarks || '').trim();
         
-        const key = `${normalizedForm}|${normalizedGrade}|${normalizedSize}|${normalizedFinish}|${normalizedExtFinish}|${normalizedWidth}|${normalizedLength}|${normalizedType}|${normalizedRemarks}`;
-        
-        console.log('Consolidating checker transaction:', {
-          original: {
-            form: transaction.form,
-            grade: transaction.grade,
-            size: transaction.size,
-            finish: transaction.finish,
-            ext_finish: transaction.ext_finish,
-            width: transaction.width,
-            length: transaction.length,
-            type: transaction.type,
-            remarks: transaction.remarks,
-            qty: transaction.qty
-          },
-          normalized: {
-            form: normalizedForm,
-            grade: normalizedGrade,
-            size: normalizedSize,
-            finish: normalizedFinish,
-            ext_finish: normalizedExtFinish,
-            width: normalizedWidth,
-            length: normalizedLength,
-            type: normalizedType,
-            remarks: normalizedRemarks
-          }
-        });
+        const key = `${normalizedForm}|${normalizedGrade}|${normalizedSize}|${normalizedFinish}|${normalizedExtFinish}|${normalizedWidth}|${normalizedLength}|${normalizedLocation}|${normalizedType}|${normalizedRemarks}`;
         
         if (consolidated.has(key)) {
           const existing = consolidated.get(key)!;
           existing.qty += transaction.qty || 0;
           existing.transaction_count += 1;
+          
+          // Collect all tag_ids for this consolidated item
+          if (!existing.tag_ids) {
+            existing.tag_ids = [existing.tag_id].filter(Boolean);
+          }
+          if (transaction.tag_id && !existing.tag_ids.includes(transaction.tag_id)) {
+            existing.tag_ids.push(transaction.tag_id);
+          }
           
           // Add section information if not already present
           if (!existing.sections) {
@@ -724,12 +839,21 @@ const ReconciliationPage: React.FC = () => {
           if (existingSection) {
             existingSection.qty += transaction.qty || 0;
             existingSection.transaction_count += 1;
+            
+            // Collect tag_ids for this specific section
+            if (!existingSection.tag_ids) {
+              existingSection.tag_ids = [];
+            }
+            if (transaction.tag_id && !existingSection.tag_ids.includes(transaction.tag_id)) {
+              existingSection.tag_ids.push(transaction.tag_id);
+            }
           } else {
             existing.sections.push({
               section_id: transaction.section_id,
               section_desc: transaction.section_desc,
               qty: transaction.qty || 0,
-              transaction_count: 1
+              transaction_count: 1,
+              tag_ids: transaction.tag_id ? [transaction.tag_id] : []
             });
           }
         } else {
@@ -741,40 +865,41 @@ const ReconciliationPage: React.FC = () => {
             ext_finish: normalizedExtFinish,
             width: normalizedWidth,
             length: normalizedLength,
+            location: normalizedLocation,
             type: normalizedType,
             remarks: normalizedRemarks,
+            tag_id: transaction.tag_id,
+            tag_ids: transaction.tag_id ? [transaction.tag_id] : [],
             qty: transaction.qty || 0,
             transaction_count: 1,
             sections: [{
               section_id: transaction.section_id,
               section_desc: transaction.section_desc,
               qty: transaction.qty || 0,
-              transaction_count: 1
+              transaction_count: 1,
+              tag_ids: transaction.tag_id ? [transaction.tag_id] : []
             }]
           });
         }
       });
       
-      const consolidatedCheckerData = Array.from(consolidated.values());
-      
-      console.log('Consolidated checker data:', consolidatedCheckerData);
-      console.log('System data sample:', reconciliationData.items.slice(0, 3));
-      
-      // Show sample normalized data for debugging
-      if (consolidatedCheckerData.length > 0) {
-        console.log('Sample normalized checker item:', {
-          form: consolidatedCheckerData[0].form,
-          grade: consolidatedCheckerData[0].grade,
-          size: consolidatedCheckerData[0].size,
-          finish: consolidatedCheckerData[0].finish,
-          ext_finish: consolidatedCheckerData[0].ext_finish,
-          width: consolidatedCheckerData[0].width,
-          length: consolidatedCheckerData[0].length,
-          type: consolidatedCheckerData[0].type,
-          quality_standard: consolidatedCheckerData[0].quality_standard,
-          qty: consolidatedCheckerData[0].qty
-        });
-      }
+      const consolidatedCheckerData = Array.from(consolidated.values()).sort((a: any, b: any) => {
+        // Primary sort: Form
+        const formA = (a.form || '').toString().toLowerCase();
+        const formB = (b.form || '').toString().toLowerCase();
+        if (formA !== formB) {
+          return formA.localeCompare(formB);
+        }
+
+        // Secondary sort: Size (numeric, with fallback for non-numeric)
+        const sizeA = parseFloat(a.size || '0') || 999999999;
+        const sizeB = parseFloat(b.size || '0') || 999999999;
+        if (sizeA !== sizeB) {
+          return sizeA - sizeB;
+        }
+        // If numeric values are equal, sort alphabetically
+        return (a.size || '').localeCompare(b.size || '');
+      });
       
       setCheckerData(consolidatedCheckerData);
       
@@ -796,6 +921,164 @@ const ReconciliationPage: React.FC = () => {
       enqueueSnackbar('Failed to fetch checker data', { variant: 'error' });
     } finally {
       setLoadingChecker(false);
+    }
+  };
+
+  // Function to re-reconcile after transaction update
+  const reReconcileAfterUpdate = async () => {
+    if (!location_id || !reconciliationData) return;
+    
+    try {
+      // Fetch sections first
+      const sectionsResponse = await servicesAPI.getSections(location_id);
+      const sections = sectionsResponse.data;
+      
+      if (sections.length === 0) {
+        return;
+      }
+      
+      // Fetch all checker transactions from all sections
+      const allCheckerTransactions: any[] = [];
+      
+      for (const section of sections) {
+        try {
+          const checkerResponse = await servicesAPI.getReviewTransactionsForChecker(location_id, section.section_id.toString());
+          const checkerTransactions = checkerResponse.data.map((t: any) => ({
+            ...t,
+            section_id: section.section_id,
+            section_desc: section.section_desc,
+            location_desc: section.location_desc,
+            warehouse: section.warehouse,
+            branch: section.branch
+          }));
+          allCheckerTransactions.push(...checkerTransactions);
+        } catch (error) {
+          console.error(`Error fetching checker transactions for section ${section.section_id}:`, error);
+        }
+      }
+      
+      // Consolidate checker data by specified fields (same logic as fetchCheckerDataAndCompare)
+      const consolidated = new Map<string, any>();
+      
+      allCheckerTransactions.forEach(transaction => {
+        // Normalize the key fields to match system data format
+        const normalizedForm = String(transaction.form || '').trim();
+        const normalizedGrade = String(transaction.grade || '').trim();
+        const normalizedSize = String(transaction.size || '').trim();
+        const normalizedFinish = String(transaction.finish || '').trim();
+        const normalizedExtFinish = String(transaction.ext_finish || '').trim();
+        const normalizedWidth = String(Number(transaction.width || 0)).trim();
+        const normalizedLength = String(Number(transaction.length || 0)).trim();
+        const normalizedLocation = String(transaction.location || '').trim();
+        const normalizedType = String(transaction.type || '').trim();
+        const normalizedRemarks = String(transaction.remarks || '').trim();
+        
+        const key = `${normalizedForm}|${normalizedGrade}|${normalizedSize}|${normalizedFinish}|${normalizedExtFinish}|${normalizedWidth}|${normalizedLength}|${normalizedLocation}|${normalizedType}|${normalizedRemarks}`;
+        
+        if (consolidated.has(key)) {
+          const existing = consolidated.get(key)!;
+          existing.qty += transaction.qty || 0;
+          existing.transaction_count += 1;
+          
+          // Collect all tag_ids for this consolidated item
+          if (!existing.tag_ids) {
+            existing.tag_ids = [existing.tag_id].filter(Boolean);
+          }
+          if (transaction.tag_id && !existing.tag_ids.includes(transaction.tag_id)) {
+            existing.tag_ids.push(transaction.tag_id);
+          }
+          
+          // Add section information if not already present
+          if (!existing.sections) {
+            existing.sections = [];
+          }
+          
+          // Check if this section is already in the list
+          const existingSection = existing.sections.find((s: any) => s.section_id === transaction.section_id);
+          if (existingSection) {
+            existingSection.qty += transaction.qty || 0;
+            existingSection.transaction_count += 1;
+            
+            // Collect tag_ids for this specific section
+            if (!existingSection.tag_ids) {
+              existingSection.tag_ids = [];
+            }
+            if (transaction.tag_id && !existingSection.tag_ids.includes(transaction.tag_id)) {
+              existingSection.tag_ids.push(transaction.tag_id);
+            }
+          } else {
+            existing.sections.push({
+              section_id: transaction.section_id,
+              section_desc: transaction.section_desc,
+              qty: transaction.qty || 0,
+              transaction_count: 1,
+              tag_ids: transaction.tag_id ? [transaction.tag_id] : []
+            });
+          }
+        } else {
+          // Create new consolidated item
+          consolidated.set(key, {
+            tag_id: transaction.tag_id,
+            form: normalizedForm,
+            grade: normalizedGrade,
+            size: normalizedSize,
+            finish: normalizedFinish,
+            ext_finish: normalizedExtFinish,
+            width: normalizedWidth,
+            length: normalizedLength,
+            location: normalizedLocation,
+            type: normalizedType,
+            remarks: normalizedRemarks,
+            qty: transaction.qty || 0,
+            transaction_count: 1,
+            tag_ids: transaction.tag_id ? [transaction.tag_id] : [],
+            sections: [{
+              section_id: transaction.section_id,
+              section_desc: transaction.section_desc,
+              qty: transaction.qty || 0,
+              transaction_count: 1,
+              tag_ids: transaction.tag_id ? [transaction.tag_id] : []
+            }],
+            branch: transaction.branch,
+            warehouse: transaction.warehouse,
+            count_type: transaction.count_type,
+            mill: transaction.mill,
+            heat: transaction.heat,
+            ad_cmts: transaction.ad_cmts
+          });
+        }
+      });
+      
+      const consolidatedCheckerData = Array.from(consolidated.values()).sort((a: any, b: any) => {
+        // Primary sort: Form
+        const formA = (a.form || '').toString().toLowerCase();
+        const formB = (b.form || '').toString().toLowerCase();
+        if (formA !== formB) {
+          return formA.localeCompare(formB);
+        }
+
+        // Secondary sort: Size (numeric, with fallback for non-numeric)
+        const sizeA = parseFloat(a.size || '0') || 999999999;
+        const sizeB = parseFloat(b.size || '0') || 999999999;
+        if (sizeA !== sizeB) {
+          return sizeA - sizeB;
+        }
+        // If numeric values are equal, sort alphabetically
+        return (a.size || '').localeCompare(b.size || '');
+      });
+      
+      // Update the checker data
+      setCheckerData(consolidatedCheckerData);
+      
+      // Find orphaned checker data (checker items that don't match any system data)
+      const orphanedData = findOrphanedCheckerData(consolidatedCheckerData);
+      setOrphanedCheckerData(orphanedData);
+      
+      // Save the updated reconciliation data
+      await saveReconciliationData();
+      
+    } catch (error) {
+      console.error('Error during re-reconciliation:', error);
     }
   };
 
@@ -828,6 +1111,9 @@ const ReconciliationPage: React.FC = () => {
         const systemLength = String(Number(systemItem.length || 0)).trim();
         const checkerLength = String(Number(checkerItem.length || 0)).trim();
         
+        const systemLocation = String(systemItem.location || '').trim();
+        const checkerLocation = String(checkerItem.location || '').trim();
+        
         const systemType = String(systemItem.inv_type || '').trim();
         const checkerType = String(checkerItem.type || '').trim();
         
@@ -842,6 +1128,7 @@ const ReconciliationPage: React.FC = () => {
           systemExtFinish === checkerExtFinish &&
           systemWidth === checkerWidth &&
           systemLength === checkerLength &&
+          systemLocation === checkerLocation &&
           systemType === checkerType &&
           systemQuality === checkerQuality
         );
@@ -881,6 +1168,9 @@ const ReconciliationPage: React.FC = () => {
         const systemLength = String(Number(systemItem.length || 0)).trim();
         const checkerLength = String(Number(checkerItem.length || 0)).trim();
         
+        const systemLocation = String(systemItem.location || '').trim();
+        const checkerLocation = String(checkerItem.location || '').trim();
+        
         // Map field names correctly
         const systemType = String(systemItem.inv_type || '').trim();
         const checkerType = String(checkerItem.type || '').trim();
@@ -888,31 +1178,6 @@ const ReconciliationPage: React.FC = () => {
         const systemQuality = String(systemItem.inv_quality || '').trim();
         const checkerQuality = String(checkerItem.remarks || '').trim();
         
-        // Debug: Log the comparison for troubleshooting
-        console.log('Comparing:', {
-          system: {
-            form: systemForm,
-            grade: systemGrade,
-            size: systemSize,
-            finish: systemFinish,
-            ext_finish: systemExtFinish,
-            width: systemWidth,
-            length: systemLength,
-            type: systemType,
-            quality: systemQuality
-          },
-          checker: {
-            form: checkerForm,
-            grade: checkerGrade,
-            size: checkerSize,
-            finish: checkerFinish,
-            ext_finish: checkerExtFinish,
-            width: checkerWidth,
-            length: checkerLength,
-            type: checkerType,
-            quality: checkerQuality
-          }
-        });
         
         const isMatch = (
           systemForm === checkerForm &&
@@ -922,38 +1187,11 @@ const ReconciliationPage: React.FC = () => {
           systemExtFinish === checkerExtFinish &&
           systemWidth === checkerWidth &&
           systemLength === checkerLength &&
+          systemLocation === checkerLocation &&
           systemType === checkerType &&
           systemQuality === checkerQuality
         );
       
-      // Debug logging for first few items
-      if (checkerData.length > 0 && checkerData.indexOf(checkerItem) < 3) {
-        console.log('Matching attempt:', {
-          system: {
-            form: systemForm,
-            grade: systemGrade,
-            size: systemSize,
-            finish: systemFinish,
-            ext_finish: systemExtFinish,
-            width: systemWidth,
-            length: systemLength,
-            type: systemType,
-            quality: systemQuality
-          },
-          checker: {
-            form: checkerForm,
-            grade: checkerGrade,
-            size: checkerSize,
-            finish: checkerFinish,
-            ext_finish: checkerExtFinish,
-            width: checkerWidth,
-            length: checkerLength,
-            type: checkerType,
-            quality: checkerQuality
-          },
-          isMatch
-        });
-      }
       
       return isMatch;
     });
@@ -976,18 +1214,22 @@ const ReconciliationPage: React.FC = () => {
       ext_finish: [...new Set(items.map((item: any) => item.ext_finish).filter(Boolean))].sort(),
       width: [...new Set(items.map((item: any) => item.width).filter(Boolean))].sort(),
       length: [...new Set(items.map((item: any) => item.length).filter(Boolean))].sort(),
+      location: [...new Set(items.map((item: any) => item.location).filter(Boolean))].sort(),
       inv_type: [...new Set(items.map((item: any) => item.inv_type).filter(Boolean))].sort(),
       inv_quality: [...new Set(items.map((item: any) => item.inv_quality).filter(Boolean))].sort(),
       branch: [...new Set(items.map((item: any) => item.branch).filter(Boolean))].sort(),
       warehouse: [...new Set(items.map((item: any) => item.warehouse).filter(Boolean))].sort(),
-      status: showComparison ? [...new Set(items.map((item: any) => {
-        const checkerItem = findMatchingCheckerData(item);
-        if (!checkerItem) return 'Counted Not In System';
-        const variance = (checkerItem.qty || 0) - (item.system_qty || 0);
-        if (variance === 0) return 'Match';
-        if (variance > 0) return 'Overcount';
-        return 'Undercount';
-      }).filter(Boolean))].sort() : []
+      status: showComparison ? [...new Set([
+        ...items.map((item: any) => {
+          const checkerItem = findMatchingCheckerData(item);
+          if (!checkerItem) return 'Counted Not In System';
+          const variance = (checkerItem.qty || 0) - (item.total_qty || 0);
+          if (variance === 0) return 'Match';
+          if (variance > 0) return 'Overcount';
+          return 'Undercount';
+        }),
+        ...(orphanedCheckerData.length > 0 ? ['Not In System'] : [])
+      ].filter(Boolean))].sort() : []
     };
   }, [reconciliationData?.items, showComparison]);
 
@@ -995,7 +1237,44 @@ const ReconciliationPage: React.FC = () => {
   const filteredData = useMemo(() => {
     if (!reconciliationData?.items) return [];
     
-    return reconciliationData.items.filter((item: any) => {
+    // Sort orphaned items before adding them
+    const sortedOrphanedItems = orphanedCheckerData.sort((a: any, b: any) => {
+      // Primary sort: Form
+      const formA = (a.form || '').toString().toLowerCase();
+      const formB = (b.form || '').toString().toLowerCase();
+      if (formA !== formB) {
+        return formA.localeCompare(formB);
+      }
+
+      // Secondary sort: Size (numeric, with fallback for non-numeric)
+      const sizeA = parseFloat(a.size || '0') || 999999999;
+      const sizeB = parseFloat(b.size || '0') || 999999999;
+      if (sizeA !== sizeB) {
+        return sizeA - sizeB;
+      }
+      // If numeric values are equal, sort alphabetically
+      return (a.size || '').localeCompare(b.size || '');
+    });
+
+    // Combine system items with orphaned items
+    const allItems = [
+      ...reconciliationData.items,
+      ...sortedOrphanedItems.map((item: any) => ({
+        ...item,
+        total_qty: 0,
+        system_qty: 0,
+        checker_qty: item.qty,
+        variance: item.qty,
+        status: 'Not In System',
+        is_orphaned: true,
+        branch: '-',
+        warehouse: '-',
+        prd_ohd_mat_val: 0,
+        prd_ohd_mat_cst: 0
+      }))
+    ];
+    
+    return allItems.filter((item: any) => {
       // Search term filter
       if (searchTerm) {
         const searchLower = searchTerm.toLowerCase();
@@ -1007,12 +1286,13 @@ const ReconciliationPage: React.FC = () => {
           item.ext_finish?.toLowerCase().includes(searchLower) ||
           item.width?.toString().toLowerCase().includes(searchLower) ||
           item.length?.toString().toLowerCase().includes(searchLower) ||
+          item.location?.toLowerCase().includes(searchLower) ||
           item.weight?.toString().toLowerCase().includes(searchLower) ||
           item.inv_type?.toLowerCase().includes(searchLower) ||
           item.inv_quality?.toLowerCase().includes(searchLower) ||
           item.branch?.toLowerCase().includes(searchLower) ||
           item.warehouse?.toLowerCase().includes(searchLower) ||
-          item.system_qty?.toString().includes(searchLower) ||
+          item.total_qty?.toString().includes(searchLower) ||
           item.prd_ohd_mat_val?.toString().includes(searchLower) ||
           item.prd_ohd_mat_cst?.toString().includes(searchLower)
         );
@@ -1027,6 +1307,7 @@ const ReconciliationPage: React.FC = () => {
       if (filters.ext_finish && item.ext_finish !== filters.ext_finish) return false;
       if (filters.width && item.width !== filters.width) return false;
       if (filters.length && item.length !== filters.length) return false;
+      if (filters.location && item.location !== filters.location) return false;
       if (filters.inv_type && item.inv_type !== filters.inv_type) return false;
       if (filters.inv_quality && item.inv_quality !== filters.inv_quality) return false;
       if (filters.branch && item.branch !== filters.branch) return false;
@@ -1034,22 +1315,43 @@ const ReconciliationPage: React.FC = () => {
       
       // Status filter (only when comparison is shown)
       if (showComparison && filters.status) {
-        const checkerItem = findMatchingCheckerData(item);
-        if (!checkerItem) {
-          if (filters.status !== 'Counted Not In System') return false;
+        // Handle orphaned items
+        if (item.is_orphaned) {
+          if (filters.status !== 'Not In System') return false;
         } else {
-          const variance = (checkerItem.qty || 0) - (item.system_qty || 0);
-          let itemStatus = 'Match';
-          if (variance > 0) itemStatus = 'Overcount';
-          else if (variance < 0) itemStatus = 'Undercount';
-          
-          if (filters.status !== itemStatus) return false;
+          const checkerItem = findMatchingCheckerData(item);
+          if (!checkerItem) {
+            if (filters.status !== 'Counted Not In System') return false;
+          } else {
+            const variance = (checkerItem.qty || 0) - (item.total_qty || 0);
+            let itemStatus = 'Match';
+            if (variance > 0) itemStatus = 'Overcount';
+            else if (variance < 0) itemStatus = 'Undercount';
+            
+            if (filters.status !== itemStatus) return false;
+          }
         }
       }
       
       return true;
+    }).sort((a: any, b: any) => {
+      // Primary sort: Form
+      const formA = (a.form || '').toString().toLowerCase();
+      const formB = (b.form || '').toString().toLowerCase();
+      if (formA !== formB) {
+        return formA.localeCompare(formB);
+      }
+
+      // Secondary sort: Size (numeric, with fallback for non-numeric)
+      const sizeA = parseFloat(a.size || '0') || 999999999;
+      const sizeB = parseFloat(b.size || '0') || 999999999;
+      if (sizeA !== sizeB) {
+        return sizeA - sizeB;
+      }
+      // If numeric values are equal, sort alphabetically
+      return (a.size || '').localeCompare(b.size || '');
     });
-  }, [reconciliationData?.items, searchTerm, filters, showComparison]);
+  }, [reconciliationData?.items, orphanedCheckerData, searchTerm, filters, showComparison]);
 
   // Handle filter changes
   const handleFilterChange = (field: string, value: string) => {
@@ -1069,6 +1371,7 @@ const ReconciliationPage: React.FC = () => {
       ext_finish: '',
       width: '',
       length: '',
+      location: '',
       inv_type: '',
       inv_quality: '',
       branch: '',
@@ -1084,148 +1387,417 @@ const ReconciliationPage: React.FC = () => {
 
     setIsExporting(true);
     try {
-      // Prepare system data with all requested columns
-      const systemData = filteredData.map(item => {
-        // Get comparison data if available
-        const checkerQty = item.has_comparison ? (item.checker_qty || 0) : 
-                          (showComparison ? (findMatchingCheckerData(item)?.qty || 0) : 0);
-        const variance = item.has_comparison ? (item.variance || 0) : 
-                        (showComparison ? ((findMatchingCheckerData(item)?.qty || 0) - (item.system_qty || 0)) : 0);
-        const status = item.has_comparison ? (item.status || 'Counted Not In System') : 
-                      (showComparison ? 
-                        (findMatchingCheckerData(item) ? 
-                          (checkerQty === item.system_qty ? 'Match' : 
-                           checkerQty > item.system_qty ? 'Overcount' : 'Undercount') : 
-                          'Counted Not In System') : 
-                        'Counted Not In System');
+      const workbook = XLSX.utils.book_new();
+      
+      // Enhanced Summary Sheet with professional formatting
+      const summaryData = [
+        ['INVENTORY RECONCILIATION REPORT'],
+        [''],
+        ['Report Generated:', new Date().toLocaleString()],
+        ['Location ID:', location_id],
+        ['Branch:', reconciliationData.summary.branch || '-'],
+        ['Warehouse:', reconciliationData.summary.warehouse || '-'],
+        [''],
+        ['SUMMARY STATISTICS'],
+        ['Total System Items', reconciliationData.summary.total_system_items],
+        ['Total Counted Items', reconciliationData.summary.total_counted_items],
+        ['Items Matched', reconciliationData.summary.items_matched],
+        ['Overcounts', reconciliationData.summary.overcounts],
+        ['Undercounts', reconciliationData.summary.undercounts],
+        ['Not Counted', reconciliationData.summary.not_counted],
+        [''],
+        ['VARIANCE ANALYSIS'],
+        ['Total System Quantity', filteredData.reduce((sum, item) => sum + (item.total_qty || 0), 0)],
+        ['Total Checker Quantity', filteredData.reduce((sum, item) => {
+          const checkerQty = item.has_comparison ? (item.checker_qty || 0) : 
+                            (showComparison ? (findMatchingCheckerData(item)?.qty || 0) : 0);
+          return sum + checkerQty;
+        }, 0)],
+        ['Total Variance', filteredData.reduce((sum, item) => {
+          const checkerQty = item.has_comparison ? (item.checker_qty || 0) : 
+                            (showComparison ? (findMatchingCheckerData(item)?.qty || 0) : 0);
+          return sum + (checkerQty - (item.total_qty || 0));
+        }, 0)],
+        ['Total Value', filteredData.reduce((sum, item) => sum + (item.prd_ohd_mat_val || 0), 0)]
+      ];
 
-        // Get section breakdown for export
-        const matchingChecker = showComparison ? findMatchingCheckerData(item) : null;
-        const sectionBreakdown = matchingChecker?.sections && matchingChecker.sections.length > 1 
-          ? matchingChecker.sections.map((section: any) => `${section.section_desc}: ${section.qty}`).join('; ')
-          : '';
-
-        return {
-          'Form': item.form,
-          'Section': item.section_desc || '-',
-          'Grade': item.grade,
-          'Size': item.size,
-          'Finish': item.finish,
-          'Extended Finish': item.ext_finish,
-          'Width': item.width,
-          'Length': item.length,
-          'Weight': item.weight,
-          'Inventory Type': item.inv_type,
-          'Quality Standards': item.inv_quality,
-          'Quality Standards Code': getQualityStandardCode(item.inv_quality || ''),
-          'Branch': item.branch,
-          'Warehouse': item.warehouse,
-          'System Quantity': item.system_qty,
-          'Checker Qty': checkerQty,
-          'Section Breakdown': sectionBreakdown || '-',
-          'Variance': variance,
-          'Status': status,
-          'Total Amount': item.prd_ohd_mat_val,
-          'Unit Cost': item.prd_ohd_mat_cst
-        };
+      // Create detailed reconciliation summary data (like the image shows)
+      const overallCoverageDollars = filteredData.reduce((sum, item) => sum + (Number(item.prd_ohd_mat_val) || 0), 0);
+      const overallCoveragePieces = filteredData.reduce((sum, item) => sum + (Number(item.total_qty) || 0), 0);
+      
+      const overcountItems = filteredData.filter(item => {
+        const checkerQty = item.has_comparison ? (Number(item.checker_qty) || 0) : 
+                          (showComparison ? (Number(findMatchingCheckerData(item)?.qty) || 0) : 0);
+        return checkerQty > (Number(item.total_qty) || 0);
       });
-
-      // Prepare orphaned data
-      const orphanedData = orphanedCheckerData.map(item => {
-        // Get section breakdown for orphaned items
-        const sectionBreakdown = item.sections && item.sections.length > 1 
-          ? item.sections.map((section: any) => `${section.section_desc}: ${section.qty}`).join('; ')
-          : '';
-
-        return {
-          'Form': item.form,
-          'Section': item.section_desc || '-',
-          'Grade': item.grade,
-          'Size': item.size,
-          'Finish': item.finish,
-          'Extended Finish': item.ext_finish,
-          'Width': item.width,
-          'Length': item.length,
-          'Weight': '-',
-          'Inventory Type': item.type,
-          'Quality Standards': item.remarks,
-          'Quality Standards Code': getQualityStandardCode(item.remarks || ''),
-          'Branch': '-',
-          'Warehouse': '-',
-          'System Quantity': 0,
-          'Checker Qty': item.qty,
-          'Section Breakdown': sectionBreakdown || '-',
-          'Variance': item.qty,
-          'Status': 'Not in System',
-          'Total Amount': '-',
-          'Unit Cost': '-'
-        };
+      
+      const undercountItems = filteredData.filter(item => {
+        const checkerQty = item.has_comparison ? (Number(item.checker_qty) || 0) : 
+                          (showComparison ? (Number(findMatchingCheckerData(item)?.qty) || 0) : 0);
+        return checkerQty < (Number(item.total_qty) || 0);
       });
+      
+      const valueGain = overcountItems.reduce((sum, item) => {
+        const checkerQty = item.has_comparison ? (Number(item.checker_qty) || 0) : 
+                          (showComparison ? (Number(findMatchingCheckerData(item)?.qty) || 0) : 0);
+        const variance = checkerQty - (Number(item.total_qty) || 0);
+        const unitCost = (Number(item.total_qty) || 0) > 0 ? (Number(item.prd_ohd_mat_val) || 0) / (Number(item.total_qty) || 0) : 0;
+        return sum + (variance * unitCost);
+      }, 0);
+      
+      const valueLoss = undercountItems.reduce((sum, item) => {
+        const checkerQty = item.has_comparison ? (Number(item.checker_qty) || 0) : 
+                          (showComparison ? (Number(findMatchingCheckerData(item)?.qty) || 0) : 0);
+        const variance = Math.abs(checkerQty - (Number(item.total_qty) || 0));
+        const unitCost = (Number(item.total_qty) || 0) > 0 ? (Number(item.prd_ohd_mat_val) || 0) / (Number(item.total_qty) || 0) : 0;
+        return sum + (variance * unitCost);
+      }, 0);
+      
+      const totalValue = overallCoverageDollars + valueGain - valueLoss;
 
-      // Combine system data and orphaned data
-      const allData = [...systemData, ...orphanedData];
-
-      // Calculate summary data
-      const overallCoverageDollars = systemData.reduce((sum, item) => sum + (Number(item['Total Amount']) || 0), 0);
-      const overallCoveragePieces = systemData.reduce((sum, item) => sum + (Number(item['System Quantity']) || 0), 0);
-      
-      // Count overcounts and undercounts
-      const overcounts = systemData.filter(item => item['Status'] === 'Overcount').length;
-      const undercounts = systemData.filter(item => item['Status'] === 'Undercount').length;
-      
-      // Calculate $ Value Gain (sum of all overcounts variance * unit cost)
-      const valueGain = systemData
-        .filter(item => item['Status'] === 'Overcount')
-        .reduce((sum, item) => {
-          const variance = Math.abs(Number(item['Variance']) || 0);
-          const unitCost = Number(item['Unit Cost']) || 0;
-          return sum + (variance * unitCost);
-        }, 0);
-      
-      // Calculate $ Value Loss (sum of all undercounts variance * unit cost)
-      const valueLoss = systemData
-        .filter(item => item['Status'] === 'Undercount')
-        .reduce((sum, item) => {
-          const variance = Math.abs(Number(item['Variance']) || 0);
-          const unitCost = Number(item['Unit Cost']) || 0;
-          return sum + (variance * unitCost);
-        }, 0);
-      
-      // Calculate Total Value
-      const totalValue = valueGain - valueLoss + overallCoverageDollars;
-
-      // Create summary data
-      const summaryData = [{
+      const reconciliationSummaryData = [{
         'Physical Inventory Number': `INV-${location_id}-${new Date().toISOString().slice(0, 10)}`,
         'Branch': reconciliationData.summary.branch || '-',
         'Warehouse': reconciliationData.summary.warehouse || '-',
         'Overall Coverage $': overallCoverageDollars.toFixed(2),
         'Overall Coverage Pieces': overallCoveragePieces,
-        'Overcount': overcounts,
-        'Undercounts': undercounts,
+        'Overcount': overcountItems.length,
+        'Undercounts': undercountItems.length,
         '$ Value Gain': valueGain.toFixed(2),
         '$ Value Loss': valueLoss.toFixed(2),
         'Total Value': totalValue.toFixed(2)
       }];
+      
+      const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
+      
+      // Set column widths for summary sheet
+      summarySheet['!cols'] = [
+        { wch: 25 }, // Column A
+        { wch: 15 }  // Column B
+      ];
+      
+      XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary');
 
-      // Create workbook with both sheets
-      const wb = XLSX.utils.book_new();
+      // Add Reconciliation Summary sheet (like the image shows)
+      const reconciliationSummarySheet = XLSX.utils.json_to_sheet(reconciliationSummaryData);
+      XLSX.utils.book_append_sheet(workbook, reconciliationSummarySheet, 'Reconciliation Summary');
+
+      // Enhanced Details Sheet with all requested columns
+      const exportRows: Array<Record<string, string | number>> = [];
+
+      // Process system data with hierarchical structure
+      const systemData: Array<Record<string, string | number>> = [];
       
-      // Add reconciliation data sheet
-      const wsData = XLSX.utils.json_to_sheet(allData);
-      XLSX.utils.book_append_sheet(wb, wsData, 'Reconciliation Data');
+      filteredData.forEach(item => {
+        // Get comparison data if available
+        const checkerQty = item.has_comparison ? (item.checker_qty || 0) : 
+                          (showComparison ? (findMatchingCheckerData(item)?.qty || 0) : 0);
+        const variance = item.has_comparison ? (item.variance || 0) : 
+                        (showComparison ? ((findMatchingCheckerData(item)?.qty || 0) - (item.total_qty || 0)) : 0);
+        const status = item.is_orphaned ? 'Not In System' :
+                      (item.has_comparison ? (item.status || 'Counted Not In System') : 
+                      (showComparison ? 
+                        (findMatchingCheckerData(item) ? 
+                          (checkerQty === item.total_qty ? 'Match' : 
+                           checkerQty > item.total_qty ? 'Overcount' : 'Undercount') : 
+                          'Counted Not In System') : 
+                        'Counted Not In System'));
+
+        const matchingChecker = showComparison ? findMatchingCheckerData(item) : null;
+        const totalValue = item.prd_ohd_mat_val || 0;
+        // const unitCost = (item.total_qty || 0) > 0 ? totalValue / (item.total_qty || 0) : 0;
+        const unitCost = item.prd_ohd_mat_cst || 0;
+
+        // Base item data
+        const baseItem = {
+          'Form': item.form || '',
+          'Size': item.size || '',
+          'Grade': item.grade || '',
+          'Finish': item.finish || '',
+          'Extended Finish': item.ext_finish || '',
+          'Width': item.width || '',
+          'Length': item.length || '',
+          'Location': item.location || '',
+          'Weight': item.weight || '',
+          'Inventory Type': item.inv_type || '',
+          'Quality Standards': item.inv_quality || '',
+          'Quality Standards Code': getQualityStandardCode(item.inv_quality || ''),
+          'Branch': item.branch || '',
+          'Warehouse': item.warehouse || '',
+          'Total Amount': totalValue,
+          'Unit Cost': unitCost
+        };
+
+        // If there are multiple sections, show each section individually
+        if (matchingChecker?.sections && matchingChecker.sections.length > 1) {
+          matchingChecker.sections.forEach((section: any, index: number) => {
+            systemData.push({
+              ...baseItem,
+              'System Qty': index === 0 ? (item.total_qty || 0) : '', // Only show system qty on first row
+              'Checker Qty': section.qty || 0,
+              'Section Breakdown': `  └─ ${section.section_desc || '-'}`,
+              'Tag ID': section.tag_ids && section.tag_ids.length > 0 ? section.tag_ids.join(', ') : '-',
+              'Variance': '', // No variance for individual sections
+              'Status': '' // No status for individual sections
+            });
+          });
+
+          // Add consolidated row with totals
+          systemData.push({
+            ...baseItem,
+            'System Qty': item.total_qty || 0,
+            'Checker Qty': checkerQty,
+            'Section Breakdown': 'TOTAL',
+            'Tag ID': '', // No tag ID for total row
+            'Variance': variance,
+            'Status': status
+          });
+        } else {
+          // Single section or no sections - show as single row
+          const sectionDesc = matchingChecker?.sections?.[0]?.section_desc || item.section_desc || '-';
+          const tagId = matchingChecker?.tag_ids ? matchingChecker.tag_ids.join(', ') : 
+                       (matchingChecker?.tag_id || item.tag_id || '-');
+
+          systemData.push({
+            ...baseItem,
+            'System Qty': item.total_qty || 0,
+            'Checker Qty': checkerQty,
+            'Section Breakdown': sectionDesc,
+            'Tag ID': tagId,
+            'Variance': variance,
+            'Status': status
+          });
+        }
+      });
+
+      // Process orphaned data with hierarchical structure
+      const orphanedData: Array<Record<string, string | number>> = [];
       
-      // Add summary sheet
-      const wsSummary = XLSX.utils.json_to_sheet(summaryData);
-      XLSX.utils.book_append_sheet(wb, wsSummary, 'Reconciliation Summary');
+      // Sort orphaned data by Form then Size
+      const sortedOrphanedData = orphanedCheckerData.sort((a: any, b: any) => {
+        // Primary sort: Form
+        const formA = (a.form || '').toString().toLowerCase();
+        const formB = (b.form || '').toString().toLowerCase();
+        if (formA !== formB) {
+          return formA.localeCompare(formB);
+        }
+
+        // Secondary sort: Size (numeric, with fallback for non-numeric)
+        const sizeA = parseFloat(a.size || '0') || 999999999;
+        const sizeB = parseFloat(b.size || '0') || 999999999;
+        if (sizeA !== sizeB) {
+          return sizeA - sizeB;
+        }
+        // If numeric values are equal, sort alphabetically
+        return (a.size || '').localeCompare(b.size || '');
+      });
       
-      const fileName = `Reconciliation_Data_${location_id}_${new Date().toISOString().slice(0, 10)}.xlsx`;
-      XLSX.writeFile(wb, fileName);
+      sortedOrphanedData.forEach(item => {
+        // Base item data for orphaned items
+        const baseItem = {
+          'Form': item.form || '',
+          'Size': item.size || '',
+          'Grade': item.grade || '',
+          'Finish': item.finish || '',
+          'Extended Finish': item.ext_finish || '',
+          'Width': item.width || '',
+          'Length': item.length || '',
+          'Location': item.location || '',
+          'Weight': '',
+          'Inventory Type': item.type || '',
+          'Quality Standards': item.remarks || '',
+          'Quality Standards Code': getQualityStandardCode(item.remarks || ''),
+          'Branch': '',
+          'Warehouse': '',
+          'System Qty': 0,
+          'Total Amount': 0,
+          'Unit Cost': 0
+        };
+
+        // If there are multiple sections, show each section individually
+        if (item.sections && item.sections.length > 1) {
+          item.sections.forEach((section: any) => {
+            orphanedData.push({
+              ...baseItem,
+              'Checker Qty': section.qty || 0,
+              'Section Breakdown': `  └─ ${section.section_desc || '-'}`,
+              'Tag ID': section.tag_ids && section.tag_ids.length > 0 ? section.tag_ids.join(', ') : '-',
+              'Variance': '', // No variance for individual sections
+              'Status': '' // No status for individual sections
+            });
+          });
+
+          // Add consolidated row with totals
+          orphanedData.push({
+            ...baseItem,
+            'Checker Qty': item.qty || 0,
+            'Section Breakdown': 'TOTAL',
+            'Tag ID': '', // No tag ID for total row
+            'Variance': item.qty || 0,
+            'Status': 'Not In System'
+          });
+        } else {
+          // Single section - show as single row
+          const sectionDesc = item.section_desc || '-';
+          const tagId = item.tag_ids ? item.tag_ids.join(', ') : (item.tag_id || '-');
+
+          orphanedData.push({
+            ...baseItem,
+            'Checker Qty': item.qty || 0,
+            'Section Breakdown': sectionDesc,
+            'Tag ID': tagId,
+            'Variance': item.qty || 0,
+            'Status': 'Not In System'
+          });
+        }
+      });
+
+      // Combine and add all data
+      const allData = [...systemData, ...orphanedData];
+      exportRows.push(...allData);
+
+      // Create worksheet with proper headers and formatting
+      const ws = XLSX.utils.json_to_sheet(exportRows, {
+        header: [
+          'Form',
+          'Size',
+          'Grade',
+          'Finish',
+          'Extended Finish',
+          'Width',
+          'Length',
+          'Location',
+          'Weight',
+          'Inventory Type',
+          'Quality Standards',
+          'Quality Standards Code',
+          'Branch',
+          'Warehouse',
+          'System Qty',
+          'Checker Qty',
+          'Section Breakdown',
+          'Tag ID',
+          'Variance',
+          'Status',
+          'Total Amount',
+          'Unit Cost'
+        ]
+      });
       
-      enqueueSnackbar(`Data exported successfully! ${systemData.length} system items, ${orphanedData.length} orphaned items`, { variant: 'success' });
+      // Style the details sheet for Excel compatibility
+      const detailsRange = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+      for (let row = detailsRange.s.r; row <= detailsRange.e.r; row++) {
+        for (let col = detailsRange.s.c; col <= detailsRange.e.c; col++) {
+          const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+          if (!ws[cellAddress]) continue;
+          
+          if (row === 0) {
+            // Header row
+            ws[cellAddress].s = {
+              font: { bold: true, size: 11, color: { rgb: "FFFFFF" } },
+              fill: { fgColor: { rgb: "1976D2" } },
+              alignment: { horizontal: "center", vertical: "center" },
+              border: {
+                top: { style: "thin", color: { rgb: "000000" } },
+                bottom: { style: "thin", color: { rgb: "000000" } },
+                left: { style: "thin", color: { rgb: "000000" } },
+                right: { style: "thin", color: { rgb: "000000" } }
+              }
+            };
+          } else if (row > 0) {
+            // Data rows
+            ws[cellAddress].s = {
+              font: { size: 10 },
+              alignment: { horizontal: "left", vertical: "center" },
+              border: {
+                top: { style: "thin", color: { rgb: "CCCCCC" } },
+                bottom: { style: "thin", color: { rgb: "CCCCCC" } },
+                left: { style: "thin", color: { rgb: "CCCCCC" } },
+                right: { style: "thin", color: { rgb: "CCCCCC" } }
+              }
+            };
+            
+            // Highlight TOTAL rows and section grouping
+            if (ws[cellAddress].v === 'TOTAL' && col === 16) { // Section Breakdown column
+              ws[cellAddress].s.font = { bold: true, size: 11 };
+              ws[cellAddress].s.fill = { fgColor: { rgb: "E3F2FD" } }; // Light blue
+            }
+            
+            // Group section rows with light background
+            if (ws[cellAddress].v && typeof ws[cellAddress].v === 'string' && 
+                ws[cellAddress].v.startsWith('  └─') && col === 16) { // Section Breakdown column
+              ws[cellAddress].s.fill = { fgColor: { rgb: "F8F9FA" } }; // Very light gray
+              ws[cellAddress].s.font = { italic: true };
+            }
+            
+            // Add left border for section grouping
+            if (ws[cellAddress].v && typeof ws[cellAddress].v === 'string' && 
+                (ws[cellAddress].v.startsWith('  └─') || ws[cellAddress].v === 'TOTAL') && col === 0) {
+              ws[cellAddress].s.border = {
+                ...ws[cellAddress].s.border,
+                left: { style: "medium", color: { rgb: "1976D2" } } // Blue left border
+              };
+            }
+            
+            // Highlight variance rows
+            if (ws[cellAddress].v && typeof ws[cellAddress].v === 'number' && col === 18) { // Variance column
+              if (ws[cellAddress].v > 0) {
+                ws[cellAddress].s.fill = { fgColor: { rgb: "FFEBEE" } }; // Light red
+              } else if (ws[cellAddress].v < 0) {
+                ws[cellAddress].s.fill = { fgColor: { rgb: "FFF3E0" } }; // Light orange
+              }
+            }
+            
+            // Highlight status column
+            if (ws[cellAddress].v && typeof ws[cellAddress].v === 'string' && col === 19) { // Status column
+              if (ws[cellAddress].v === 'Overcount') {
+                ws[cellAddress].s.font = { color: { rgb: "D32F2F" }, bold: true };
+              } else if (ws[cellAddress].v === 'Undercount') {
+                ws[cellAddress].s.font = { color: { rgb: "F57C00" }, bold: true };
+              } else if (ws[cellAddress].v === 'Match') {
+                ws[cellAddress].s.font = { color: { rgb: "388E3C" }, bold: true };
+              } else if (ws[cellAddress].v === 'Not In System') {
+                ws[cellAddress].s.font = { color: { rgb: "FF9800" }, bold: true };
+              }
+            }
+          }
+        }
+      }
+      
+      // Set column widths for better readability
+      ws['!cols'] = [
+        { wch: 8 },  // Form
+        { wch: 12 }, // Grade
+        { wch: 10 }, // Size
+        { wch: 10 }, // Finish
+        { wch: 15 }, // Extended Finish
+        { wch: 8 },  // Width
+        { wch: 8 },  // Length
+        { wch: 15 }, // Location
+        { wch: 8 },  // Weight
+        { wch: 15 }, // Inventory Type
+        { wch: 15 }, // Quality Standards
+        { wch: 20 }, // Quality Standards Code
+        { wch: 10 }, // Branch
+        { wch: 12 }, // Warehouse
+        { wch: 12 }, // System Qty
+        { wch: 12 }, // Checker Qty
+        { wch: 25 }, // Section Breakdown
+        { wch: 15 }, // Tag ID
+        { wch: 10 }, // Variance
+        { wch: 12 }, // Status
+        { wch: 15 }, // Total Amount
+        { wch: 12 }  // Unit Cost
+      ];
+      
+      XLSX.utils.book_append_sheet(workbook, ws, 'Reconciliation Details');
+
+      const fileName = `Inventory_Reconciliation_Report_${location_id}_${new Date().toISOString().slice(0,10)}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+      enqueueSnackbar('Comprehensive reconciliation report exported successfully', { variant: 'success' });
     } catch (error) {
       console.error('Export error:', error);
-      enqueueSnackbar('Failed to export data', { variant: 'error' });
+      enqueueSnackbar('Failed to export report', { variant: 'error' });
     } finally {
       setIsExporting(false);
     }
@@ -1243,15 +1815,16 @@ const ReconciliationPage: React.FC = () => {
       // Prepare recheck items data
       const recheckData = recheckItems.map(item => ({
         'Form': item.form,
-        'Grade': item.grade,
         'Size': item.size,
+        'Grade': item.grade,
         'Finish': item.finish,
         'Extended Finish': item.ext_finish,
         'Width': item.width,
         'Length': item.length,
+        'Location': item.location,
         'Mill': item.mill,
         'Heat': item.heat,
-        'System Quantity': item.system_qty,
+        'System Quantity': item.total_qty,
         'Original Counted Qty': item.counted_qty,
         'Variance': item.variance,
         'Status': item.status,
@@ -1521,39 +2094,42 @@ const ReconciliationPage: React.FC = () => {
                 {/* Visual separator */}
                 <Box sx={{ width: '1px', height: '32px', bgcolor: 'divider' }} />
                 
-                {/* Orphaned Button */}
-                {orphanedCheckerData.length > 0 && (
+                
+                {/* Recheck Button - Only show if any selected items can be marked for recheck */}
+                {selectedItems.size > 0 && filteredData.some((item, index) => 
+                  selectedItems.has(index) && canMarkForRecheck(item)
+                ) && (
                   <Button
                     variant="outlined"
-                    color="warning"
-                    onClick={() => setShowOrphanedData(!showOrphanedData)}
-                    startIcon={showOrphanedData ? <VisibilityOff /> : <Visibility />}
+                    color="info"
+                    onClick={() => setShowRecheckDialog(true)}
+                    startIcon={<Edit />}
                     sx={{ 
                       minWidth: '140px',
                       height: '40px',
-                      borderColor: 'warning.main',
-                      '&:hover': { borderColor: 'warning.dark' }
+                      borderColor: 'info.main',
+                      '&:hover': { borderColor: 'info.dark' }
                     }}
                   >
-                    {showOrphanedData ? 'Hide' : 'Show'} Orphaned ({orphanedCheckerData.length})
+                    Mark for Recheck ({selectedItems.size})
                   </Button>
                 )}
                 
-                {/* Recheck Button */}
+                {/* Adjust Items Button */}
                 <Button
                   variant="outlined"
-                  color="info"
-                  onClick={() => setShowRecheckDialog(true)}
+                  color="secondary"
+                  onClick={handleAdjustItems}
                   disabled={selectedItems.size === 0}
-                  startIcon={<Edit />}
+                  startIcon={<Tune />}
                   sx={{ 
                     minWidth: '140px',
                     height: '40px',
-                    borderColor: 'info.main',
-                    '&:hover': { borderColor: 'info.dark' }
+                    fontWeight: 600,
+                    boxShadow: 1
                   }}
                 >
-                  Mark for Recheck ({selectedItems.size})
+                  Adjust Items ({selectedItems.size})
                 </Button>
               </>
             )}
@@ -1780,6 +2356,21 @@ const ReconciliationPage: React.FC = () => {
                 </Grid>
                 <Grid item xs={12} sm={6} md={3}>
                   <FormControl fullWidth size="small">
+                    <InputLabel>Location</InputLabel>
+                    <Select
+                      value={filters.location}
+                      onChange={(e) => handleFilterChange('location', e.target.value)}
+                      label="Location"
+                    >
+                      <MenuItem value="">All</MenuItem>
+                      {uniqueValues.location?.map((value: string) => (
+                        <MenuItem key={value} value={value}>{value}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <FormControl fullWidth size="small">
                     <InputLabel>Inventory Type</InputLabel>
                     <Select
                       value={filters.inv_type}
@@ -1921,11 +2512,18 @@ const ReconciliationPage: React.FC = () => {
               {showComparison && (
                 <TableCell padding="checkbox">
                   <Checkbox
-                    indeterminate={selectedItems.size > 0 && selectedItems.size < filteredData.length}
-                    checked={selectedItems.size > 0 && selectedItems.size === filteredData.length}
+                    indeterminate={selectedItems.size > 0 && selectedItems.size < filteredData.filter(item => canSelectForAdjustment(item)).length}
+                    checked={selectedItems.size > 0 && selectedItems.size === filteredData.filter(item => canSelectForAdjustment(item)).length}
                     onChange={(event) => {
                       if (event.target.checked) {
-                        setSelectedItems(new Set(filteredData.map((_, index) => index)));
+                        const selectableItems = new Set<number | string>();
+                        // Add all selectable items for adjustment
+                        filteredData.forEach((item, index) => {
+                          if (canSelectForAdjustment(item)) {
+                            selectableItems.add(index);
+                          }
+                        });
+                        setSelectedItems(selectableItems);
                       } else {
                         setSelectedItems(new Set());
                       }
@@ -1933,14 +2531,15 @@ const ReconciliationPage: React.FC = () => {
                   />
                 </TableCell>
               )}
+              <TableCell>Serial No.</TableCell>
               <TableCell>Form</TableCell>
-              <TableCell>Section</TableCell>
-              <TableCell>Grade</TableCell>
               <TableCell>Size</TableCell>
+              <TableCell>Grade</TableCell>
               <TableCell>Finish</TableCell>
               <TableCell>Extended Finish</TableCell>
               <TableCell>Width</TableCell>
               <TableCell>Length</TableCell>
+              <TableCell>Location</TableCell>
               <TableCell>Weight</TableCell>
               <TableCell>Inventory Type</TableCell>
               <TableCell>Quality Standards Code</TableCell>
@@ -1962,7 +2561,7 @@ const ReconciliationPage: React.FC = () => {
           <TableBody>
             {filteredData.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={showComparison ? 21 : 17} align="center" sx={{ py: 3 }}>
+                <TableCell colSpan={showComparison ? 23 : 19} align="center" sx={{ py: 3 }}>
                   <Typography variant="body1" color="text.secondary">
                     No items found
                   </Typography>
@@ -1972,21 +2571,16 @@ const ReconciliationPage: React.FC = () => {
               filteredData.map((item, index) => {
                 const matchingChecker = showComparison ? findMatchingCheckerData(item) : null;
                 
-                // Debug: Log the matchingChecker object to see its structure
-                if (matchingChecker) {
-                  console.log('matchingChecker object:', matchingChecker);
-                  console.log('matchingChecker.size:', matchingChecker.size);
-                  console.log('matchingChecker.finish:', matchingChecker.finish);
-                }
                 
                 // Use enhanced item data if available (loaded from database), otherwise calculate from checker data
                 const variance = item.has_comparison ? (item.variance || 0) : 
-                                (matchingChecker ? (matchingChecker.qty - item.system_qty) : 0);
-                const status = item.has_comparison ? (item.status || 'Counted Not In System') :
+                                (matchingChecker ? (matchingChecker.qty - item.total_qty) : 0);
+                const status = item.is_orphaned ? 'Not In System' :
+                              (item.has_comparison ? (item.status || 'Counted Not In System') :
                               (matchingChecker ?
-                                (matchingChecker.qty === item.system_qty ? 'Match' :
-                                 matchingChecker.qty > item.system_qty ? 'Overcount' : 'Undercount') :
-                                'Counted Not In System');
+                                (matchingChecker.qty === item.total_qty ? 'Match' :
+                                 matchingChecker.qty > item.total_qty ? 'Overcount' : 'Undercount') :
+                                'Counted Not In System'));
                 
                 const isMarkedForRecheck = isItemMarkedForRecheck(item);
                 
@@ -2007,6 +2601,8 @@ const ReconciliationPage: React.FC = () => {
                     return alpha(theme.palette.error.main, 0.1);
                   } else if (status === 'Counted Not In System') {
                     return alpha(theme.palette.grey[400], 0.1);
+                  } else if (status === 'Not In System') {
+                    return alpha(theme.palette.warning.main, 0.2);
                   }
                   
                   return alpha(theme.palette.background.default, 0.5);
@@ -2028,6 +2624,8 @@ const ReconciliationPage: React.FC = () => {
                     return alpha(theme.palette.error.main, 0.2);
                   } else if (status === 'Counted Not In System') {
                     return alpha(theme.palette.grey[400], 0.2);
+                  } else if (status === 'Not In System') {
+                    return alpha(theme.palette.warning.main, 0.3);
                   }
                   
                   return alpha(theme.palette.background.default, 0.8);
@@ -2036,128 +2634,60 @@ const ReconciliationPage: React.FC = () => {
                 // Check if we need to show section breakdown
                 const hasMultipleSections = matchingChecker?.sections && matchingChecker.sections.length > 1;
                 
+                
                 if (hasMultipleSections) {
-                  // Render section breakdown rows
+                  const isExpanded = expandedItems.has(index);
+                  
+                  // Render consolidated row with dropdown
                   return (
-                    <React.Fragment key={`${index}-sections`}>
-                      {/* Individual section rows */}
-                      {matchingChecker.sections.map((section: any) => (
-                        <TableRow 
-                          key={`${index}-section-${section.section_id}`}
-                          hover
-                          sx={{ 
-                            backgroundColor: alpha(theme.palette.info.main, 0.05),
-                            '&:hover': {
-                              backgroundColor: alpha(theme.palette.info.main, 0.1)
-                            }
-                          }}
-                        >
-                          {showComparison && (
-                            <TableCell padding="checkbox">
-                              <Checkbox
-                                checked={selectedItems.has(index)}
-                                onChange={() => handleItemSelection(index)}
-                                disabled={isMarkedForRecheck}
-                              />
-                            </TableCell>
-                          )}
-                          <TableCell>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <Chip 
-                                label={`#${item.tag_id || index}`}
-                                size="small"
-                                color="info"
-                                variant="outlined"
-                                sx={{ fontWeight: 600 }}
-                              />
-                              <Typography variant="caption" color="text.secondary">
-                                Section
-                              </Typography>
-                            </Box>
-                          </TableCell>
-                          <TableCell>{matchingChecker.form}</TableCell>
-                          <TableCell>
-                            <Chip 
-                              label={section.section_desc} 
-                              size="small" 
-                              variant="outlined"
-                              color="info"
-                            />
-                          </TableCell>
-                          <TableCell>{matchingChecker.grade}</TableCell>
-                          <TableCell>{matchingChecker.size}</TableCell>
-                          <TableCell>{matchingChecker.finish}</TableCell>
-                          <TableCell>{matchingChecker.ext_finish || '-'}</TableCell>
-                          <TableCell>{matchingChecker.width || '-'}</TableCell>
-                          <TableCell>{matchingChecker.length || '-'}</TableCell>
-                          <TableCell>{matchingChecker.weight || '-'}</TableCell>
-                          <TableCell>{matchingChecker.type}</TableCell>
-                          <TableCell>
-                            <Tooltip title={matchingChecker.remarks || 'No quality standard specified'} arrow>
-                              <span>{getQualityStandardCode(matchingChecker.remarks || '')}</span>
-                            </Tooltip>
-                          </TableCell>
-                          <TableCell>{matchingChecker.branch || '-'}</TableCell>
-                          <TableCell>{matchingChecker.warehouse || '-'}</TableCell>
-                          <TableCell align="right">-</TableCell>
-                          {showComparison && (
-                            <>
-                              <TableCell align="right">
-                                <Chip 
-                                  label={section.qty}
-                                  color="info"
-                                  variant="outlined"
-                                  size="small"
-                                  sx={{ fontWeight: 600 }}
-                                />
-                              </TableCell>
-                              <TableCell align="right">-</TableCell>
-                              <TableCell>
-                                <Chip 
-                                  label="Section Count"
-                                  color="info"
-                                  size="small"
-                                />
-                              </TableCell>
-                            </>
-                          )}
-                          <TableCell align="right">-</TableCell>
-                          <TableCell align="right">-</TableCell>
-                          <TableCell>
-                            <IconButton
-                              size="small"
-                              onClick={() => handleEditCheckerQty(item)}
-                              disabled={isMarkedForRecheck}
-                            >
-                              <Edit fontSize="small" />
-                            </IconButton>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      
-                      {/* Summary row showing total comparison */}
+                    <React.Fragment key={`${index}-consolidated`}>
+                      {/* Main consolidated row */}
                       <TableRow 
-                        key={`${index}-summary`}
+                        key={index} 
                         hover
                         sx={{ 
                           backgroundColor: getRowBackgroundColor(),
                           '&:hover': {
                             backgroundColor: getRowHoverColor()
-                          },
-                          borderTop: `2px solid ${theme.palette.primary.main}`
+                          }
                         }}
                       >
-                        {showComparison && (
-                          <TableCell padding="checkbox">
-                            <Checkbox
-                              checked={selectedItems.has(index)}
-                              onChange={() => handleItemSelection(index)}
-                              disabled={isMarkedForRecheck}
-                            />
-                          </TableCell>
-                        )}
+                         {showComparison && (
+                           <TableCell align="center">
+                             <IconButton
+                               size="small"
+                               onClick={() => toggleExpanded(index)}
+                               sx={{ 
+                                 transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                                 transition: 'transform 0.2s ease-in-out'
+                               }}
+                             >
+                               <ExpandMore fontSize="small" />
+                             </IconButton>
+                           </TableCell>
+                         )}
                         <TableCell>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, position: 'relative' }}>
+                            {isMarkedForRecheck && (
+                              <Chip
+                                label="RE"
+                                size="small"
+                                sx={{
+                                  fontSize: '0.65rem',
+                                  height: '18px',
+                                  fontWeight: 600,
+                                  position: 'absolute',
+                                  top: '-12px',
+                                  left: '-4px',
+                                  zIndex: 2,
+                                  backgroundColor: theme.palette.error.main,
+                                  color: theme.palette.error.contrastText,
+                                  '&:hover': {
+                                    backgroundColor: theme.palette.error.dark
+                                  }
+                                }}
+                              />
+                            )}
                             <Chip 
                               label={`#${item.tag_id || index}`}
                               size="small"
@@ -2165,36 +2695,16 @@ const ReconciliationPage: React.FC = () => {
                               variant="outlined"
                               sx={{ fontWeight: 600 }}
                             />
-                            <Typography variant="caption" color="primary.main" sx={{ fontWeight: 600 }}>
-                              TOTAL
-                            </Typography>
                           </Box>
                         </TableCell>
                         <TableCell>{matchingChecker.form}</TableCell>
-                        <TableCell>
-                          <Chip 
-                            label="All Sections" 
-                            size="small" 
-                            variant="outlined"
-                            color="primary"
-                          />
-                        </TableCell>
+                        <TableCell>{matchingChecker.size}</TableCell>
                         <TableCell>{matchingChecker.grade}</TableCell>
-                        <TableCell>
-                          {(() => {
-                            console.log('Summary row - matchingChecker.size:', matchingChecker.size);
-                            return matchingChecker.size || '-';
-                          })()}
-                        </TableCell>
-                        <TableCell>
-                          {(() => {
-                            console.log('Summary row - matchingChecker.finish:', matchingChecker.finish);
-                            return matchingChecker.finish || '-';
-                          })()}
-                        </TableCell>
+                        <TableCell>{matchingChecker.finish}</TableCell>
                         <TableCell>{matchingChecker.ext_finish || '-'}</TableCell>
                         <TableCell>{matchingChecker.width || '-'}</TableCell>
                         <TableCell>{matchingChecker.length || '-'}</TableCell>
+                        <TableCell>{matchingChecker.location || '-'}</TableCell>
                         <TableCell>{matchingChecker.weight || '-'}</TableCell>
                         <TableCell>{matchingChecker.type}</TableCell>
                         <TableCell>
@@ -2204,17 +2714,25 @@ const ReconciliationPage: React.FC = () => {
                         </TableCell>
                         <TableCell>{matchingChecker.branch || '-'}</TableCell>
                         <TableCell>{matchingChecker.warehouse || '-'}</TableCell>
-                        <TableCell align="right">{item.system_qty}</TableCell>
+                        <TableCell align="right">{item.total_qty || item.system_qty || '-'}</TableCell>
                         {showComparison && (
                           <>
                             <TableCell align="right">
-                              <Chip 
-                                label={matchingChecker.qty}
-                                color="primary"
-                                variant="outlined"
-                                size="small"
-                                sx={{ fontWeight: 600 }}
-                              />
+                              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
+                                <Chip 
+                                  label={matchingChecker.qty}
+                                  color="primary"
+                                  variant="outlined"
+                                  size="small"
+                                  sx={{ fontWeight: 600 }}
+                                />
+                                <Typography variant="caption" color="primary.main" sx={{ fontSize: '0.7rem', fontWeight: 600 }}>
+                                  
+                                  {matchingChecker.tag_ids && matchingChecker.tag_ids.length > 0 && (
+                                    <span> {matchingChecker.tag_ids.map((tagId: any) => `#${tagId}`).join(', ')}</span>
+                                  )}
+                                </Typography>
+                              </Box>
                             </TableCell>
                             <TableCell align="right">
                               <Chip 
@@ -2245,15 +2763,119 @@ const ReconciliationPage: React.FC = () => {
                         <TableCell align="right">{item.prd_ohd_mat_val}</TableCell>
                         <TableCell align="right">{item.prd_ohd_mat_cst}</TableCell>
                         <TableCell>
-                          <IconButton
-                            size="small"
-                            onClick={() => handleEditCheckerQty(item)}
-                            disabled={isMarkedForRecheck}
-                          >
-                            <Edit fontSize="small" />
-                          </IconButton>
+                          {isItemMarkedForRecheck(item) && (
+                            <Tooltip title="Remove from Recheck" arrow>
+                              <IconButton
+                                size="small"
+                                onClick={() => handleRemoveFromRecheck(item)}
+                                color="error"
+                              >
+                                <Clear fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          )}
                         </TableCell>
                       </TableRow>
+                      
+                      {/* Expanded section breakdown rows */}
+                      {isExpanded && matchingChecker.sections.map((section: any) => (
+                        <TableRow 
+                          key={`${index}-section-${section.section_id}`}
+                          hover
+                          sx={{ 
+                            backgroundColor: alpha(theme.palette.info.main, 0.05),
+                            '&:hover': {
+                              backgroundColor: alpha(theme.palette.info.main, 0.1)
+                            }
+                          }}
+                        >
+                          {showComparison && canSelectForAdjustment(item) && (
+                            <TableCell padding="checkbox">
+                              <Checkbox
+                                checked={selectedItems.has(`${index}-section-${section.section_id}`)}
+                                onChange={() => handleItemSelection(`${index}-section-${section.section_id}`)}
+                              />
+                            </TableCell>
+                          )}
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Chip 
+                                label={`#${item.tag_id || index}`}
+                                size="small"
+                                color="info"
+                                variant="outlined"
+                                sx={{ fontWeight: 600 }}
+                              />
+                              {/* <Typography variant="caption" color="text.secondary">
+                                Section
+                              </Typography> */}
+                            </Box>
+                          </TableCell>
+                          {/* <TableCell>{item.tag_id || '-'}</TableCell> */}
+                          <TableCell>{matchingChecker.form}</TableCell>
+                          <TableCell>{matchingChecker.size}</TableCell>
+                          <TableCell>{matchingChecker.grade}</TableCell>
+                          <TableCell>{matchingChecker.finish}</TableCell>
+                          <TableCell>{matchingChecker.ext_finish || '-'}</TableCell>
+                          <TableCell>{matchingChecker.width || '-'}</TableCell>
+                          <TableCell>{matchingChecker.length || '-'}</TableCell>
+                          <TableCell>{matchingChecker.location || '-'}</TableCell>
+                          <TableCell>{matchingChecker.weight || '-'}</TableCell>
+                          <TableCell>{matchingChecker.type}</TableCell>
+                          <TableCell>
+                            <Tooltip title={matchingChecker.remarks || 'No quality standard specified'} arrow>
+                              <span>{getQualityStandardCode(matchingChecker.remarks || '')}</span>
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell>{matchingChecker.branch || '-'}</TableCell>
+                          <TableCell>{matchingChecker.warehouse || '-'}</TableCell>
+                          <TableCell align="right">-</TableCell>
+                          {showComparison && (
+                            <>
+                              <TableCell align="right">
+                                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
+                                  <Chip 
+                                    label={section.qty}
+                                    color="info"
+                                    variant="outlined"
+                                    size="small"
+                                    sx={{ fontWeight: 600 }}
+                                  />
+                                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                                    {section.section_desc}
+                                    {section.tag_ids && section.tag_ids.length > 0 && (
+                                      <span> - {section.tag_ids.map((tagId: any) => `#${tagId}`).join(', ')}</span>
+                                    )}
+                                  </Typography>
+                                </Box>
+                              </TableCell>
+                              <TableCell align="right">-</TableCell>
+                              <TableCell>
+                                <Chip 
+                                  label="Section Count"
+                                  color="info"
+                                  size="small"
+                                />
+                              </TableCell>
+                            </>
+                          )}
+                          <TableCell align="right">-</TableCell>
+                          <TableCell align="right">-</TableCell>
+                          <TableCell>
+                            {isItemMarkedForRecheck(item) && (
+                              <Tooltip title="Remove from Recheck" arrow>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleRemoveFromRecheck(item)}
+                                  color="error"
+                                >
+                                  <Clear fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
                     </React.Fragment>
                   );
                 } else {
@@ -2269,34 +2891,55 @@ const ReconciliationPage: React.FC = () => {
                         }
                       }}
                     >
-                      {showComparison && (
+                      {showComparison && canSelectForAdjustment(item) && (
                         <TableCell padding="checkbox">
                           <Checkbox
                             checked={selectedItems.has(index)}
                             onChange={() => handleItemSelection(index)}
-                            disabled={isMarkedForRecheck}
                           />
                         </TableCell>
                       )}
-                      <TableCell>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Chip 
-                            label={`#${item.tag_id || index}`}
-                            size="small"
-                            color="primary"
-                            variant="outlined"
-                            sx={{ fontWeight: 600 }}
-                          />
-                        </Box>
-                      </TableCell>
-                      <TableCell>{item.section_desc}</TableCell>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, position: 'relative' }}>
+                              {isMarkedForRecheck && (
+                                <Chip
+                                  label="RE"
+                                  size="small"
+                                  sx={{
+                                    fontSize: '0.65rem',
+                                    height: '18px',
+                                    fontWeight: 600,
+                                    position: 'absolute',
+                                    top: '-12px',
+                                    left: '-4px',
+                                    zIndex: 2,
+                                    backgroundColor: theme.palette.error.main,
+                                    color: theme.palette.error.contrastText,
+                                    '&:hover': {
+                                      backgroundColor: theme.palette.error.dark
+                                    }
+                                  }}
+                                />
+                              )}
+                              <Chip 
+                                label={`#${item.tag_id || index}`}
+                                size="small"
+                                color="primary"
+                                variant="outlined"
+                                sx={{ fontWeight: 600 }}
+                              />
+                            </Box>
+                          </TableCell>
+                      {/* <TableCell>{item.tag_id || '-'}</TableCell> */}
                       <TableCell>{item.form}</TableCell>
-                      <TableCell>{item.grade}</TableCell>
+                      {/* <TableCell>{item.section_desc}</TableCell> */}
                       <TableCell>{item.size}</TableCell>
+                      <TableCell>{item.grade}</TableCell>
                       <TableCell>{item.finish}</TableCell>
                       <TableCell>{item.ext_finish || '-'}</TableCell>
                       <TableCell>{item.width || '-'}</TableCell>
                       <TableCell>{item.length || '-'}</TableCell>
+                      <TableCell>{item.location || '-'}</TableCell>
                       <TableCell>{item.weight || '-'}</TableCell>
                       <TableCell>{item.inv_type || '-'}</TableCell>
                       <TableCell>
@@ -2306,7 +2949,7 @@ const ReconciliationPage: React.FC = () => {
                       </TableCell>
                       <TableCell>{item.branch}</TableCell>
                       <TableCell>{item.warehouse}</TableCell>
-                      <TableCell align="right">{item.system_qty}</TableCell>
+                      <TableCell align="right">{item.total_qty || item.system_qty || '-'}</TableCell>
                       {showComparison && (
                         <>
                           <TableCell align="right">
@@ -2325,14 +2968,27 @@ const ReconciliationPage: React.FC = () => {
                               }
                               // Fallback to checker data (for new comparisons)
                               if (matchingChecker) {
+                                // Get section information for single items
+                                const sectionInfo = matchingChecker.sections && matchingChecker.sections.length > 0 
+                                  ? matchingChecker.sections[0].section_desc 
+                                  : '-';
+                                
                                 return (
-                                  <Chip 
-                                    label={matchingChecker.qty}
-                                    color="primary"
-                                    variant="outlined"
-                                    size="small"
-                                    sx={{ fontWeight: 600 }}
-                                  />
+                                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
+                                    <Chip 
+                                      label={matchingChecker.qty}
+                                      color="primary"
+                                      variant="outlined"
+                                      size="small"
+                                      sx={{ fontWeight: 600 }}
+                                    />
+                                    <Typography variant="caption" color="primary.main" sx={{ fontSize: '0.7rem' }}>
+                                      {sectionInfo}
+                                      {matchingChecker.tag_ids && matchingChecker.tag_ids.length > 0 && (
+                                        <span> - {matchingChecker.tag_ids.map((tagId: any) => `#${tagId}`).join(', ')}</span>
+                                      )}
+                                    </Typography>
+                                  </Box>
                                 );
                               }
                               return (
@@ -2401,8 +3057,19 @@ const ReconciliationPage: React.FC = () => {
                                     color={
                                       item.status === 'Match' ? 'success' :
                                       item.status === 'Overcount' ? 'warning' :
-                                      item.status === 'Undercount' ? 'error' : 'default'
+                                      item.status === 'Undercount' ? 'error' :
+                                      item.status === 'Not In System' ? 'warning' : 'default'
                                     }
+                                    size="small"
+                                  />
+                                );
+                              }
+                              // Handle orphaned items
+                              if (item.is_orphaned) {
+                                return (
+                                  <Chip 
+                                    label="Not In System"
+                                    color="warning"
                                     size="small"
                                   />
                                 );
@@ -2414,7 +3081,8 @@ const ReconciliationPage: React.FC = () => {
                                   color={
                                     status === 'Match' ? 'success' :
                                     status === 'Overcount' ? 'warning' :
-                                    status === 'Undercount' ? 'error' : 'default'
+                                    status === 'Undercount' ? 'error' :
+                                    status === 'Not In System' ? 'warning' : 'default'
                                   }
                                   size="small"
                                 />
@@ -2426,13 +3094,17 @@ const ReconciliationPage: React.FC = () => {
                       <TableCell align="right">{item.prd_ohd_mat_val}</TableCell>
                       <TableCell align="right">{item.prd_ohd_mat_cst}</TableCell>
                       <TableCell>
-                        <IconButton
-                          size="small"
-                          onClick={() => handleEditCheckerQty(item)}
-                          disabled={isMarkedForRecheck}
-                        >
-                          <Edit fontSize="small" />
-                        </IconButton>
+                        {isItemMarkedForRecheck(item) && (
+                          <Tooltip title="Remove from Recheck" arrow>
+                            <IconButton
+                              size="small"
+                              onClick={() => handleRemoveFromRecheck(item)}
+                              color="error"
+                            >
+                              <Clear fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
                       </TableCell>
                     </TableRow>
                   );
@@ -2444,94 +3116,6 @@ const ReconciliationPage: React.FC = () => {
         </Box>
       </Paper>
 
-      {/* Orphaned Checker Data Table */}
-      {showOrphanedData && orphanedCheckerData.length > 0 && (
-        <Paper sx={{ overflow: 'hidden', mt: 3 }}>
-          <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
-            <Typography variant="h6" color="warning.main" sx={{ fontWeight: 600 }}>
-              Orphaned Checker Data ({orphanedCheckerData.length} items)
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              These items were counted by checkers but don't exist in the system inventory
-            </Typography>
-          </Box>
-          <Box sx={{ maxHeight: '40vh', overflow: 'auto' }}>
-            <Table size="small" sx={{ minWidth: 1200 }}>
-              <TableHead>
-                <TableRow sx={{ 
-                  backgroundColor: alpha(theme.palette.warning.main, 0.1),
-                  '& th': { 
-                    fontWeight: 600,
-                    whiteSpace: 'nowrap',
-                    color: theme.palette.text.primary,
-                    position: 'sticky',
-                    top: 0,
-                    zIndex: 1
-                  }
-                }}>
-                  <TableCell>Form</TableCell>
-                  <TableCell>Section</TableCell>
-                  <TableCell>Grade</TableCell>
-                  <TableCell>Size</TableCell>
-                  <TableCell>Finish</TableCell>
-                  <TableCell>Extended Finish</TableCell>
-                  <TableCell>Width</TableCell>
-                  <TableCell>Length</TableCell>
-                  <TableCell>Type</TableCell>
-                  <TableCell>Quality Standard Code</TableCell>
-                  <TableCell align="right">Checker Quantity</TableCell>
-                  <TableCell>Status</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {orphanedCheckerData.map((item, index) => (
-                  <TableRow 
-                    key={index} 
-                    hover
-                    sx={{ 
-                      backgroundColor: alpha(theme.palette.warning.main, 0.05),
-                      '&:hover': {
-                        backgroundColor: alpha(theme.palette.warning.main, 0.1)
-                      }
-                    }}
-                  >
-                    <TableCell>{item.form}</TableCell>
-                    <TableCell>{item.section_desc}</TableCell>
-                    <TableCell>{item.grade}</TableCell>
-                    <TableCell>{item.size}</TableCell>
-                    <TableCell>{item.finish}</TableCell>
-                    <TableCell>{item.ext_finish || '-'}</TableCell>
-                    <TableCell>{item.width || '-'}</TableCell>
-                    <TableCell>{item.length || '-'}</TableCell>
-                    <TableCell>{item.type || '-'}</TableCell>
-                    <TableCell>
-                      <Tooltip title={item.remarks || 'No quality standard specified'} arrow>
-                        <span>{getQualityStandardCode(item.remarks || '')}</span>
-                      </Tooltip>
-                    </TableCell>
-                    <TableCell align="right">
-                      <Chip 
-                        label={item.qty}
-                        color="warning"
-                        variant="outlined"
-                        size="small"
-                        sx={{ fontWeight: 600 }}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Chip 
-                        label="Not in System"
-                        color="warning"
-                        size="small"
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Box>
-        </Paper>
-      )}
 
       {/* Recheck Dialog */}
       <Dialog open={showRecheckDialog} onClose={() => setShowRecheckDialog(false)} maxWidth="sm" fullWidth>
@@ -2572,58 +3156,157 @@ const ReconciliationPage: React.FC = () => {
       </Dialog>
 
       {/* Edit Checker Quantity Dialog */}
-      <Dialog open={showEditDialog} onClose={() => setShowEditDialog(false)} maxWidth="sm" fullWidth>
+      <Dialog open={showEditDialog} onClose={() => setShowEditDialog(false)} maxWidth="md" fullWidth>
         <DialogTitle>
-          {editingItem ? (isItemMarkedForRecheck(editingItem) ? 'Complete Recheck' : 'Edit Checker Quantity') : 'Edit Checker Quantity'}
+          Edit Checker Data
         </DialogTitle>
         <DialogContent>
           {editingItem && (
             <>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                {editingItem && isItemMarkedForRecheck(editingItem) 
-                  ? 'Update the quantity and complete the recheck process. This will remove the item from the recheck queue and save the updated data.'
-                  : 'Edit the checker quantity for this item. Changes will be saved to the reconciliation record.'
-                }
+                Edit the checker data for this item. Changes will be saved to the reconciliation record.
               </Typography>
               <Box sx={{ mb: 2, p: 2, backgroundColor: alpha(theme.palette.grey[100], 0.5), borderRadius: 1 }}>
                 <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                  {editingItem.form} - {editingItem.grade} - {editingItem.size}
+                  {editingItem.form} - {editingItem.size} - {editingItem.grade}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  System Qty: {editingItem.system_qty}
+                  System Qty: {editingItem.total_qty}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
                   Current Checker Qty: {findMatchingCheckerData(editingItem)?.qty || 0}
                 </Typography>
-                {editingItem && isItemMarkedForRecheck(editingItem) && (
-                  <Chip 
-                    label="Recheck Required" 
-                    color="warning" 
-                    size="small"
-                    variant="filled"
-                    sx={{ mt: 1, fontWeight: 600 }}
-                  />
-                )}
               </Box>
-              <TextField
-                fullWidth
-                label="New Checker Quantity"
-                type="number"
-                value={editCheckerQty}
-                onChange={(e) => setEditCheckerQty(e.target.value)}
-                inputProps={{ min: 0, step: 0.01 }}
-                sx={{ mt: 1 }}
-                helperText="Enter the corrected quantity from recheck"
-              />
+              <Grid container spacing={2} sx={{ mt: 1 }}>
+                <Grid item xs={6}>
+                  <TextField
+                    fullWidth
+                    label="Form"
+                    value={editForm}
+                    onChange={(e) => setEditForm(e.target.value)}
+                    size="small"
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField
+                    fullWidth
+                    label="Grade"
+                    value={editGrade}
+                    onChange={(e) => setEditGrade(e.target.value)}
+                    size="small"
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField
+                    fullWidth
+                    label="Size"
+                    value={editSize}
+                    onChange={(e) => setEditSize(e.target.value)}
+                    size="small"
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField
+                    fullWidth
+                    label="Finish"
+                    value={editFinish}
+                    onChange={(e) => setEditFinish(e.target.value)}
+                    size="small"
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField
+                    fullWidth
+                    label="Extended Finish"
+                    value={editExtFinish}
+                    onChange={(e) => setEditExtFinish(e.target.value)}
+                    size="small"
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField
+                    fullWidth
+                    label="Width"
+                    value={editWidth}
+                    onChange={(e) => setEditWidth(e.target.value)}
+                    size="small"
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField
+                    fullWidth
+                    label="Length"
+                    value={editLength}
+                    onChange={(e) => setEditLength(e.target.value)}
+                    size="small"
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField
+                    fullWidth
+                    label="Mill"
+                    value={editMill}
+                    onChange={(e) => setEditMill(e.target.value)}
+                    size="small"
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField
+                    fullWidth
+                    label="Heat"
+                    value={editHeat}
+                    onChange={(e) => setEditHeat(e.target.value)}
+                    size="small"
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField
+                    fullWidth
+                    label="Location"
+                    value={editLocation}
+                    onChange={(e) => setEditLocation(e.target.value)}
+                    size="small"
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField
+                    fullWidth
+                    label="Quality Type"
+                    value={editQualityType}
+                    onChange={(e) => setEditQualityType(e.target.value)}
+                    size="small"
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField
+                    fullWidth
+                    label="Type"
+                    value={editType}
+                    onChange={(e) => setEditType(e.target.value)}
+                    size="small"
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Quantity"
+                    type="number"
+                    value={editCheckerQty}
+                    onChange={(e) => setEditCheckerQty(e.target.value)}
+                    inputProps={{ min: 0, step: 0.01 }}
+                    helperText="Enter the corrected quantity from recheck"
+                  />
+                </Grid>
+              </Grid>
               {editCheckerQty && (
                 <Box sx={{ mt: 2, p: 2, backgroundColor: alpha(theme.palette.info.main, 0.1), borderRadius: 1 }}>
                   <Typography variant="body2" color="text.secondary">
-                    <strong>Variance:</strong> {parseFloat(editCheckerQty) - (editingItem.system_qty || 0)}
+                    <strong>Variance:</strong> {parseFloat(editCheckerQty) - (editingItem.total_qty || 0)}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     <strong>Status:</strong> {
-                      parseFloat(editCheckerQty) === editingItem.system_qty ? 'Match' :
-                      parseFloat(editCheckerQty) > editingItem.system_qty ? 'Overcount' : 'Undercount'
+                      parseFloat(editCheckerQty) === editingItem.total_qty ? 'Match' :
+                      parseFloat(editCheckerQty) > editingItem.total_qty ? 'Overcount' : 'Undercount'
                     }
                   </Typography>
                 </Box>
@@ -2640,9 +3323,9 @@ const ReconciliationPage: React.FC = () => {
             variant="contained" 
             disabled={savingEdit}
             startIcon={savingEdit ? <CircularProgress size={20} /> : null}
-            color={editingItem && isItemMarkedForRecheck(editingItem) ? 'warning' : 'primary'}
+            color="primary"
           >
-            {savingEdit ? 'Saving...' : (editingItem && isItemMarkedForRecheck(editingItem) ? 'Complete Recheck' : 'Save Changes')}
+            {savingEdit ? 'Saving...' : 'Save Changes'}
           </Button>
         </DialogActions>
       </Dialog>

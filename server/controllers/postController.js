@@ -1,4 +1,5 @@
 const pool = require("../database/db");
+const axios = require('axios');
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const { createLocation } = require("../models/locationModel");
@@ -1017,8 +1018,8 @@ exports.PostTransactions = async (req, res) => {
       INSERT INTO transactions (
         tag_id, form, type, grade, size, finish, ext_finish, 
         width, length, remarks, count_type, qty,
-        counted_by, team_id, location_id, section_id, mill, heat, ad_cmts, role
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+        counted_by, team_id, location_id, section_id, mill, heat, ad_cmts, role, location
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
       RETURNING transaction_id
     `;
     
@@ -1042,7 +1043,8 @@ exports.PostTransactions = async (req, res) => {
       req.body.mill,
       req.body.heat,
       req.body.ad_cmts,
-      req.body.role
+      req.body.role,
+      req.body.location
     ]);
 
     const transactionId = transactionResult.rows[0].transaction_id;
@@ -1264,8 +1266,8 @@ exports.PostCheckerTransactions = async (req, res) => {
       INSERT INTO transactions (
         tag_id, form, type, grade, size, finish, ext_finish, 
         width, length, remarks, count_type, qty,
-        counted_by, team_id, location_id, section_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        counted_by, team_id, location_id, section_id, location
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       RETURNING transaction_id
     `;
     
@@ -1285,7 +1287,8 @@ exports.PostCheckerTransactions = async (req, res) => {
       req.body.counted_by,
       req.body.team_id,
       req.body.location_id,
-      req.body.section_id
+      req.body.section_id,
+      req.body.location
     ]);
 
     const transactionId = transactionResult.rows[0].transaction_id;
@@ -1357,6 +1360,150 @@ exports.PostCheckerTransactions = async (req, res) => {
   }
 };
 
+// New dedicated endpoint for updating transactions in checker review page
+exports.updateTransactionById = async (req, res) => {
+  try {
+    console.log('Received transaction update request:', req.body);
+    console.log('Headers:', req.headers);
+    
+    const {
+      transaction_id,
+      tag_id,
+      form,
+      type,
+      grade,
+      size,
+      width,
+      finish,
+      ext_finish,
+      length,
+      count_type,
+      qty,
+      location_id,
+      section_id,
+      location,
+      mill,
+      heat,
+      remarks,
+      ad_cmts,
+      bundles
+    } = req.body;
+
+    // Get role and user from headers
+    const role = req.headers['x-selected-role'] || null;
+    const counted_by = req.headers['x-selected-user'] || null;
+    const now = new Date().toISOString();
+
+    // Validate required fields
+    if (!transaction_id) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "Transaction ID is required" 
+      });
+    }
+
+    await pool.query('BEGIN');
+
+    // Calculate total quantity and checker count
+    let totalQty = qty;
+    let calculatedCheckerCount = qty;
+    
+    if (count_type === 'bundle' && bundles && Array.isArray(bundles)) {
+      totalQty = bundles.reduce((sum, bundle) => sum + (bundle.num_of_bundle * bundle.bundle_count), 0);
+      calculatedCheckerCount = totalQty;
+    }
+
+    // Update the transaction
+    const updateTxQuery = `
+      UPDATE transactions SET
+        tag_id = $1,
+        form = $2,
+        type = $3,
+        grade = $4,
+        size = $5,
+        width = $6,
+        finish = $7,
+        ext_finish = $8,
+        length = $9,
+        count_type = $10,
+        qty = $11,
+        location_id = $12,
+        section_id = $13,
+        updated_at = $14,
+        checker_count = $15,
+        mill = $16,
+        heat = $17,
+        ad_cmts = $18,
+        remarks = $19,
+        location = $20
+      WHERE transaction_id = $21
+      RETURNING transaction_id, tag_id, form, type, grade, size, width, finish, ext_finish, length, count_type, qty, location_id, section_id, mill, heat, ad_cmts, remarks, location, updated_at
+    `;
+    
+    const txValues = [
+      tag_id, form, type, grade, size, width, finish, ext_finish, length,
+      count_type, totalQty, location_id, section_id, now,
+      calculatedCheckerCount, mill, heat, ad_cmts, remarks, location, transaction_id
+    ];
+    
+    console.log('Update query parameters:', {
+      tag_id, form, type, grade, size, width, finish, ext_finish, length,
+      count_type, totalQty, location_id, section_id, now,
+      calculatedCheckerCount, mill, heat, ad_cmts, remarks, location, transaction_id
+    });
+    
+    const updateResult = await pool.query(updateTxQuery, txValues);
+    console.log('Transaction update result:', updateResult.rows);
+
+    if (updateResult.rows.length === 0) {
+      await pool.query('ROLLBACK');
+      return res.status(404).json({ 
+        success: false, 
+        error: "Transaction not found" 
+      });
+    }
+
+    // Update bundles if count_type is bundle
+    if (count_type === 'bundle' && bundles && Array.isArray(bundles) && bundles.length > 0) {
+      // First delete existing bundles
+      await pool.query(
+        'DELETE FROM bundles WHERE transaction_id = $1',
+        [transaction_id]
+      );
+
+      // Then insert new bundles
+      const bundleInsertQuery = `
+        INSERT INTO bundles (
+          transaction_id, tag_id, num_of_bundle, bundle_count, created_at
+        ) VALUES ${bundles.map((_, i) => `($${i * 5 + 1}, $${i * 5 + 2}, $${i * 5 + 3}, $${i * 5 + 4}, $${i * 5 + 5})`).join(', ')}
+      `;
+      
+      const bundleValues = bundles.flatMap(bundle => [
+        transaction_id, bundle.tag_id, bundle.num_of_bundle, bundle.bundle_count, now
+      ]);
+      
+      await pool.query(bundleInsertQuery, bundleValues);
+    }
+
+    await pool.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: "Transaction updated successfully",
+      transaction: updateResult.rows[0]
+    });
+
+  } catch (error) {
+    await pool.query('ROLLBACK');
+    console.error('Update transaction error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: "Failed to update transaction", 
+      details: error.message 
+    });
+  }
+};
+
 exports.updateTransactions = async (req, res) => {
   try {
             const {
@@ -1373,6 +1520,7 @@ exports.updateTransactions = async (req, res) => {
           checker_count,
           location_id,
           section_id,
+          location,
           bundles,
           remarks,
           mill,
@@ -1431,15 +1579,16 @@ exports.updateTransactions = async (req, res) => {
             mill = $15,
             heat = $16,
             ad_cmts = $17,
-            remarks = $18
-          WHERE transaction_id = $19
+            remarks = $18,
+            location = $19
+          WHERE transaction_id = $20
           RETURNING transaction_id
         `;
         
         const txValues = [
           form, type, grade, size, width, finish, ext_finish, length,
           count_type, totalQty, location_id, section_id, now,
-          calculatedCheckerCount, mill, heat, ad_cmts, remarks, existingTxId
+          calculatedCheckerCount, mill, heat, ad_cmts, remarks, location, existingTxId
         ];
         
         await pool.query(updateTxQuery, txValues);
@@ -1490,8 +1639,8 @@ exports.updateTransactions = async (req, res) => {
       INSERT INTO transactions (
         tag_id, form, type, grade, size, width, finish, ext_finish, length,
         count_type, qty, location_id, section_id, counted_by, created_at,
-        team_id, updated_at, checker_count, mill, heat, ad_cmts, role, remarks
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+        team_id, updated_at, checker_count, mill, heat, ad_cmts, role, remarks, location
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
       RETURNING transaction_id
     `;
 
@@ -1509,7 +1658,7 @@ exports.updateTransactions = async (req, res) => {
     const txValues = [
       tag_id, form, type, grade, size, width, finish, ext_finish, length,
       count_type, totalQty, location_id, section_id, counted_by, now,
-      req.body.team_id, now, calculatedCheckerCount, mill, heat, ad_cmts, role, remarks
+      req.body.team_id, now, calculatedCheckerCount, mill, heat, ad_cmts, role, remarks, location
     ];
 
     const newTxResult = await pool.query(newTxQuery, txValues);
@@ -2609,8 +2758,8 @@ exports.addLineItem = async (req, res) => {
       INSERT INTO transactions (
         tag_id, form, type, grade, size, finish, ext_finish, 
         width, length, remarks, count_type, qty,
-        counted_by, team_id, location_id, section_id, mill, heat, ad_cmts, role
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+        counted_by, team_id, location_id, section_id, mill, heat, ad_cmts, role, location
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
       RETURNING transaction_id
     `;
     
@@ -2634,7 +2783,8 @@ exports.addLineItem = async (req, res) => {
       req.body.mill,
       req.body.heat,
       req.body.ad_cmts,
-      req.body.role
+      req.body.role,
+      req.body.location
     ]);
 
     const transactionId = transactionResult.rows[0].transaction_id;
@@ -2828,6 +2978,161 @@ exports.unassignTeamFromSection = async (req, res) => {
     res.status(500).json({ 
       error: "Server error while unassigning team from section.",
       details: error.message 
+    });
+  }
+};
+
+// Get adjustment data based on selected items
+exports.getAdjustmentData = async (req, res) => {
+  try {
+    const { selectedItems, branch, warehouse } = req.body;
+    
+    if (!selectedItems || !Array.isArray(selectedItems) || selectedItems.length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "Selected items are required" 
+      });
+    }
+
+    if (!branch || !warehouse) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "Branch and warehouse are required" 
+      });
+    }
+
+    console.log('Getting adjustment data for items:', selectedItems.length);
+    console.log('Branch:', branch, 'Warehouse:', warehouse);
+    console.log('First item data:', selectedItems[0]);
+    
+    // Build dynamic query based on selected items
+    const conditions = selectedItems.map((item) => {
+      // Trim all string values to remove extra spaces
+      const trimmedForm = (item.form || '').toString().trim();
+      const trimmedSize = (item.size || '').toString().trim();
+      const trimmedGrade = (item.grade || '').toString().trim();
+      const trimmedFinish = (item.finish || '').toString().trim();
+      const trimmedExtFinish = (item.ext_finish || '').toString().trim();
+      const trimmedBranch = (branch || '').toString().trim();
+      const trimmedWarehouse = (warehouse || '').toString().trim();
+      
+      console.log('Trimmed values:', {
+        form: `'${trimmedForm}'`,
+        size: `'${trimmedSize}'`,
+        grade: `'${trimmedGrade}'`,
+        finish: `'${trimmedFinish}'`,
+        extFinish: `'${trimmedExtFinish}'`,
+        branch: `'${trimmedBranch}'`,
+        warehouse: `'${trimmedWarehouse}'`
+      });
+      
+      // Build conditions with trimmed values
+      const itemConditions = [
+        `TRIM(prd_frm) = '${trimmedForm}'`,
+        `TRIM(prd_size) = '${trimmedSize}'`,
+        `TRIM(prd_grd) = '${trimmedGrade}'`,
+        `TRIM(prd_fnsh) = '${trimmedFinish}'`,
+        `TRIM(prd_ef_svar) = '${trimmedExtFinish}'`,
+        `prd_wdth = ${item.width || 0}`,
+        `prd_lgth = ${item.length || 0}`,
+        `TRIM(prd_brh) = '${trimmedBranch}'`,
+        `TRIM(prd_whs) = '${trimmedWarehouse}'`
+      ];
+      
+      return `(${itemConditions.join(' AND ')})`;
+    });
+
+    // Combine all conditions with OR
+    const whereClause = conditions.join(' OR ');
+
+    const query = `
+      SELECT 
+        prd_itm_ctl_no,
+        prd_brh,
+        prd_frm,
+        prd_grd,
+        prd_size,
+        prd_fnsh,
+        prd_ef_svar,
+        prd_wdth,
+        prd_lgth,
+        prd_mill,
+        prd_heat,
+        prd_whs,
+        prd_loc,
+        prd_invt_typ,
+        prd_invt_qlty,
+        prd_invt_sts,
+        prd_ohd_pcs,
+        prd_ohd_wgt,
+        prd_ohd_qty
+      FROM intprd_rec 
+      WHERE ${whereClause}
+      ORDER BY prd_frm, 
+        CASE 
+          WHEN prd_size ~ '^[0-9]+\.?[0-9]*$' THEN CAST(prd_size AS NUMERIC)
+          ELSE 999999999
+        END ASC,
+        prd_size ASC
+    `;
+
+    console.log('Adjustment query:', query);
+
+    // Execute the query using the OAuth API
+    const response = await axios.post(
+      process.env.OAUTH_API_URL,
+      { sql: query },
+      {
+        headers: {
+          Authorization: `Bearer ${req.accessToken}`,
+          "Content-Type": "application/json",
+          Database: process.env.OAUTH_DATABASE
+        },
+        timeout: 60000,
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+        validateStatus: function (status) {
+          return status >= 200 && status < 300;
+        }
+      }
+    );
+
+    console.log('OAuth API Response Status:', response.status);
+    console.log('OAuth API Response Data:', response.data);
+    
+    // Handle the OAuth API response structure - data is in response.data.Data (capital D)
+    const responseData = response.data?.Data || response.data || [];
+    console.log('Extracted Data:', responseData);
+    console.log('Response Data Length:', responseData.length);
+
+    if (responseData && responseData.length > 0) {
+      res.json({
+        success: true,
+        data: responseData,
+        count: responseData.length
+      });
+    } else {
+      res.json({
+        success: true,
+        data: [],
+        count: 0,
+        message: "No adjustment data found"
+      });
+    }
+
+  } catch (error) {
+    console.error('Get adjustment data error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+      headers: error.response?.headers
+    });
+    res.status(500).json({ 
+      success: false, 
+      error: "Failed to get adjustment data", 
+      details: error.message,
+      response: error.response?.data
     });
   }
 };

@@ -209,6 +209,7 @@ export const servicesAPI = {
   getRecheckItems: (locationId: string) => api.get(`/services/recheck/items/${locationId}`),
       updateRecheckItem: (itemId: string, data: unknown) => api.put(`/services/recheck/items/${itemId}`, data),
     completeRecheckItem: (itemId: string, data: unknown) => api.post(`/services/recheck/complete/${itemId}`, data),
+  removeFromRecheck: (itemId: string) => api.delete(`/services/recheck/items/${itemId}`),
   updateRecheckItems: (locationId: string, data: unknown) => api.put(`/services/recheck-items/${locationId}`, data),
   deleteRecheckItems: (locationId: string, data: unknown) => api.delete(`/services/recheck-items/${locationId}`, { data }),
   // Checker specific API methods
@@ -218,6 +219,8 @@ export const servicesAPI = {
   verifyTransaction: (data: unknown) => api.post('/services/checker/verify-transaction', data),
   unverifyTransaction: (data: unknown) => api.post('/services/checker/unverify-transaction', data),
   updateTransaction: (data: unknown) => api.post('/services/checker/update-transaction', data),
+  updateTransactionById: (transactionId: string, data: unknown) => api.put(`/services/transactions/${transactionId}`, data),
+  getTransactionIdByTagAndLocation: (tagId: string, locationId: string) => api.get(`/services/transactions/by-tag-location?tag_id=${tagId}&location_id=${locationId}`),
   updateCounterTransaction: (data: unknown) => api.post('/services/counter/update-transaction', data),
   updateCheckerStatus: (locationId: string, sectionId: string) => api.post(`/services/assigned-locations/checker/${locationId}/${sectionId}`),
   addLineItem: (data: unknown) => api.post('/services/checker/add-line-item', data),
@@ -226,6 +229,10 @@ export const servicesAPI = {
   
   // Auth
   signup: (data: unknown) => api.post('/auth/signup', data),
+  
+  // Get adjustment data
+  getAdjustmentData: (data: { selectedItems: any[], branch: string, warehouse: string }) => 
+    api.post('/services/adjustment-data', data),
 };
 
 export default api; 

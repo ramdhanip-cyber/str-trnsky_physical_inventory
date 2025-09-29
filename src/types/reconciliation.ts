@@ -6,6 +6,7 @@ export interface ReconciliationItem {
   ext_finish: string;
   width: string | number;
   length: string | number;
+  location?: string;
   weight?: string | number;
   mill: string;
   heat: string;
@@ -19,6 +20,7 @@ export interface ReconciliationItem {
     qty: number;
   }>;
   system_qty: number;
+  total_qty: number; // Total quantity from database query
   counted_qty: number;
   variance: number;
   status: 'Match' | 'Overcount' | 'Undercount' | 'Not Counted' | 'Counted Not In System' | 'Rechecking in Progress' | 'Rechecked';

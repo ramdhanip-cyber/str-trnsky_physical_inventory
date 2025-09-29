@@ -17,6 +17,33 @@ export interface Transaction {
   location_id: string;
   section_id: string;
   team_id: string;
+  role?: 'Counter' | 'Checker' | 'Recheck';
+  // Additional fields that might be present
+  form?: string;
+  type?: string;
+  grade?: string;
+  size?: string;
+  width?: string;
+  finish?: string;
+  ext_finish?: string;
+  length?: string;
+  mill?: string;
+  heat?: string;
+  location?: string;
+  remarks?: string;
+  ad_cmts?: string;
+  qty?: number;
+  checker_count?: number;
+  counted_by?: string;
+  team_name?: string;
+  section_desc?: string;
+  location_desc?: string;
+  warehouse?: string;
+  branch?: string;
+  bundles?: any[];
+  changes?: any[];
+  isRecheckItem?: boolean;
+  quality?: string;
 }
 
 // Location related types

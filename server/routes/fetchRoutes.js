@@ -50,6 +50,7 @@ router.get("/checker", fetch.checkerAssigned);
 router.get("/checker-sky", fetch.checkerSkyAssigned);
 router.get("/teams/:team_id/tag-range", fetch.tagRange);
 router.get("/transactions", fetch.GetTransactionsByTeam);
+router.get('/transactions/by-tag-location', fetch.getTransactionIdByTagAndLocation);
 router.get('/transactions/:id', fetch.getTransactionWithBundles);
 router.get('/assigned-locations', fetch.getAssignedLocations);
 router.get('/location-summary', fetch.getLocationSummary);

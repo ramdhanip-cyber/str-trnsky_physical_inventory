@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const post = require("../controllers/postController");
+const {authMiddleware} = require("../middleware/authMiddleware");
 
 // Route to register user
 // router.post("/signup", post.signup);
@@ -30,6 +31,8 @@ router.post('/assigned-locations/:location_id/:section_id', post.updateLocationS
 router.post('/sections/:location_id/:sectionId/enable-checker', post.enableChecker);
 router.post('/users/:user_id', post.updateUser);
 router.post('/checker/update-transaction', post.updateTransactions);
+router.put('/transactions/:transaction_id', post.updateTransactionById);
+router.post('/adjustment-data', authMiddleware, post.getAdjustmentData);
 router.post('/counter/update-transaction', post.updateCounterTransaction);
 router.post('/checker/verify-transaction', post.verifyTransactions);
 router.post('/checker/unverify-transaction', post.unverifyTransactions);
