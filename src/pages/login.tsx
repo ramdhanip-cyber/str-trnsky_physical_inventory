@@ -1,49 +1,63 @@
 import React, { useState, useEffect } from 'react';
 import { authAPI } from '../config/api';
-import { 
-  TextField, 
-  Button, 
-  Container, 
-  Typography, 
-  Box, 
-  CircularProgress, 
-  Alert, 
-  Dialog, 
-  DialogActions, 
-  DialogContent, 
-  DialogTitle,
+import {
+  TextField,
+  Button,
+  Container,
+  Typography,
+  Box,
+  CircularProgress,
+  Alert,
+  Dialog,
+  DialogActions,
+  DialogContent,
   InputAdornment,
   IconButton,
-  Divider,
   Fade,
   useTheme,
   useMediaQuery,
   Chip,
   Avatar,
-  Card,
-  CardContent
+  Paper,
+  alpha,
 } from '@mui/material';
-import { 
-  useNavigate 
-} from 'react-router-dom';
-import { 
-  LockOutlined, 
-  PersonOutline, 
-  Visibility, 
+import { useNavigate } from 'react-router-dom';
+import {
+  LockOutlined,
+  PersonOutline,
+  Visibility,
   VisibilityOff,
   CorporateFare,
   AccountCircle,
   PointOfSale,
   FactCheck,
   ArrowForward,
+  Inventory2Outlined,
   Security,
-  VerifiedUser,
-  Inventory,
-  TrendingUp,
-  CheckCircle
+  CheckCircle,
 } from '@mui/icons-material';
-import { styled } from '@mui/material/styles';
+import { styled, keyframes } from '@mui/material/styles';
 import { motion, AnimatePresence } from 'framer-motion';
+
+const BRAND_GRADIENT = 'linear-gradient(135deg, #0C2C48 0%, #1E5A8A 100%)';
+const NAVY = '#0C2C48';
+const NAVY_MID = '#1E5A8A';
+
+const floatOrb = keyframes`
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(18px, -24px) scale(1.05); }
+  66% { transform: translate(-14px, 12px) scale(0.96); }
+`;
+
+const shimmer = keyframes`
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+`;
+
+const softPulse = keyframes`
+  0%, 100% { box-shadow: 0 10px 28px rgba(12, 44, 72, 0.35); transform: scale(1); }
+  50% { box-shadow: 0 14px 36px rgba(30, 90, 138, 0.45); transform: scale(1.04); }
+`;
 
 interface LoginPageProps {
   onLogin: () => void;
@@ -54,157 +68,146 @@ interface FormErrors {
   password: string;
 }
 
-// Enhanced styled components
 const LoginContainer = styled(Container)(() => ({
   minHeight: '100vh',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+  background: BRAND_GRADIENT,
   position: 'relative',
   overflow: 'hidden',
-  '&::before': {
-    content: '""',
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: 'url("data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%23ffffff" fill-opacity="0.05"%3E%3Ccircle cx="30" cy="30" r="2"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
-    animation: 'float 20s ease-in-out infinite',
-  },
-  '@keyframes float': {
-    '0%, 100%': { transform: 'translateY(0px)' },
-    '50%': { transform: 'translateY(-20px)' },
-  }
 }));
 
-const LoginCard = styled(Card)(() => ({
-  background: 'rgba(255, 255, 255, 0.95)',
-  backdropFilter: 'blur(20px)',
-  borderRadius: '32px',
-  boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+const LoginCard = styled(Paper)(() => ({
+  background: '#ffffff',
+  borderRadius: '24px',
+  boxShadow: '0 24px 60px rgba(12, 44, 72, 0.35)',
   border: '1px solid rgba(255, 255, 255, 0.2)',
   overflow: 'hidden',
   position: 'relative',
-  '&::before': {
-    content: '""',
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: '4px',
-    background: 'linear-gradient(90deg, #667eea, #764ba2, #f093fb, #f5576c)',
-    backgroundSize: '400% 400%',
-    animation: 'gradientShift 3s ease infinite',
-  },
-  '@keyframes gradientShift': {
-    '0%, 100%': { backgroundPosition: '0% 50%' },
-    '50%': { backgroundPosition: '100% 50%' },
-  }
+  zIndex: 1,
 }));
+
+const AccentStrip = styled(Box)(() => ({
+  height: 5,
+  background: 'linear-gradient(90deg, #0C2C48, #1E5A8A, #4a9fd8, #1E5A8A, #0C2C48)',
+  backgroundSize: '200% 100%',
+  animation: `${shimmer} 4s linear infinite`,
+}));
+
+const FloatingOrb = styled(Box)<{ size: number; top?: string; left?: string; right?: string; bottom?: string; delay?: string }>(
+  ({ size, top, left, right, bottom, delay }) => ({
+    position: 'absolute',
+    width: size,
+    height: size,
+    borderRadius: '50%',
+    background: 'rgba(255,255,255,0.08)',
+    top,
+    left,
+    right,
+    bottom,
+    animation: `${floatOrb} 12s ease-in-out infinite`,
+    animationDelay: delay || '0s',
+    pointerEvents: 'none',
+    zIndex: 0,
+  })
+);
+
+const cardVariants = {
+  hidden: { opacity: 0, y: 48, scale: 0.94 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: { type: 'spring' as const, stiffness: 90, damping: 16, mass: 0.8 },
+  },
+};
+
+const staggerContainer = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.08, delayChildren: 0.25 },
+  },
+};
+
+const fadeUpItem = {
+  hidden: { opacity: 0, y: 18 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1] as const },
+  },
+};
+
+const roleCardVariants = {
+  hidden: { opacity: 0, y: 24, scale: 0.96 },
+  visible: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: { delay: 0.1 + i * 0.12, duration: 0.4, ease: [0.22, 1, 0.36, 1] as const },
+  }),
+};
 
 const StyledTextField = styled(TextField)(() => ({
   '& .MuiOutlinedInput-root': {
-    borderRadius: '16px',
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    backdropFilter: 'blur(10px)',
-    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+    borderRadius: '12px',
+    backgroundColor: '#f8fafc',
+    transition: 'all 0.2s ease',
     '& fieldset': {
-      borderColor: 'rgba(102, 126, 234, 0.2)',
-      borderWidth: '2px',
-      transition: 'all 0.3s ease',
+      borderColor: 'rgba(12, 44, 72, 0.12)',
+      borderWidth: '1.5px',
     },
     '&:hover fieldset': {
-      borderColor: 'rgba(102, 126, 234, 0.4)',
-      borderWidth: '2px',
+      borderColor: alpha(NAVY_MID, 0.45),
     },
     '&.Mui-focused fieldset': {
-      borderColor: '#667eea',
+      borderColor: NAVY_MID,
       borderWidth: '2px',
-    }
+    },
   },
   '& .MuiInputLabel-root': {
-    color: '#666',
+    color: '#64748b',
     fontWeight: 500,
     '&.Mui-focused': {
-      color: '#667eea',
+      color: NAVY,
       fontWeight: 600,
-    }
+    },
   },
   '& .MuiInputBase-input': {
-    color: '#333',
+    color: NAVY,
     fontWeight: 500,
-    padding: '18px 16px',
+    padding: '16px 14px',
   },
   '& .MuiInputAdornment-root': {
-    color: '#667eea',
-  }
+    color: NAVY_MID,
+  },
 }));
 
-const LoginButton = styled(Button)(() => ({
-  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-  borderRadius: '20px',
-  padding: '16px 32px',
-  fontSize: '1.1rem',
-  fontWeight: 600,
-  textTransform: 'none',
-  boxShadow: '0 8px 25px rgba(102, 126, 234, 0.3)',
-  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-  '&:hover': {
-    transform: 'translateY(-3px)',
-    boxShadow: '0 12px 35px rgba(102, 126, 234, 0.4)',
-    background: 'linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%)',
+const ROLE_META: Record<
+  string,
+  { icon: React.ReactNode; description: string; features: string[]; accent: string }
+> = {
+  Reconciler: {
+    icon: <CorporateFare sx={{ fontSize: 28 }} />,
+    description: 'Full administrative access with oversight capabilities',
+    features: ['Dashboard Analytics', 'User Management', 'System Reports'],
+    accent: BRAND_GRADIENT,
   },
-  '&:active': {
-    transform: 'translateY(-1px)',
-  }
-}));
-
-const RoleCard = styled(Card)(() => ({
-  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(248, 250, 252, 0.9) 100%)',
-  borderRadius: '20px',
-  border: '2px solid transparent',
-  backgroundClip: 'padding-box',
-  cursor: 'pointer',
-  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-  '&:hover': {
-    transform: 'translateY(-8px) scale(1.02)',
-    boxShadow: '0 20px 40px rgba(0, 0, 0, 0.1)',
-    borderColor: '#667eea',
-  }
-}));
-
-const FloatingIcon = styled(Box)(() => ({
-  position: 'absolute',
-  width: '60px',
-  height: '60px',
-  borderRadius: '50%',
-  background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  animation: 'float 6s ease-in-out infinite',
-  '&:nth-of-type(1)': {
-    top: '10%',
-    left: '10%',
-    animationDelay: '0s',
+  Counter: {
+    icon: <PointOfSale sx={{ fontSize: 28 }} />,
+    description: 'Process transactions and manage inventory counts',
+    features: ['Inventory Counting', 'Transaction Processing', 'Real-time Updates'],
+    accent: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
   },
-  '&:nth-of-type(2)': {
-    top: '20%',
-    right: '15%',
-    animationDelay: '2s',
+  Checker: {
+    icon: <FactCheck sx={{ fontSize: 28 }} />,
+    description: 'Verify and approve inventory transactions',
+    features: ['Transaction Verification', 'Quality Control', 'Approval Workflow'],
+    accent: 'linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%)',
   },
-  '&:nth-of-type(3)': {
-    bottom: '15%',
-    left: '20%',
-    animationDelay: '4s',
-  },
-  '@keyframes float': {
-    '0%, 100%': { transform: 'translateY(0px) rotate(0deg)' },
-    '50%': { transform: 'translateY(-20px) rotate(180deg)' },
-  }
-}));
+};
 
 const Login: React.FC<LoginPageProps> = ({ onLogin }) => {
   const [user_name, setUserName] = useState('');
@@ -219,7 +222,6 @@ const Login: React.FC<LoginPageProps> = ({ onLogin }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // Auto-hide error after 5 seconds
   useEffect(() => {
     if (error) {
       const timer = setTimeout(() => setError(''), 5000);
@@ -230,12 +232,12 @@ const Login: React.FC<LoginPageProps> = ({ onLogin }) => {
   const validateForm = () => {
     const errors: FormErrors = {
       user_name: '',
-      password: ''
+      password: '',
     };
     if (!user_name) errors.user_name = 'Username is required';
     if (!password) errors.password = 'Password is required';
     setFormErrors(errors);
-    return Object.keys(errors).every(key => !errors[key as keyof FormErrors]);
+    return Object.keys(errors).every((key) => !errors[key as keyof FormErrors]);
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -244,7 +246,7 @@ const Login: React.FC<LoginPageProps> = ({ onLogin }) => {
 
     setLoading(true);
     setError('');
-    
+
     try {
       const res = await authAPI.login(user_name, password);
       localStorage.setItem('token', res.data.token);
@@ -266,13 +268,11 @@ const Login: React.FC<LoginPageProps> = ({ onLogin }) => {
     }
   };
 
-  const handleRoleSelection = (role: string) => {
-    setOpenRoleDialog(false);
+  const navigateForRole = (role: string) => {
     localStorage.setItem('Selected Role', role);
     onLogin();
-    
-    switch(role) {
-      case 'Controller':
+    switch (role) {
+      case 'Reconciler':
         navigate('/dashboard');
         break;
       case 'Counter':
@@ -286,177 +286,170 @@ const Login: React.FC<LoginPageProps> = ({ onLogin }) => {
     }
   };
 
-  const getRoleIcon = (role: string) => {
-    switch(role) {
-      case 'Controller':
-        return <CorporateFare sx={{ fontSize: 32, color: '#667eea' }} />;
-      case 'Counter':
-        return <PointOfSale sx={{ fontSize: 32, color: '#764ba2' }} />;
-      case 'Checker':
-        return <FactCheck sx={{ fontSize: 32, color: '#f093fb' }} />;
-      default:
-        return <AccountCircle sx={{ fontSize: 32, color: '#667eea' }} />;
-    }
+  const handleRoleSelection = (role: string) => {
+    setOpenRoleDialog(false);
+    navigateForRole(role);
   };
 
-  const getRoleDescription = (role: string) => {
-    switch(role) {
-      case 'Controller':
-        return 'Full administrative access with oversight capabilities';
-      case 'Counter':
-        return 'Process transactions and manage inventory counts';
-      case 'Checker':
-        return 'Verify and approve inventory transactions';
-      default:
-        return 'Standard user access';
-    }
-  };
+  const orderedRoles = [...roleDesc].sort((a, b) => {
+    const rolePriority: Record<string, number> = {
+      Reconciler: 1,
+      Counter: 2,
+      Checker: 3,
+    };
+    const aPriority = rolePriority[a] ?? 99;
+    const bPriority = rolePriority[b] ?? 99;
+    if (aPriority !== bPriority) return aPriority - bPriority;
+    return a.localeCompare(b);
+  });
 
-  const getRoleFeatures = (role: string) => {
-    switch(role) {
-      case 'Controller':
-        return ['Dashboard Analytics', 'User Management', 'System Reports', 'Full Access'];
-      case 'Counter':
-        return ['Inventory Counting', 'Transaction Processing', 'Real-time Updates', 'Team Management'];
-      case 'Checker':
-        return ['Transaction Verification', 'Quality Control', 'Approval Workflow', 'Audit Trail'];
-      default:
-        return ['Basic Access', 'View Reports', 'Limited Actions'];
-    }
-  };
+  const getRoleMeta = (role: string) =>
+    ROLE_META[role] || {
+      icon: <AccountCircle sx={{ fontSize: 28 }} />,
+      description: 'Standard user access',
+      features: ['Basic Access', 'View Reports'],
+      accent: BRAND_GRADIENT,
+    };
 
   return (
     <LoginContainer maxWidth={false}>
-      {/* Floating Background Icons */}
-      <FloatingIcon>
-        <Security sx={{ color: 'rgba(102, 126, 234, 0.6)' }} />
-      </FloatingIcon>
-      <FloatingIcon>
-        <VerifiedUser sx={{ color: 'rgba(118, 75, 162, 0.6)' }} />
-      </FloatingIcon>
-      <FloatingIcon>
-        <CheckCircle sx={{ color: 'rgba(240, 147, 251, 0.6)' }} />
-      </FloatingIcon>
+      {/* Ambient floating orbs */}
+      <FloatingOrb size={420} top="-120px" right="-80px" delay="0s" />
+      <FloatingOrb size={320} bottom="-100px" left="-90px" delay="2s" />
+      <FloatingOrb size={180} top="18%" left="12%" delay="4s" sx={{ background: 'rgba(255,255,255,0.05)' }} />
+      <FloatingOrb size={120} bottom="22%" right="14%" delay="1.5s" sx={{ background: 'rgba(255,255,255,0.06)' }} />
 
-      <AnimatePresence>
+      <Box sx={{ width: '100%', maxWidth: 440, px: 2, position: 'relative', zIndex: 1 }}>
         <motion.div
-          initial={{ opacity: 0, y: 50, scale: 0.9 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -50, scale: 0.9 }}
-          transition={{ 
-            duration: 0.8,
-            type: "spring",
-            stiffness: 100,
-            damping: 20
-          }}
-          style={{ width: '100%', maxWidth: '500px' }}
+          variants={cardVariants}
+          initial="hidden"
+          animate="visible"
         >
-          <LoginCard>
-            <CardContent sx={{ p: 4 }}>
-              {/* Header Section */}
-              <Box sx={{ textAlign: 'center', mb: 4 }}>
+          <LoginCard elevation={0}>
+            <AccentStrip />
+
+            <Box
+              component={motion.div}
+              variants={staggerContainer}
+              initial="hidden"
+              animate="visible"
+              sx={{ p: { xs: 3, sm: 4 } }}
+            >
+              {/* Brand header */}
+              <Box
+                component={motion.div}
+                variants={fadeUpItem}
+                sx={{ textAlign: 'center', mb: 3.5 }}
+              >
                 <motion.div
-                  animate={{ 
-                    rotate: [0, -5, 5, -5, 0],
-                    scale: [1, 1.05, 1]
-                  }}
-                  transition={{ duration: 0.6, repeat: Infinity, repeatDelay: 3 }}
+                  animate={{ y: [0, -6, 0] }}
+                  transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
                 >
                   <Avatar
                     sx={{
-                      width: 80,
-                      height: 80,
+                      width: 72,
+                      height: 72,
                       mx: 'auto',
                       mb: 2,
-                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                      boxShadow: '0 8px 25px rgba(102, 126, 234, 0.3)'
+                      background: BRAND_GRADIENT,
+                      animation: `${softPulse} 3.2s ease-in-out infinite`,
                     }}
                   >
-                    <LockOutlined sx={{ fontSize: 40 }} />
+                    <Inventory2Outlined sx={{ fontSize: 36 }} />
                   </Avatar>
                 </motion.div>
-                
-                <Typography 
-                  variant="h3" 
-                  fontWeight="bold" 
-                  gutterBottom
-                  sx={{
-                    fontSize: isMobile ? '2rem' : '2.5rem',
-                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                    backgroundClip: 'text',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    mb: 1
-                  }}
+
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1.5, mb: 0.5, flexWrap: 'wrap' }}>
+                  <Typography
+                    variant="h4"
+                    sx={{
+                      fontWeight: 800,
+                      color: NAVY,
+                      letterSpacing: '-0.5px',
+                      fontSize: isMobile ? '1.75rem' : '2rem',
+                    }}
+                  >
+                    Star Inventory
+                  </Typography>
+                  <Chip
+                    label="SANDBOX"
+                    size="small"
+                    sx={(t) => ({
+                      borderRadius: 1.5,
+                      fontWeight: 700,
+                      fontSize: '0.7rem',
+                      backgroundColor: alpha(t.palette.warning.main, 0.15),
+                      color: t.palette.warning.dark,
+                      border: `1px solid ${alpha(t.palette.warning.main, 0.3)}`,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      height: '24px',
+                    })}
+                  />
+                </Box>
+
+                <Typography
+                  variant="body2"
+                  sx={{ color: '#64748b', fontWeight: 500, mb: 2 }}
                 >
-                  Welcome Back
-                </Typography>
-                
-                <Typography 
-                  variant="body1"
-                  sx={{
-                    color: '#666',
-                    fontSize: isMobile ? '0.95rem' : '1.1rem',
-                    fontWeight: 500
-                  }}
-                >
-                  Sign in to access your inventory management system
+                  by Star Software · Sign in to manage physical inventory
                 </Typography>
 
-                {/* Feature Highlights */}
-                <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mt: 2, flexWrap: 'wrap' }}>
-                  <Chip 
-                    icon={<TrendingUp />} 
-                    label="Real-time Analytics" 
-                    size="small" 
-                    sx={{ 
-                      background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)',
-                      color: '#667eea',
-                      fontWeight: 500
-                    }} 
-                  />
-                  <Chip 
-                    icon={<Security />} 
-                    label="Secure Access" 
-                    size="small" 
-                    sx={{ 
-                      background: 'linear-gradient(135deg, rgba(240, 147, 251, 0.1) 0%, rgba(245, 87, 108, 0.1) 100%)',
-                      color: '#f093fb',
-                      fontWeight: 500
-                    }} 
-                  />
-                  <Chip 
-                    icon={<Inventory />} 
-                    label="Smart Inventory" 
-                    size="small" 
-                    sx={{ 
-                      background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)',
-                      color: '#667eea',
-                      fontWeight: 500
-                    }} 
-                  />
+                <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, flexWrap: 'wrap' }}>
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.85 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: 0.55, type: 'spring', stiffness: 200 }}
+                  >
+                    <Chip
+                      icon={<Security sx={{ fontSize: '16px !important' }} />}
+                      label="Secure Access"
+                      size="small"
+                      sx={{
+                        bgcolor: alpha(NAVY, 0.06),
+                        color: NAVY,
+                        fontWeight: 600,
+                        borderRadius: '8px',
+                        '& .MuiChip-icon': { color: NAVY_MID },
+                      }}
+                    />
+                  </motion.div>
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.85 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: 0.65, type: 'spring', stiffness: 200 }}
+                  >
+                    <Chip
+                      icon={<CheckCircle sx={{ fontSize: '16px !important' }} />}
+                      label="Role-based"
+                      size="small"
+                      sx={{
+                        bgcolor: alpha(NAVY_MID, 0.08),
+                        color: NAVY_MID,
+                        fontWeight: 600,
+                        borderRadius: '8px',
+                        '& .MuiChip-icon': { color: NAVY_MID },
+                      }}
+                    />
+                  </motion.div>
                 </Box>
               </Box>
 
-              {/* Error Alert */}
-              <AnimatePresence>
+              <AnimatePresence mode="wait">
                 {error && (
                   <motion.div
-                    initial={{ opacity: 0, y: -20, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -20, scale: 0.95 }}
-                    transition={{ duration: 0.3 }}
+                    key="login-error"
+                    initial={{ opacity: 0, y: -12, height: 0 }}
+                    animate={{ opacity: 1, y: 0, height: 'auto' }}
+                    exit={{ opacity: 0, y: -8, height: 0 }}
+                    transition={{ duration: 0.28 }}
                   >
-                    <Alert 
-                      severity="error" 
-                      sx={{ 
-                        mb: 3,
-                        borderRadius: '16px',
-                        backgroundColor: 'rgba(244, 67, 54, 0.1)',
+                    <Alert
+                      severity="error"
+                      sx={{
+                        mb: 2.5,
+                        borderRadius: '12px',
                         border: '1px solid rgba(244, 67, 54, 0.2)',
-                        '& .MuiAlert-icon': {
-                          color: '#f44336'
-                        }
                       }}
                     >
                       {error}
@@ -465,21 +458,17 @@ const Login: React.FC<LoginPageProps> = ({ onLogin }) => {
                 )}
               </AnimatePresence>
 
-              {/* Login Form */}
-              <form onSubmit={handleLogin}>
-                <motion.div
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.2 }}
-                >
+              <Box
+                component="form"
+                onSubmit={handleLogin}
+              >
+                <Box component={motion.div} variants={fadeUpItem}>
                   <StyledTextField
                     label="Username"
                     fullWidth
                     margin="normal"
                     value={user_name}
-                    onChange={(e) => {
-                      setUserName(e.target.value);
-                    }}
+                    onChange={(e) => setUserName(e.target.value)}
                     error={!!formErrors.user_name}
                     helperText={formErrors.user_name}
                     InputProps={{
@@ -490,22 +479,16 @@ const Login: React.FC<LoginPageProps> = ({ onLogin }) => {
                       ),
                     }}
                   />
-                </motion.div>
-                
-                <motion.div
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.3 }}
-                >
+                </Box>
+
+                <Box component={motion.div} variants={fadeUpItem}>
                   <StyledTextField
                     label="Password"
                     type={showPassword ? 'text' : 'password'}
                     fullWidth
                     margin="normal"
                     value={password}
-                    onChange={(e) => {
-                      setPassword(e.target.value);
-                    }}
+                    onChange={(e) => setPassword(e.target.value)}
                     error={!!formErrors.password}
                     helperText={formErrors.password}
                     InputProps={{
@@ -519,12 +502,9 @@ const Login: React.FC<LoginPageProps> = ({ onLogin }) => {
                           <IconButton
                             onClick={() => setShowPassword(!showPassword)}
                             edge="end"
-                            sx={{ 
-                              color: '#667eea',
-                              '&:hover': {
-                                color: '#764ba2',
-                                background: 'rgba(102, 126, 234, 0.1)'
-                              }
+                            sx={{
+                              color: NAVY_MID,
+                              '&:hover': { bgcolor: alpha(NAVY, 0.06) },
                             }}
                           >
                             {showPassword ? <VisibilityOff /> : <Visibility />}
@@ -533,251 +513,254 @@ const Login: React.FC<LoginPageProps> = ({ onLogin }) => {
                       ),
                     }}
                   />
-                </motion.div>
-
-                <Box sx={{ 
-                  textAlign: 'right', 
-                  mt: 1,
-                  mb: 2
-                }}>
-                  <Button 
-                    size="small" 
-                    sx={{ 
-                      color: '#667eea',
-                      fontWeight: 500,
-                      '&:hover': {
-                        color: '#764ba2',
-                        background: 'rgba(102, 126, 234, 0.1)'
-                      }
-                    }}
-                  >
-                    Forgot Password?
-                  </Button>
                 </Box>
 
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.4 }}
-                >
-                  <LoginButton
-                    type="submit"
-                    fullWidth
-                    size="large"
-                    endIcon={!loading && <ArrowForward />}
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <CircularProgress 
-                        size={24} 
-                        color="inherit" 
-                        sx={{ my: 0.5 }}
-                      /> 
-                    ) : (
-                      'Sign In'
-                    )}
-                  </LoginButton>
-                </motion.div>
-              </form>
-
-              <Divider 
-                sx={{ 
-                  my: 4, 
-                  bgcolor: 'rgba(102, 126, 234, 0.2)',
-                  '&::before, &::after': {
-                    borderColor: 'rgba(102, 126, 234, 0.2)',
-                  }
-                }} 
-              />
-
-              <Box sx={{ textAlign: 'center' }}>
-                <Typography 
-                  variant="body2" 
-                  sx={{ 
-                    color: '#666',
-                    fontSize: '0.95rem',
-                    fontWeight: 500
-                  }}
-                >
-                  Don't have an account?{' '}
-                  <Button 
-                    size="small" 
-                    sx={{ 
-                      color: '#667eea',
-                      textTransform: 'none',
-                      fontWeight: 600,
-                      '&:hover': {
-                        color: '#764ba2',
-                        background: 'rgba(102, 126, 234, 0.1)'
+                <Box component={motion.div} variants={fadeUpItem}>
+                  <motion.div whileHover={{ scale: 1.015 }} whileTap={{ scale: 0.985 }}>
+                    <Button
+                      type="submit"
+                      fullWidth
+                      size="large"
+                      endIcon={
+                        !loading && (
+                          <motion.span
+                            animate={{ x: [0, 4, 0] }}
+                            transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+                            style={{ display: 'inline-flex' }}
+                          >
+                            <ArrowForward />
+                          </motion.span>
+                        )
                       }
-                    }}
-                  >
-                    Request Access
-                  </Button>
-                </Typography>
+                      disabled={loading}
+                      sx={{
+                        mt: 3,
+                        mb: 1,
+                        py: 1.5,
+                        borderRadius: '12px',
+                        textTransform: 'none',
+                        fontWeight: 700,
+                        fontSize: '1.05rem',
+                        background: BRAND_GRADIENT,
+                        boxShadow: '0 8px 24px rgba(12, 44, 72, 0.35)',
+                        color: 'white',
+                        '&:hover': {
+                          background: BRAND_GRADIENT,
+                          boxShadow: '0 12px 30px rgba(12, 44, 72, 0.45)',
+                        },
+                        '&.Mui-disabled': {
+                          background: alpha(NAVY, 0.35),
+                          color: 'rgba(255,255,255,0.7)',
+                        },
+                      }}
+                    >
+                      {loading ? (
+                        <CircularProgress size={24} color="inherit" sx={{ my: 0.5 }} />
+                      ) : (
+                        'Sign In'
+                      )}
+                    </Button>
+                  </motion.div>
+                </Box>
               </Box>
-            </CardContent>
+
+              <Typography
+                component={motion.p}
+                variants={fadeUpItem}
+                variant="caption"
+                sx={{
+                  display: 'block',
+                  textAlign: 'center',
+                  mt: 2.5,
+                  color: '#94a3b8',
+                  fontWeight: 500,
+                }}
+              >
+                Contact your administrator if you need access
+              </Typography>
+            </Box>
           </LoginCard>
         </motion.div>
-      </AnimatePresence>
+      </Box>
 
-      {/* Enhanced Role Selection Dialog */}
-      <Dialog 
-        open={openRoleDialog} 
+      {/* Choose Your Role Dialog */}
+      <Dialog
+        open={openRoleDialog}
         onClose={() => setOpenRoleDialog(false)}
         maxWidth="md"
         fullWidth
         PaperProps={{
           sx: {
-            borderRadius: '24px',
-            background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 250, 252, 0.95) 100%)',
-            backdropFilter: 'blur(20px)',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
-          }
+            borderRadius: '20px',
+            overflow: 'hidden',
+            boxShadow: '0 24px 60px rgba(12, 44, 72, 0.35)',
+          },
         }}
         TransitionComponent={Fade}
-        transitionDuration={400}
+        transitionDuration={300}
       >
-        <DialogTitle 
-          sx={{ 
-            textAlign: 'center', 
-            fontWeight: 'bold',
-            fontSize: '1.8rem',
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            backgroundClip: 'text',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            pb: 1
+        <Box
+          sx={{
+            background: BRAND_GRADIENT,
+            color: 'white',
+            px: 3,
+            py: 2.5,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1.5,
           }}
         >
-          Choose Your Role
-        </DialogTitle>
-        <DialogContent>
-          <Typography 
-            variant="body1" 
-            textAlign="center" 
-            color="text.secondary" 
-            gutterBottom
-            sx={{ mb: 4, fontSize: '1.1rem', fontWeight: 500 }}
+          <Avatar
+            sx={{
+              bgcolor: 'rgba(255,255,255,0.15)',
+              border: '1px solid rgba(255,255,255,0.25)',
+            }}
           >
-            You have access to multiple roles. Select the one you'd like to use for this session.
+            <AccountCircle />
+          </Avatar>
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+              Choose Your Role
+            </Typography>
+            <Typography variant="caption" sx={{ opacity: 0.85 }}>
+              Select how you want to work in this session
+            </Typography>
+          </Box>
+        </Box>
+
+        <DialogContent sx={{ pt: 3, pb: 1, px: { xs: 2, sm: 3 } }}>
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ mb: 3, textAlign: 'center', fontWeight: 500 }}
+          >
+            You have access to multiple roles. Pick one to continue.
           </Typography>
-          
-          <Box sx={{ 
-            display: 'grid',
-            gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(280px, 1fr))',
-            gap: 3
-          }}>
+
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(240px, 1fr))',
+              gap: 2,
+            }}
+          >
             {roleDesc.length > 0 ? (
-              roleDesc.map((role, index) => (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, y: 30 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.2 }}
-                >
-                  <RoleCard
-                    onClick={() => handleRoleSelection(role)}
-                    sx={{
-                      p: 3,
-                      textAlign: 'center',
-                      position: 'relative',
-                      overflow: 'hidden',
-                      '&::before': {
-                        content: '""',
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        height: '3px',
-                        background: 'linear-gradient(90deg, #667eea, #764ba2, #f093fb)',
-                        backgroundSize: '200% 200%',
-                        animation: 'gradientShift 2s ease infinite',
-                      }
-                    }}
+              orderedRoles.map((role, index) => {
+                const meta = getRoleMeta(role);
+                return (
+                  <motion.div
+                    key={role}
+                    custom={index}
+                    variants={roleCardVariants}
+                    initial="hidden"
+                    animate="visible"
+                    whileHover={{ y: -4 }}
+                    whileTap={{ scale: 0.98 }}
                   >
-                    <Box sx={{ mb: 2 }}>
-                      {getRoleIcon(role)}
-                    </Box>
-                    
-                    <Typography 
-                      variant="h6"
-                      fontWeight="bold"
-                      sx={{ 
-                        color: '#333',
-                        mb: 1
+                    <Paper
+                      elevation={0}
+                      onClick={() => handleRoleSelection(role)}
+                      sx={{
+                        p: 2.5,
+                        borderRadius: '16px',
+                        border: '1px solid rgba(0,0,0,0.06)',
+                        cursor: 'pointer',
+                        transition: 'box-shadow 0.25s ease, border-color 0.25s ease',
+                        position: 'relative',
+                        overflow: 'hidden',
+                        height: '100%',
+                        '&::before': {
+                          content: '""',
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: 4,
+                          background: meta.accent,
+                        },
+                        '&:hover': {
+                          boxShadow: '0 12px 28px rgba(12, 44, 72, 0.15)',
+                          borderColor: alpha(NAVY_MID, 0.35),
+                        },
                       }}
                     >
-                      {role}
-                    </Typography>
-                    
-                    <Typography 
-                      variant="body2" 
-                      sx={{ 
-                        color: '#666',
-                        mb: 3,
-                        lineHeight: 1.6
-                      }}
-                    >
-                      {getRoleDescription(role)}
-                    </Typography>
-                    
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                      {getRoleFeatures(role).map((feature, featureIndex) => (
-                        <Box 
-                          key={featureIndex}
-                          sx={{ 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            gap: 1,
-                            justifyContent: 'center'
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+                        <Avatar
+                          sx={{
+                            width: 48,
+                            height: 48,
+                            background: meta.accent,
+                            boxShadow: '0 6px 16px rgba(0,0,0,0.15)',
                           }}
                         >
-                          <CheckCircle sx={{ fontSize: 16, color: '#667eea' }} />
-                          <Typography variant="caption" sx={{ color: '#666', fontWeight: 500 }}>
-                            {feature}
-                          </Typography>
-                        </Box>
-                      ))}
-                    </Box>
-                  </RoleCard>
-                </motion.div>
-              ))
+                          {meta.icon}
+                        </Avatar>
+                        <Typography variant="h6" sx={{ fontWeight: 700, color: NAVY }}>
+                          {role}
+                        </Typography>
+                      </Box>
+
+                      <Typography
+                        variant="body2"
+                        sx={{ color: '#64748b', mb: 2, lineHeight: 1.5 }}
+                      >
+                        {meta.description}
+                      </Typography>
+
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                        {meta.features.map((feature) => (
+                          <Box
+                            key={feature}
+                            sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+                          >
+                            <CheckCircle sx={{ fontSize: 16, color: NAVY_MID }} />
+                            <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 500 }}>
+                              {feature}
+                            </Typography>
+                          </Box>
+                        ))}
+                      </Box>
+
+                      <Button
+                        fullWidth
+                        endIcon={<ArrowForward />}
+                        sx={{
+                          mt: 2.5,
+                          textTransform: 'none',
+                          fontWeight: 700,
+                          borderRadius: '10px',
+                          background: BRAND_GRADIENT,
+                          color: 'white',
+                          boxShadow: 'none',
+                          '&:hover': {
+                            background: BRAND_GRADIENT,
+                            boxShadow: '0 6px 16px rgba(12, 44, 72, 0.3)',
+                          },
+                        }}
+                      >
+                        Continue as {role}
+                      </Button>
+                    </Paper>
+                  </motion.div>
+                );
+              })
             ) : (
-              <Typography 
-                variant="body2" 
-                color="text.secondary"
-                sx={{ py: 3, textAlign: 'center' }}
-              >
+              <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>
                 No roles available
               </Typography>
             )}
           </Box>
         </DialogContent>
-        <DialogActions 
-          sx={{ 
-            justifyContent: 'center', 
-            pb: 3,
-            pt: 2
-          }}
-        >
-          <Button 
-            onClick={() => setOpenRoleDialog(false)} 
-            color="primary"
-            variant="outlined"
-            sx={{ 
-              borderRadius: '16px',
-              px: 4,
-              py: 1.5,
+
+        <DialogActions sx={{ justifyContent: 'center', px: 3, pb: 2.5, pt: 1 }}>
+          <Button
+            onClick={() => setOpenRoleDialog(false)}
+            color="inherit"
+            sx={{
+              textTransform: 'none',
+              borderRadius: '10px',
               fontWeight: 600,
-              borderColor: '#667eea',
-              color: '#667eea',
-              '&:hover': {
-                backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                borderColor: '#764ba2',
-                color: '#764ba2'
-              }
+              px: 3,
             }}
           >
             Cancel

@@ -13,8 +13,6 @@ import {
   IconButton,
   Collapse,
   Button,
-  AppBar,
-  Toolbar,
   Chip,
   TextField,
   InputAdornment,
@@ -24,19 +22,28 @@ import {
   DialogActions,
   Select,
   MenuItem,
-  FormControl
+  FormControl,
+  InputLabel,
+  alpha,
+  useTheme
 } from "@mui/material";
-import { 
-  KeyboardArrowDown, 
-  KeyboardArrowUp, 
+import { styled } from "@mui/material/styles";
+import {
+  KeyboardArrowDown,
+  KeyboardArrowUp,
   Close,
   Search,
   Edit,
   Save,
   Cancel,
-  Add
+  Add,
+  History,
+  Summarize,
+  ViewColumn
 } from "@mui/icons-material";
-
+import Menu from "@mui/material/Menu";
+import Checkbox from "@mui/material/Checkbox";
+import FormControlLabel from "@mui/material/FormControlLabel";
 
 const COUNT_TYPES = {
   PIECES: "pcs",
@@ -48,6 +55,7 @@ type CountType = typeof COUNT_TYPES[keyof typeof COUNT_TYPES];
 interface Transaction {
   id?: number;
   tag_id: number;
+  sys_tag_no?: string;
   form: string;
   type: string;
   grade: string;
@@ -61,6 +69,8 @@ interface Transaction {
   location?: string;
   remarks: string;
   ad_cmts: string;
+  page_number?: string;
+  serial_number?: string;
   count_type: CountType;
   qty: number;
   counted_by: number;
@@ -85,19 +95,125 @@ interface TableModalProps {
   data: Transaction[];
   onSubmitAll: () => void;
   onUpdateTransaction: (updatedTransaction: Transaction) => void;
-  onCompleteLocation: () => Promise<void>; // Add this new prop
+  onCompleteLocation: () => Promise<void>;
 }
 
+type ColumnId = "expand" | "tag_no" | "form" | "grade" | "size" | "finish" | "ext_finish" | "width" | "length" | "mill" | "heat" | "count_type" | "type" | "qty" | "remarks" | "ad_cmts" | "page_number" | "serial_number" | "actions";
 
+const COLUMNS: { id: ColumnId; label: string; align?: "left" | "right" | "center"; alwaysVisible?: boolean }[] = [
+  { id: "expand", label: "", alwaysVisible: true },
+  { id: "tag_no", label: "Tag No" },
+  { id: "form", label: "Form" },
+  { id: "grade", label: "Grade" },
+  { id: "size", label: "Size" },
+  { id: "finish", label: "Finish" },
+  { id: "ext_finish", label: "Ext. Finish" },
+  { id: "width", label: "Width" },
+  { id: "length", label: "Length" },
+  { id: "mill", label: "Mill" },
+  { id: "heat", label: "Heat" },
+  { id: "count_type", label: "Count Type" },
+  { id: "type", label: "Type" },
+  { id: "qty", label: "Qty", align: "right" },
+  { id: "remarks", label: "Quality" },
+  { id: "ad_cmts", label: "Comments" },
+  { id: "page_number", label: "Page" },
+  { id: "serial_number", label: "Line #" },
+  { id: "actions", label: "Actions", align: "center", alwaysVisible: true },
+];
 
-const TransactionsTableModal: React.FC<TableModalProps> = ({ 
-  open, 
-  onClose, 
+const ModalCard = styled(Paper)(({ theme }) => ({
+  width: "98%",
+  maxWidth: "1800px",
+  maxHeight: "95vh",
+  borderRadius: 20,
+  overflow: "hidden",
+  boxShadow: `0 24px 80px ${alpha(theme.palette.common.black, 0.2)}`,
+  display: "flex",
+  flexDirection: "column",
+  border: `1px solid ${alpha(theme.palette.primary.main, 0.12)}`,
+}));
+
+const HeaderBar = styled(Box)(({ theme }) => ({
+  background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${alpha(theme.palette.primary.dark, 0.9)} 100%)`,
+  color: theme.palette.primary.contrastText,
+  padding: theme.spacing(2, 3),
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  flexShrink: 0,
+}));
+
+const SearchBar = styled(Box)(({ theme }) => ({
+  padding: theme.spacing(2, 3),
+  display: "flex",
+  gap: theme.spacing(2),
+  alignItems: "center",
+  flexWrap: "wrap",
+  flexShrink: 0,
+  background: alpha(theme.palette.primary.main, 0.03),
+  borderBottom: `1px solid ${alpha(theme.palette.divider, 0.6)}`,
+}));
+
+const StyledTableContainer = styled(TableContainer)(({ theme }) => ({
+  borderRadius: 12,
+  border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+  flex: 1,
+  minHeight: 0,
+  maxHeight: "100%",
+  overflow: "auto",
+  scrollbarGutter: "stable",
+  "& .MuiTableHead-root .MuiTableCell-root": {
+    fontWeight: 600,
+    fontSize: "0.75rem",
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+    color: theme.palette.text.secondary,
+    background: alpha(theme.palette.primary.main, 0.06),
+    borderBottom: `2px solid ${alpha(theme.palette.primary.main, 0.2)}`,
+    padding: theme.spacing(1.5, 1.25),
+    whiteSpace: "nowrap",
+  },
+  "& .MuiTableHead-root .MuiTableCell-root.MuiTableCell-stickyHeader": {
+    background: alpha(theme.palette.primary.main, 0.08),
+    zIndex: 2,
+  },
+  "& .MuiTableBody-root .MuiTableRow-root": {
+    transition: "background-color 0.15s ease",
+    "&:hover": {
+      backgroundColor: alpha(theme.palette.primary.main, 0.04),
+    },
+    "&.editing-row": {
+      backgroundColor: alpha(theme.palette.primary.main, 0.08),
+    },
+  },
+  "& .MuiTableBody-root .MuiTableCell-root": {
+    padding: theme.spacing(1.25, 1.25),
+    fontSize: "0.8125rem",
+    borderBottom: `1px solid ${alpha(theme.palette.divider, 0.4)}`,
+    whiteSpace: "nowrap",
+  },
+}));
+
+const FooterBar = styled(Box)(({ theme }) => ({
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  padding: theme.spacing(2, 3),
+  borderTop: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+  background: alpha(theme.palette.grey[50], 0.8),
+  flexShrink: 0,
+}));
+
+const TransactionsTableModal: React.FC<TableModalProps> = ({
+  open,
+  onClose,
   data,
   onSubmitAll,
   onUpdateTransaction,
-  onCompleteLocation
+  onCompleteLocation,
 }) => {
+  const theme = useTheme();
   const [expandedRows, setExpandedRows] = useState<Record<number, boolean>>({});
   const [searchTerm, setSearchTerm] = useState("");
   const [searchBy, setSearchBy] = useState<"tag_id" | "counted_by">("tag_id");
@@ -105,27 +221,53 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [editingBundles, setEditingBundles] = useState<Bundle[]>([]);
   const [openBundleDialog, setOpenBundleDialog] = useState(false);
+  const [columnsMenuAnchor, setColumnsMenuAnchor] = useState<null | HTMLElement>(null);
+  const [columnsMenuPosition, setColumnsMenuPosition] = useState<{ top: number; left: number } | null>(null);
+  const toggleableColumnIds = COLUMNS.filter((c) => !c.alwaysVisible).map((c) => c.id);
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(() =>
+    toggleableColumnIds.reduce((acc, id) => ({ ...acc, [id]: true }), {})
+  );
+
+  const isColumnVisible = (id: ColumnId) => {
+    const col = COLUMNS.find((c) => c.id === id);
+    return col?.alwaysVisible || !!visibleColumns[id];
+  };
+
+  const visibleColumnList = COLUMNS.filter((c) => isColumnVisible(c.id));
+  const visibleCount = visibleColumnList.length;
+  const tableMinWidth = Math.max(visibleCount * 96, 960);
+
+  const setColumnVisible = (id: string, visible: boolean) => {
+    setVisibleColumns((prev) => ({ ...prev, [id]: visible }));
+  };
+
+  const showAllColumns = () => {
+    setVisibleColumns(toggleableColumnIds.reduce((acc, id) => ({ ...acc, [id]: true }), {}));
+  };
+
+  const hideAllColumns = () => {
+    setVisibleColumns(toggleableColumnIds.reduce((acc, id) => ({ ...acc, [id]: false }), {}));
+  };
 
   const filteredData = useMemo(() => {
     if (!searchTerm) return data;
-    return data.filter(transaction => {
-      const fieldValue = searchBy === "tag_id" 
-        ? transaction.tag_id.toString() 
-        : transaction.counted_by.toString();
+    return data.filter((transaction) => {
+      const fieldValue =
+        searchBy === "tag_id"
+          ? transaction.tag_id.toString()
+          : transaction.counted_by.toString();
       return fieldValue.includes(searchTerm);
     });
   }, [data, searchTerm, searchBy]);
 
   const toggleRow = (id: number) => {
-    setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
+    setExpandedRows((prev) => ({ ...prev, [id]: !prev[id] }));
   };
-
-
 
   const handleEdit = (transaction: Transaction) => {
     const rowId = transaction.id || transaction.tag_id;
     setEditingId(Number(rowId));
-    setEditingTransaction({...transaction});
+    setEditingTransaction({ ...transaction });
     if (transaction.count_type === COUNT_TYPES.BUNDLES && transaction.bundles) {
       setEditingBundles([...transaction.bundles]);
     }
@@ -133,12 +275,13 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
 
   const handleSave = () => {
     if (editingTransaction) {
-      // Include bundles in the transaction object if it's a bundle type
       const transactionToUpdate = {
         ...editingTransaction,
-        bundles: editingTransaction.count_type === COUNT_TYPES.BUNDLES ? editingBundles : editingTransaction.bundles
+        bundles:
+          editingTransaction.count_type === COUNT_TYPES.BUNDLES
+            ? editingBundles
+            : editingTransaction.bundles,
       };
-      
       onUpdateTransaction(transactionToUpdate);
     }
     setEditingId(null);
@@ -154,28 +297,25 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
 
   const handleTransactionChange = (field: keyof Transaction, value: string | number) => {
     if (editingTransaction) {
-      setEditingTransaction({
-        ...editingTransaction,
-        [field]: value
-      });
+      setEditingTransaction({ ...editingTransaction, [field]: value });
     }
   };
 
   const handleBundleChange = (index: number, field: keyof Bundle, value: number) => {
     const updatedBundles = [...editingBundles];
-    updatedBundles[index] = {
-      ...updatedBundles[index],
-      [field]: value
-    };
+    updatedBundles[index] = { ...updatedBundles[index], [field]: value };
     setEditingBundles(updatedBundles);
   };
 
   const handleAddBundle = () => {
-    setEditingBundles([...editingBundles, {
-      num_of_bundle: 0,
-      bundle_count: 0,
-      tag_id: editingTransaction?.tag_id
-    }]);
+    setEditingBundles([
+      ...editingBundles,
+      {
+        num_of_bundle: 0,
+        bundle_count: 0,
+        tag_id: editingTransaction?.tag_id,
+      },
+    ]);
   };
 
   const handleRemoveBundle = (index: number) => {
@@ -186,16 +326,254 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
 
   const handleSubmitAll = async () => {
     try {
-      // First submit all transactions
       onSubmitAll();
-      
-      // Then update the location status to "Completed"
       await onCompleteLocation();
-      
-      // Optionally show a success message or handle the completion
     } catch (error) {
       console.error("Error completing location:", error);
-      // Handle error (show error message, etc.)
+    }
+  };
+
+  const typeLabels: Record<string, string> = {
+    D: "D - Drop",
+    F: "F - Finished",
+    M: "M - Master",
+    R: "R - Reject",
+    S: "S - Scrap",
+    W: "W - Work in Process",
+  };
+
+  const renderCell = (columnId: ColumnId, transaction: Transaction, rowId: number) => {
+    const isEditing = editingId === rowId;
+    switch (columnId) {
+      case "expand":
+        return (
+          <TableCell key="expand" sx={{ py: 0.5, verticalAlign: "middle" }}>
+            {transaction.count_type === "bundle" && (
+              <IconButton
+                size="small"
+                onClick={() => toggleRow(rowId)}
+                sx={{
+                  bgcolor: alpha(theme.palette.primary.main, 0.08),
+                  "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.15) },
+                }}
+              >
+                {expandedRows[rowId] ? <KeyboardArrowUp /> : <KeyboardArrowDown />}
+              </IconButton>
+            )}
+          </TableCell>
+        );
+      case "tag_no":
+        return (
+          <TableCell key="tag_no">
+            <Typography variant="body2" fontWeight={500}>
+              {transaction.sys_tag_no || "-"}
+            </Typography>
+          </TableCell>
+        );
+      case "form":
+        return (
+          <TableCell key="form">
+            {isEditing ? (
+              <TextField size="small" fullWidth value={editingTransaction?.form || ""} onChange={(e) => handleTransactionChange("form", e.target.value)} sx={{ "& .MuiInputBase-input": { py: 0.5 } }} />
+            ) : (
+              transaction.form
+            )}
+          </TableCell>
+        );
+      case "grade":
+        return (
+          <TableCell key="grade">
+            {isEditing ? (
+              <TextField size="small" fullWidth value={editingTransaction?.grade || ""} onChange={(e) => handleTransactionChange("grade", e.target.value)} sx={{ "& .MuiInputBase-input": { py: 0.5 } }} />
+            ) : (
+              transaction.grade
+            )}
+          </TableCell>
+        );
+      case "size":
+        return (
+          <TableCell key="size">
+            {isEditing ? (
+              <TextField size="small" fullWidth value={editingTransaction?.size || ""} onChange={(e) => handleTransactionChange("size", e.target.value)} sx={{ "& .MuiInputBase-input": { py: 0.5 } }} />
+            ) : (
+              transaction.size
+            )}
+          </TableCell>
+        );
+      case "finish":
+        return (
+          <TableCell key="finish">
+            {isEditing ? (
+              <TextField size="small" fullWidth value={editingTransaction?.finish || ""} onChange={(e) => handleTransactionChange("finish", e.target.value)} sx={{ "& .MuiInputBase-input": { py: 0.5 } }} />
+            ) : (
+              transaction.finish || "-"
+            )}
+          </TableCell>
+        );
+      case "ext_finish":
+        return (
+          <TableCell key="ext_finish">
+            {isEditing ? (
+              <TextField size="small" fullWidth value={editingTransaction?.ext_finish || ""} onChange={(e) => handleTransactionChange("ext_finish", e.target.value)} sx={{ "& .MuiInputBase-input": { py: 0.5 } }} />
+            ) : (
+              transaction.ext_finish || "-"
+            )}
+          </TableCell>
+        );
+      case "width":
+        return (
+          <TableCell key="width">
+            {isEditing ? (
+              <TextField size="small" fullWidth value={editingTransaction?.width || ""} onChange={(e) => handleTransactionChange("width", e.target.value)} sx={{ "& .MuiInputBase-input": { py: 0.5 } }} />
+            ) : (
+              transaction.width || "-"
+            )}
+          </TableCell>
+        );
+      case "length":
+        return (
+          <TableCell key="length">
+            {isEditing ? (
+              <TextField size="small" fullWidth value={editingTransaction?.length || ""} onChange={(e) => handleTransactionChange("length", e.target.value)} sx={{ "& .MuiInputBase-input": { py: 0.5 } }} />
+            ) : (
+              transaction.length || "-"
+            )}
+          </TableCell>
+        );
+      case "mill":
+        return (
+          <TableCell key="mill">
+            {isEditing ? (
+              <TextField size="small" fullWidth value={editingTransaction?.mill || ""} onChange={(e) => handleTransactionChange("mill", e.target.value)} sx={{ "& .MuiInputBase-input": { py: 0.5 } }} />
+            ) : (
+              transaction.mill || "-"
+            )}
+          </TableCell>
+        );
+      case "heat":
+        return (
+          <TableCell key="heat">
+            {isEditing ? (
+              <TextField size="small" fullWidth value={editingTransaction?.heat || ""} onChange={(e) => handleTransactionChange("heat", e.target.value)} sx={{ "& .MuiInputBase-input": { py: 0.5 } }} />
+            ) : (
+              transaction.heat || "-"
+            )}
+          </TableCell>
+        );
+      case "count_type":
+        return (
+          <TableCell key="count_type">
+            {isEditing ? (
+              <FormControl size="small" fullWidth>
+                <Select value={editingTransaction?.count_type || ""} onChange={(e) => handleTransactionChange("count_type", e.target.value)}>
+                  <MenuItem value={COUNT_TYPES.PIECES}>Pieces</MenuItem>
+                  <MenuItem value={COUNT_TYPES.BUNDLES}>Bundles</MenuItem>
+                </Select>
+              </FormControl>
+            ) : (
+              <Chip
+                label={transaction.count_type}
+                size="small"
+                sx={{
+                  fontWeight: 600,
+                  borderRadius: 1.5,
+                  backgroundColor: transaction.count_type === COUNT_TYPES.BUNDLES ? alpha(theme.palette.primary.main, 0.15) : alpha(theme.palette.secondary.main, 0.15),
+                  color: transaction.count_type === COUNT_TYPES.BUNDLES ? theme.palette.primary.main : theme.palette.secondary.main,
+                }}
+              />
+            )}
+          </TableCell>
+        );
+      case "type":
+        return (
+          <TableCell key="type">
+            {isEditing ? (
+              <FormControl size="small" fullWidth>
+                <Select value={editingTransaction?.type || ""} onChange={(e) => handleTransactionChange("type", e.target.value)}>
+                  {Object.entries(typeLabels).map(([value, label]) => (
+                    <MenuItem key={value} value={value}>{label}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            ) : (
+              typeLabels[transaction.type] || transaction.type || "-"
+            )}
+          </TableCell>
+        );
+      case "qty":
+        return (
+          <TableCell key="qty" align="right">
+            {isEditing ? (
+              <TextField size="small" type="number" value={editingTransaction?.qty ?? 0} onChange={(e) => handleTransactionChange("qty", parseInt(e.target.value) || 0)} sx={{ width: 72, "& .MuiInputBase-input": { py: 0.5 } }} />
+            ) : (
+              <Typography variant="body2" fontWeight={600}>{transaction.qty}</Typography>
+            )}
+          </TableCell>
+        );
+      case "remarks":
+        return (
+          <TableCell key="remarks" sx={{ maxWidth: 160 }}>
+            {isEditing ? (
+              <TextField size="small" fullWidth value={editingTransaction?.remarks || ""} onChange={(e) => handleTransactionChange("remarks", e.target.value)} sx={{ "& .MuiInputBase-input": { py: 0.5 } }} />
+            ) : (
+              <Box sx={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{transaction.remarks || "Conforms to Std"}</Box>
+            )}
+          </TableCell>
+        );
+      case "ad_cmts":
+        return (
+          <TableCell key="ad_cmts" sx={{ maxWidth: 140 }}>
+            {isEditing ? (
+              <TextField size="small" fullWidth value={editingTransaction?.ad_cmts || ""} onChange={(e) => handleTransactionChange("ad_cmts", e.target.value)} sx={{ "& .MuiInputBase-input": { py: 0.5 } }} />
+            ) : (
+              <Box sx={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{transaction.ad_cmts || "-"}</Box>
+            )}
+          </TableCell>
+        );
+      case "page_number":
+        return (
+          <TableCell key="page_number">
+            {isEditing ? (
+              <TextField size="small" fullWidth value={editingTransaction?.page_number || ""} onChange={(e) => handleTransactionChange("page_number", e.target.value)} sx={{ "& .MuiInputBase-input": { py: 0.5 } }} />
+            ) : (
+              transaction.page_number || "-"
+            )}
+          </TableCell>
+        );
+      case "serial_number":
+        return (
+          <TableCell key="serial_number">
+            {isEditing ? (
+              <TextField size="small" fullWidth value={editingTransaction?.serial_number || ""} onChange={(e) => handleTransactionChange("serial_number", e.target.value)} sx={{ "& .MuiInputBase-input": { py: 0.5 } }} />
+            ) : (
+              transaction.serial_number || "-"
+            )}
+          </TableCell>
+        );
+      case "actions":
+        return (
+          <TableCell key="actions" align="center">
+            {isEditing ? (
+              <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 0.5 }}>
+                <IconButton size="small" onClick={handleSave} color="primary" sx={{ bgcolor: alpha(theme.palette.primary.main, 0.1) }}>
+                  <Save fontSize="small" />
+                </IconButton>
+                <IconButton size="small" onClick={handleCancel} sx={{ bgcolor: alpha(theme.palette.error.main, 0.1), color: theme.palette.error.main }}>
+                  <Cancel fontSize="small" />
+                </IconButton>
+                {editingTransaction?.count_type === COUNT_TYPES.BUNDLES && (
+                  <Button size="small" variant="outlined" startIcon={<Edit />} onClick={() => setOpenBundleDialog(true)} sx={{ ml: 0.5 }}>Bundles</Button>
+                )}
+              </Box>
+            ) : (
+              <IconButton size="small" onClick={() => handleEdit(transaction)} sx={{ bgcolor: alpha(theme.palette.primary.main, 0.08), "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.18) } }}>
+                <Edit fontSize="small" />
+              </IconButton>
+            )}
+          </TableCell>
+        );
+      default:
+        return null;
     }
   };
 
@@ -205,94 +583,186 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
       onClose={onClose}
       aria-labelledby="transaction-table-modal"
       sx={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        p: 2,
       }}
     >
-      <Box sx={{
-        width: '98%',
-        maxWidth: '1800px',
-        maxHeight: '95vh',
-        bgcolor: 'background.paper',
-        boxShadow: 24,
-        borderRadius: 1,
-        overflow: 'hidden'
-      }}>
-        <AppBar position="static" color="primary" enableColorOnDark>
-          <Toolbar>
-            <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-              Transaction History
-            </Typography>
-            <IconButton edge="end" color="inherit" onClick={onClose}>
-              <Close />
-            </IconButton>
-          </Toolbar>
-        </AppBar>
-        
-        {/* Search Bar */}
-        <Box sx={{ 
-          p: 2, 
-          display: 'flex', 
-          gap: 2,
-          alignItems: 'center',
-          borderBottom: '1px solid rgba(0, 0, 0, 0.12)'
-        }}>
-          <TextField
-            select
-            value={searchBy}
-            onChange={(e) => setSearchBy(e.target.value as "tag_id" | "counted_by")}
-            variant="outlined"
-            size="small"
-            SelectProps={{
-              native: true,
+      <ModalCard>
+        <HeaderBar>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+            <Box
+              sx={{
+                width: 44,
+                height: 44,
+                borderRadius: 2,
+                background: alpha(theme.palette.common.white, 0.2),
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <History sx={{ fontSize: 26 }} />
+            </Box>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: "-0.02em" }}>
+                Transaction History
+              </Typography>
+              <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                View and edit counted transactions
+              </Typography>
+            </Box>
+          </Box>
+          <IconButton
+            onClick={onClose}
+            sx={{
+              color: "inherit",
+              "&:hover": { background: alpha(theme.palette.common.white, 0.15) },
             }}
-            sx={{ minWidth: 120 }}
           >
-            <option value="tag_id">Tag ID</option>
-            <option value="counted_by">User ID</option>
-          </TextField>
-          
+            <Close />
+          </IconButton>
+        </HeaderBar>
+
+        <SearchBar>
+          <FormControl size="small" sx={{ minWidth: 140 }}>
+            <InputLabel>Search by</InputLabel>
+            <Select
+              value={searchBy}
+              label="Search by"
+              onChange={(e) => setSearchBy(e.target.value as "tag_id" | "counted_by")}
+            >
+              <MenuItem value="tag_id">Tag ID</MenuItem>
+              <MenuItem value="counted_by">User ID</MenuItem>
+            </Select>
+          </FormControl>
           <TextField
-            fullWidth
-            variant="outlined"
             size="small"
             placeholder={`Search by ${searchBy === "tag_id" ? "Tag ID" : "User ID"}...`}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            sx={{
+              flex: 1,
+              minWidth: 220,
+              "& .MuiOutlinedInput-root": {
+                borderRadius: 2,
+                backgroundColor: theme.palette.background.paper,
+              },
+            }}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
-                  <Search />
+                  <Search color="action" />
                 </InputAdornment>
               ),
             }}
           />
-        </Box>
+          <Chip
+            icon={<Summarize />}
+            label={`${filteredData.length} of ${data.length} records`}
+            size="small"
+            sx={{
+              borderRadius: 2,
+              fontWeight: 600,
+              background: alpha(theme.palette.primary.main, 0.1),
+              color: theme.palette.primary.main,
+            }}
+          />
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<ViewColumn />}
+            onClick={(e) => {
+              const target = e.currentTarget;
+              const rect = target.getBoundingClientRect();
+              setColumnsMenuAnchor(target);
+              setColumnsMenuPosition({ top: rect.bottom + 8, left: rect.left });
+            }}
+            sx={{ borderRadius: 2, textTransform: "none", fontWeight: 600 }}
+          >
+            Columns ({visibleCount})
+          </Button>
+          <Menu
+            open={!!columnsMenuAnchor}
+            onClose={() => { setColumnsMenuAnchor(null); setColumnsMenuPosition(null); }}
+            anchorReference="anchorPosition"
+            anchorPosition={columnsMenuPosition ? { top: columnsMenuPosition.top, left: columnsMenuPosition.left } : undefined}
+            anchorEl={columnsMenuAnchor}
+            disableScrollLock
+            PaperProps={{
+              sx: {
+                minWidth: 220,
+                borderRadius: 2,
+                boxShadow: `0 8px 32px ${alpha(theme.palette.common.black, 0.12)}`,
+              },
+            }}
+          >
+            <Box sx={{ px: 2, py: 1, borderBottom: `1px solid ${alpha(theme.palette.divider, 0.5)}` }}>
+              <Typography variant="subtitle2" fontWeight={600} color="text.secondary">
+                Show / hide columns
+              </Typography>
+            </Box>
+            <Box sx={{ py: 1, maxHeight: 360, overflowY: "auto" }}>
+              {toggleableColumnIds.map((id) => {
+                const col = COLUMNS.find((c) => c.id === id);
+                if (!col) return null;
+                return (
+                  <FormControlLabel
+                    key={id}
+                    control={
+                      <Checkbox
+                        checked={!!visibleColumns[id]}
+                        onChange={(_, checked) => setColumnVisible(id, checked)}
+                        size="small"
+                      />
+                    }
+                    label={col.label}
+                    sx={{ display: "block", mx: 2, my: 0.25 }}
+                  />
+                );
+              })}
+            </Box>
+            <Box sx={{ px: 2, py: 1, borderTop: `1px solid ${alpha(theme.palette.divider, 0.5)}`, display: "flex", gap: 1 }}>
+              <Button size="small" onClick={showAllColumns} sx={{ textTransform: "none" }}>
+                Show all
+              </Button>
+              <Button size="small" onClick={hideAllColumns} sx={{ textTransform: "none" }}>
+                Hide all
+              </Button>
+            </Box>
+          </Menu>
+        </SearchBar>
 
-        <Box sx={{ p: 2, overflow: 'auto', maxHeight: 'calc(95vh - 180px)' }}>
-          <TableContainer component={Paper}>
-            <Table stickyHeader size="small">
+        <Box
+          sx={{
+            p: 2,
+            flex: 1,
+            minHeight: 0,
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+          }}
+        >
+          <StyledTableContainer>
+            <Table stickyHeader size="small" sx={{ minWidth: tableMinWidth }}>
               <TableHead>
                 <TableRow>
-                  <TableCell width="50px">Expand</TableCell>
-                  <TableCell>Tag ID</TableCell>
-                  <TableCell>Form</TableCell>
-                  <TableCell>Grade</TableCell>
-                  <TableCell>Size</TableCell>
-                  <TableCell>Finish</TableCell>
-                  <TableCell>Ext. Finish</TableCell>
-                  <TableCell>Width</TableCell>
-                  <TableCell>Length</TableCell>
-                  <TableCell>Mill</TableCell>
-                  <TableCell>Heat</TableCell>
-                  <TableCell>Count Type</TableCell>
-                  <TableCell>Type</TableCell>
-                  <TableCell align="right">Quantity</TableCell>
-                  <TableCell>Quality Standards</TableCell>
-                  <TableCell>Additional Comments</TableCell>
-                  {/* <TableCell>Date</TableCell> */}
-                  <TableCell>Actions</TableCell>
+                  {visibleColumnList.map((col) => (
+                    <TableCell
+                      key={col.id}
+                      align={col.align}
+                      sx={
+                        col.id === "expand"
+                          ? { width: 48 }
+                          : col.id === "actions"
+                          ? { width: 100 }
+                          : undefined
+                      }
+                    >
+                      {col.label}
+                    </TableCell>
+                  ))}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -304,303 +774,26 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
 
                     return (
                       <React.Fragment key={rowId}>
-                        <TableRow hover sx={{ '& > td': { borderBottom: 'unset' } }}>
-                          <TableCell>
-                            {transaction.count_type === "bundle" && (
-                              <IconButton
-                                size="small"
-                                onClick={() => toggleRow(rowId)}
-                                aria-label="expand row"
-                              >
-                                {isExpanded ? (
-                                  <KeyboardArrowUp />
-                                ) : (
-                                  <KeyboardArrowDown />
-                                )}
-                              </IconButton>
-                            )}
-                          </TableCell>
-                          
-                          {/* Editable Fields */}
-                          <TableCell >{transaction.tag_id}</TableCell>
-                          {/* <TableCell>
-                            {isEditing ? (
-                              <TextField
-                                size="small"
-                                value={editingTransaction?.tag_id || ''}
-                                onChange={(e) => handleTransactionChange('tag_id', parseInt(e.target.value))}
-                                type="number"
-                              />
-                            ) : (
-                              transaction.tag_id
-                            )}
-                          </TableCell> */}
-
-                          <TableCell>
-                            {isEditing ? (
-                              <TextField
-                                size="small"
-                                value={editingTransaction?.form || ''}
-                                onChange={(e) => handleTransactionChange('form', e.target.value)}
-                              />
-                            ) : (
-                              transaction.form
-                            )}
-                          </TableCell>
-
-                          <TableCell>
-                            {isEditing ? (
-                              <TextField
-                                size="small"
-                                value={editingTransaction?.grade || ''}
-                                onChange={(e) => handleTransactionChange('grade', e.target.value)}
-                              />
-                            ) : (
-                              transaction.grade
-                            )}
-                          </TableCell>
-
-                          <TableCell>
-                            {isEditing ? (
-                              <TextField
-                                size="small"
-                                value={editingTransaction?.size || ''}
-                                onChange={(e) => handleTransactionChange('size', e.target.value)}
-                              />
-                            ) : (
-                              transaction.size
-                            )}
-                          </TableCell>
-
-                          <TableCell>
-                            {isEditing ? (
-                              <TextField
-                                size="small"
-                                value={editingTransaction?.finish || ''}
-                                onChange={(e) => handleTransactionChange('finish', e.target.value)}
-                              />
-                            ) : (
-                              transaction.finish || '-'
-                            )}
-                          </TableCell>
-
-                          <TableCell>
-                            {isEditing ? (
-                              <TextField
-                                size="small"
-                                value={editingTransaction?.ext_finish || ''}
-                                onChange={(e) => handleTransactionChange('ext_finish', e.target.value)}
-                              />
-                            ) : (
-                              transaction.ext_finish || '-'
-                            )}
-                          </TableCell>
-
-                          <TableCell>
-                            {isEditing ? (
-                              <TextField
-                                size="small"
-                                value={editingTransaction?.width || ''}
-                                onChange={(e) => handleTransactionChange('width', e.target.value)}
-                              />
-                            ) : (
-                              transaction.width || '-'
-                            )}
-                          </TableCell>
-
-                          <TableCell>
-                            {isEditing ? (
-                              <TextField
-                                size="small"
-                                value={editingTransaction?.length || ''}
-                                onChange={(e) => handleTransactionChange('length', e.target.value)}
-                              />
-                            ) : (
-                              transaction.length || '-'
-                            )}
-                          </TableCell>
-
-                          <TableCell>
-                            {isEditing ? (
-                              <TextField
-                                size="small"
-                                value={editingTransaction?.mill || ''}
-                                onChange={(e) => handleTransactionChange('mill', e.target.value)}
-                              />
-                            ) : (
-                              transaction.mill || '-'
-                            )}
-                          </TableCell>
-
-                          <TableCell>
-                            {isEditing ? (
-                              <TextField
-                                size="small"
-                                value={editingTransaction?.heat || ''}
-                                onChange={(e) => handleTransactionChange('heat', e.target.value)}
-                              />
-                            ) : (
-                              transaction.heat || '-'
-                            )}
-                          </TableCell>
-
-                          <TableCell>
-                            {isEditing ? (
-                              <FormControl size="small" fullWidth>
-                                <Select
-                                  value={editingTransaction?.count_type || ''}
-                                  onChange={(e) => handleTransactionChange('count_type', e.target.value)}
-                                >
-                                  <MenuItem value={COUNT_TYPES.PIECES}>Pieces</MenuItem>
-                                  <MenuItem value={COUNT_TYPES.BUNDLES}>Bundles</MenuItem>
-                                </Select>
-                              </FormControl>
-                            ) : (
-                              <Chip 
-                                label={transaction.count_type} 
-                                size="small"
-                                color={
-                                  transaction.count_type === COUNT_TYPES.BUNDLES ? "primary" :
-                                  transaction.count_type === COUNT_TYPES.PIECES ? "secondary" :
-                                  "default"
-                                }
-                                sx={{
-                                  fontWeight: 'bold',
-                                  backgroundColor: 
-                                    transaction.count_type === COUNT_TYPES.BUNDLES ? '#1976d2' :
-                                    transaction.count_type === COUNT_TYPES.PIECES ? '#dc004e' :
-                                    '#6c757d',
-                                  color: 'white'
-                                }}
-                              />
-                            )}
-                          </TableCell>
-
-                          <TableCell>
-                            {isEditing ? (
-                              <FormControl size="small" fullWidth>
-                                <Select
-                                  value={editingTransaction?.type || ''}
-                                  onChange={(e) => handleTransactionChange('type', e.target.value)}
-                                >
-                                  <MenuItem value="D">D - Drop</MenuItem>
-                                  <MenuItem value="F">F - Finished</MenuItem>
-                                  <MenuItem value="M">M - Master</MenuItem>
-                                  <MenuItem value="R">R - Reject</MenuItem>
-                                  <MenuItem value="S">S - Scrap</MenuItem>
-                                  <MenuItem value="W">W - Work in Process</MenuItem>
-                                </Select>
-                              </FormControl>
-                            ) : (
-                              (() => {
-                                const typeLabels: { [key: string]: string } = {
-                                  'D': 'D - Drop',
-                                  'F': 'F - Finished',
-                                  'M': 'M - Master',
-                                  'R': 'R - Reject',
-                                  'S': 'S - Scrap',
-                                  'W': 'W - Work in Process'
-                                };
-                                return typeLabels[transaction.type] || transaction.type || '-';
-                              })()
-                            )}
-                          </TableCell>
-
-                          <TableCell align="right">
-                            {isEditing ? (
-                              <TextField
-                                size="small"
-                                value={editingTransaction?.qty || 0}
-                                onChange={(e) => handleTransactionChange('qty', parseInt(e.target.value))}
-                                type="text"
-                              />
-                            ) : (
-                              transaction.qty
-                            )}
-                          </TableCell>
-                          <TableCell sx={{ maxWidth: 200 }}>
-                            {isEditing ? (
-                              <TextField
-                                size="small"
-                                value={editingTransaction?.remarks || ''}
-                                onChange={(e) => handleTransactionChange('remarks', e.target.value)}
-                                fullWidth
-                              />
-                            ) : (
-                              <Box sx={{ 
-                                whiteSpace: 'nowrap', 
-                                overflow: 'hidden', 
-                                textOverflow: 'ellipsis' 
-                              }}>
-                                {transaction.remarks || 'Conforms to Std'}
-                              </Box>
-                            )}
-                          </TableCell>
-                          <TableCell sx={{ maxWidth: 200 }}>
-                            {isEditing ? (
-                              <TextField
-                                size="small"
-                                value={editingTransaction?.ad_cmts || ''}
-                                onChange={(e) => handleTransactionChange('ad_cmts', e.target.value)}
-                                fullWidth
-                              />
-                            ) : (
-                              <Box sx={{ 
-                                whiteSpace: 'nowrap', 
-                                overflow: 'hidden', 
-                                textOverflow: 'ellipsis' 
-                              }}>
-                                {transaction.ad_cmts || '-'}
-                              </Box>
-                            )}
-                          </TableCell>
-                          {/* <TableCell>{formatDate(transaction.counted_at)}</TableCell> */}
-                          <TableCell>
-                            {isEditing ? (
-                              <>
-                                <IconButton size="small" onClick={handleSave} color="primary">
-                                  <Save />
-                                </IconButton>
-                                <IconButton size="small" onClick={handleCancel} color="error">
-                                  <Cancel />
-                                </IconButton>
-                                {editingTransaction?.count_type === COUNT_TYPES.BUNDLES && (
-                                  <Button 
-                                    size="small" 
-                                    onClick={() => setOpenBundleDialog(true)}
-                                    sx={{ ml: 1 }}
-                                  >
-                                    Edit Bundles
-                                  </Button>
-                                )}
-                              </>
-                            ) : (
-                              <IconButton 
-                                size="small" 
-                                onClick={() => handleEdit(transaction)}
-                                color="primary"
-                              >
-                                <Edit />
-                              </IconButton>
-                            )}
-                          </TableCell>
+                        <TableRow className={isEditing ? "editing-row" : ""}>
+                          {visibleColumnList.map((col) => renderCell(col.id, transaction, rowId))}
                         </TableRow>
 
                         {transaction.count_type === "bundle" && transaction.bundles && (
                           <TableRow>
-                            <TableCell colSpan={14} sx={{ p: 0, borderTop: 0 }}>
-                              <Collapse 
-                                in={isExpanded} 
-                                timeout="auto" 
-                                unmountOnExit
-                              >
-                                <Box sx={{ 
-                                  backgroundColor: '#f5f5f5',
-                                  p: 2,
-                                  borderBottom: '1px solid rgba(224, 224, 224, 1)'
-                                }}>
-                                  <Typography variant="subtitle1" gutterBottom>
-                                    Bundle Details (Tag ID: {transaction.tag_id})
+                            <TableCell colSpan={visibleColumnList.length} sx={{ p: 0, borderTop: 0, borderBottom: 0 }}>
+                              <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                                <Box
+                                  sx={{
+                                    backgroundColor: alpha(theme.palette.primary.main, 0.04),
+                                    p: 2,
+                                    borderLeft: `4px solid ${theme.palette.primary.main}`,
+                                    mx: 2,
+                                    mb: 1,
+                                    borderRadius: 2,
+                                  }}
+                                >
+                                  <Typography variant="subtitle2" fontWeight={600} gutterBottom color="text.secondary">
+                                    Bundle details · Tag {transaction.sys_tag_no || transaction.tag_id}
                                   </Typography>
                                   <Table size="small">
                                     <TableHead>
@@ -614,14 +807,12 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
                                     </TableHead>
                                     <TableBody>
                                       {transaction.bundles.map((bundle, index) => (
-                                        <TableRow key={bundle.id || index}>
+                                        <TableRow key={bundle.id ?? index}>
                                           <TableCell>{index + 1}</TableCell>
                                           <TableCell>{bundle.num_of_bundle}</TableCell>
                                           <TableCell>{bundle.bundle_count}</TableCell>
-                                          <TableCell align="right">
-                                            {bundle.num_of_bundle * bundle.bundle_count}
-                                          </TableCell>
-                                          <TableCell>{bundle.tag_id || '-'}</TableCell>
+                                          <TableCell align="right">{bundle.num_of_bundle * bundle.bundle_count}</TableCell>
+                                          <TableCell>{bundle.tag_id ?? "-"}</TableCell>
                                         </TableRow>
                                       ))}
                                     </TableBody>
@@ -636,36 +827,49 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
                   })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={14} align="center" sx={{ py: 4 }}>
-                      <Typography variant="body1" color="textSecondary">
-                        No transactions found matching your search criteria
-                      </Typography>
+                    <TableCell colSpan={visibleColumnList.length} align="center" sx={{ py: 8 }}>
+                      <Box sx={{ textAlign: "center" }}>
+                        <Search sx={{ fontSize: 48, color: "text.disabled", mb: 1 }} />
+                        <Typography variant="body1" color="text.secondary" fontWeight={500}>
+                          No transactions match your search
+                        </Typography>
+                        <Typography variant="body2" color="text.disabled" sx={{ mt: 0.5 }}>
+                          Try a different {searchBy === "tag_id" ? "Tag ID" : "User ID"} or clear the search
+                        </Typography>
+                      </Box>
                     </TableCell>
                   </TableRow>
                 )}
               </TableBody>
             </Table>
-          </TableContainer>
+          </StyledTableContainer>
         </Box>
 
-        {/* Bundle Edit Dialog */}
-        <Dialog 
-          open={openBundleDialog} 
+        <Dialog
+          open={openBundleDialog}
           onClose={() => setOpenBundleDialog(false)}
-          maxWidth="lg"
+          maxWidth="sm"
           fullWidth
+          PaperProps={{
+            sx: {
+              borderRadius: 3,
+              boxShadow: `0 16px 48px ${alpha(theme.palette.common.black, 0.12)}`,
+            },
+          }}
         >
-          <DialogTitle>Edit Bundles</DialogTitle>
-          <DialogContent>
-            <TableContainer component={Paper}>
-              <Table>
+          <DialogTitle sx={{ fontWeight: 600, borderBottom: `1px solid ${alpha(theme.palette.divider, 0.5)}` }}>
+            Edit bundles
+          </DialogTitle>
+          <DialogContent sx={{ pt: 2 }}>
+            <TableContainer>
+              <Table size="small">
                 <TableHead>
                   <TableRow>
                     <TableCell>#</TableCell>
-                    <TableCell>Number of Bundles</TableCell>
-                    <TableCell>Count per Bundle</TableCell>
-                    <TableCell>Total</TableCell>
-                    <TableCell>Actions</TableCell>
+                    <TableCell>Number of bundles</TableCell>
+                    <TableCell>Count per bundle</TableCell>
+                    <TableCell align="right">Total</TableCell>
+                    <TableCell />
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -675,29 +879,25 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
                       <TableCell>
                         <TextField
                           size="small"
+                          type="number"
                           value={bundle.num_of_bundle}
-                          onChange={(e) => handleBundleChange(index, 'num_of_bundle', parseInt(e.target.value))}
-                          type="text"
+                          onChange={(e) => handleBundleChange(index, "num_of_bundle", parseInt(e.target.value) || 0)}
+                          sx={{ width: 100 }}
                         />
                       </TableCell>
                       <TableCell>
                         <TextField
                           size="small"
+                          type="number"
                           value={bundle.bundle_count}
-                          onChange={(e) => handleBundleChange(index, 'bundle_count', parseInt(e.target.value))}
-                          type="text"
+                          onChange={(e) => handleBundleChange(index, "bundle_count", parseInt(e.target.value) || 0)}
+                          sx={{ width: 100 }}
                         />
                       </TableCell>
+                      <TableCell align="right">{bundle.num_of_bundle * bundle.bundle_count}</TableCell>
                       <TableCell>
-                        {bundle.num_of_bundle * bundle.bundle_count}
-                      </TableCell>
-                      <TableCell>
-                        <IconButton 
-                          size="small" 
-                          onClick={() => handleRemoveBundle(index)}
-                          color="error"
-                        >
-                          <Close />
+                        <IconButton size="small" onClick={() => handleRemoveBundle(index)} color="error">
+                          <Close fontSize="small" />
                         </IconButton>
                       </TableCell>
                     </TableRow>
@@ -709,60 +909,55 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
               variant="outlined"
               startIcon={<Add />}
               onClick={handleAddBundle}
-              sx={{ mt: 2 }}
+              sx={{ mt: 2, borderRadius: 2 }}
             >
-              Add Bundle
+              Add bundle
             </Button>
           </DialogContent>
-          <DialogActions>
+          <DialogActions sx={{ px: 3, py: 2, borderTop: `1px solid ${alpha(theme.palette.divider, 0.5)}` }}>
             <Button onClick={() => setOpenBundleDialog(false)}>Cancel</Button>
-            <Button 
+            <Button
+              variant="contained"
               onClick={() => {
                 setOpenBundleDialog(false);
-                // Update quantity when bundles change
                 if (editingTransaction) {
                   const totalQuantity = editingBundles.reduce(
-                    (sum, bundle) => sum + (bundle.num_of_bundle * bundle.bundle_count),
+                    (sum, bundle) => sum + bundle.num_of_bundle * bundle.bundle_count,
                     0
                   );
-                  handleTransactionChange('qty', totalQuantity);
+                  handleTransactionChange("qty", totalQuantity);
                 }
               }}
-              color="primary"
             >
-              Save Bundles
+              Save bundles
             </Button>
           </DialogActions>
         </Dialog>
 
-        <Box sx={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          p: 2,
-          borderTop: '1px solid rgba(0, 0, 0, 0.12)'
-        }}>
-          <Typography variant="body2" color="text.secondary">
-            Showing {filteredData.length} of {data.length} records
-          </Typography>
+        <FooterBar>
           <Box>
-            <Button 
-              variant="outlined" 
-              onClick={onClose}
-              sx={{ mr: 2 }}
-            >
+            <Typography variant="body2" color="text.secondary" fontWeight={500}>
+              Showing {filteredData.length} of {data.length} transactions
+            </Typography>
+            <Typography variant="caption" color="text.disabled">
+              Scroll vertically for more rows and horizontally when columns exceed the view
+            </Typography>
+          </Box>
+          <Box sx={{ display: "flex", gap: 2 }}>
+            <Button variant="outlined" onClick={onClose} sx={{ borderRadius: 2, textTransform: "none", fontWeight: 600 }}>
               Close
             </Button>
-            <Button 
-              variant="contained" 
-              color="primary"
+            <Button
+              variant="contained"
               onClick={handleSubmitAll}
               disabled={data.length === 0}
+              sx={{ borderRadius: 2, textTransform: "none", fontWeight: 600, px: 3 }}
             >
-              Submit All Transactions
+              Submit all transactions
             </Button>
           </Box>
-        </Box>
-      </Box>
+        </FooterBar>
+      </ModalCard>
     </Modal>
   );
 };

@@ -1,6 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ElementType } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { getLoginPath } from "../config/appPath";
+import { getDefaultRouteForRole, orderRoles, parseUserRoles } from "../config/roleUtils";
 import {
   AppBar,
   Box,
@@ -24,12 +26,14 @@ import {
   Avatar,
   Menu,
   MenuItem,
+  Chip,
+  Tooltip,
   styled,
   alpha,
 } from "@mui/material";
+import { keyframes } from "@mui/system";
 import {
   Logout as LogoutIcon,
-  ExpandLess,
   ExpandMore,
   Dashboard,
   GroupAdd,
@@ -46,12 +50,32 @@ import {
   ChevronLeft,
   ChevronRight,
   Menu as MenuIcon,
-  AccountCircle
+  AccountCircle,
+  Storage,
+  Security,
+  Assessment,
+  Description,
+  ListAlt,
+  Tune,
+  Check,
+  SwapHoriz,
+  CorporateFare,
+  PointOfSale,
+  FactCheck,
+  AutoAwesome,
+  Inventory2,
 } from "@mui/icons-material";
+import type { Theme } from "@mui/material/styles";
 
 const drawerWidth = 280;
-const collapsedWidth = 80;
+const collapsedWidth = 84;
 
+const SIDEBAR_GRADIENT = 'linear-gradient(180deg, #0C2C48 0%, #123a5e 55%, #0C2C48 100%)';
+
+const fadeSlideIn = keyframes`
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
+`;
 
 const ModernAvatar = styled(Avatar)(({ theme }) => ({
   width: 40,
@@ -67,9 +91,10 @@ const ModernAvatar = styled(Avatar)(({ theme }) => ({
 
 const ModernDrawer = styled(Drawer)(({ theme }) => ({
   '& .MuiDrawer-paper': {
-    backgroundColor: theme.palette.background.default,
-    borderRight: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
-    boxShadow: '4px 0 8px rgba(0, 0, 0, 0.05)',
+    background: SIDEBAR_GRADIENT,
+    color: '#fff',
+    borderRight: 'none',
+    boxShadow: '6px 0 30px rgba(12,44,72,0.35)',
     transition: theme.transitions.create(['width', 'margin'], {
       easing: theme.transitions.easing.sharp,
       duration: theme.transitions.duration.enteringScreen,
@@ -78,14 +103,63 @@ const ModernDrawer = styled(Drawer)(({ theme }) => ({
   },
 }));
 
-const DrawerHeader = styled('div')(({ theme }) => ({
+const DrawerHeader = styled('div')(() => ({
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
-  padding: theme.spacing(2, 3),
-  backgroundColor: alpha(theme.palette.primary.main, 0.03),
-  borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
-  minHeight: 64,
+  padding: '16px 20px',
+  background: 'rgba(255,255,255,0.04)',
+  borderBottom: '1px solid rgba(255,255,255,0.10)',
+  minHeight: 72,
+}));
+
+const NavItem = styled(ListItemButton)<{ component?: ElementType; to?: string }>(() => ({
+  margin: '4px 12px',
+  borderRadius: 12,
+  minHeight: 48,
+  color: 'rgba(255,255,255,0.72)',
+  position: 'relative',
+  overflow: 'hidden',
+  transition: 'background-color 0.25s ease, color 0.25s ease, transform 0.25s cubic-bezier(0.4,0,0.2,1)',
+  '& .MuiListItemIcon-root': {
+    color: 'rgba(255,255,255,0.7)',
+    transition: 'transform 0.25s ease, color 0.25s ease',
+  },
+  '& .MuiListItemText-primary': {
+    fontSize: '0.9rem',
+    fontWeight: 500,
+    transition: 'font-weight 0.2s ease',
+  },
+  '&:hover': {
+    backgroundColor: 'rgba(255,255,255,0.09)',
+    color: '#fff',
+    transform: 'translateX(5px)',
+    '& .MuiListItemIcon-root': { color: '#fff', transform: 'scale(1.12)' },
+  },
+  '&.Mui-selected': {
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    color: '#fff',
+    boxShadow: '0 6px 18px rgba(0,0,0,0.28)',
+    '& .MuiListItemIcon-root': { color: '#fff' },
+    '& .MuiListItemText-primary': { fontWeight: 700 },
+    '&:hover': { backgroundColor: 'rgba(255,255,255,0.22)' },
+    '&::before': {
+      content: '""',
+      position: 'absolute',
+      left: 0,
+      top: '18%',
+      height: '64%',
+      width: 4,
+      borderRadius: '0 4px 4px 0',
+      background: 'linear-gradient(180deg, #7cc6ff 0%, #4f9bd6 100%)',
+    },
+  },
+  '&.Mui-disabled': { opacity: 0.45 },
+}));
+
+const CategoryDivider = styled(Divider)(() => ({
+  margin: '12px 20px',
+  borderColor: 'rgba(255,255,255,0.10)',
 }));
 
 const AppHeader = styled(AppBar)(({ theme }) => ({
@@ -101,7 +175,7 @@ const UserMenu = styled(Menu)(({ theme }) => ({
   '& .MuiPaper-root': {
     borderRadius: 12,
     marginTop: theme.spacing(1),
-    minWidth: 180,
+    minWidth: 220,
     boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
     '& .MuiMenu-list': {
       padding: theme.spacing(1),
@@ -117,17 +191,17 @@ const UserMenu = styled(Menu)(({ theme }) => ({
   },
 }));
 
-const CategoryLabel = styled(Typography)(({ theme }) => ({
-  fontSize: '0.75rem',
-  fontWeight: 600,
+const CategoryLabel = styled(Typography)(() => ({
+  fontSize: '0.68rem',
+  fontWeight: 700,
   textTransform: 'uppercase',
-  color: theme.palette.text.secondary,
-  padding: theme.spacing(2, 3, 1),
-  letterSpacing: '0.5px',
+  color: 'rgba(255,255,255,0.45)',
+  padding: '16px 24px 8px',
+  letterSpacing: '1.2px',
 }));
 
 const menuItems = {
-  Controller: [
+  Reconciler: [
     {
       text: "Dashboard",
       icon: <Dashboard />,
@@ -142,6 +216,7 @@ const menuItems = {
         { text: "Users", icon: <GroupAdd />, path: "/users" },
         { text: "Inventory", icon: <AddLocationAlt />, path: "/locations" },
         { text: "Analyse Inventory", icon: <Category />, path: "/items" },
+        { text: "Stock Available", icon: <Storage />, path: "/stock-available" },
         { text: "Teams", icon: <Groups2 />, path: "/teams" }
       ]
     },
@@ -153,6 +228,17 @@ const menuItems = {
         { text: "Counter", icon: <Engineering />, path: "/assigned-counters" },
         { text: "Checker", icon: <Inventory />, path: "/assigned-checkers" },
         { text: "Checker Logs", icon: <Book />, path: "/checker-logs" }
+      ]
+    },
+    {
+      text: "Reports",
+      icon: <Assessment />,
+      path: null,
+      subItems: [
+        { text: "Reconciliation", icon: <Description />, path: "/reports/reconciliation" },
+        { text: "Adjustment", icon: <Tune />, path: "/reports/adjustment" },
+        { text: "Count", icon: <ListAlt />, path: "/reports/count" },
+        { text: "Custom", icon: <Assessment />, path: "/reports/custom" }
       ]
     }
   ],
@@ -194,20 +280,24 @@ interface NavigationProps {
 }
 
 interface ToggleButtonProps {
-  theme?: any;
+  theme?: Theme;
 }
 
 const ToggleButton = styled(IconButton)<ToggleButtonProps>(({ theme }) => ({
   position: 'fixed',
-  bottom: 20,
+  bottom: 24,
   left: 20,
-  backgroundColor: theme.palette.background.paper,
-  boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
+  width: 40,
+  height: 40,
+  color: '#fff',
+  background: 'linear-gradient(135deg, #0C2C48 0%, #1E5A8A 100%)',
+  boxShadow: '0 6px 18px rgba(12,44,72,0.4)',
   zIndex: theme.zIndex.drawer + 2,
   transition: 'all 0.3s ease',
   '&:hover': {
-    backgroundColor: alpha(theme.palette.primary.main, 0.1),
-    transform: 'scale(1.1)',
+    background: 'linear-gradient(135deg, #123a5e 0%, #2670a8 100%)',
+    transform: 'scale(1.12)',
+    boxShadow: '0 8px 22px rgba(12,44,72,0.5)',
   },
 }));
 
@@ -219,12 +309,18 @@ export default function ModernNavigation({ children }: NavigationProps) {
   const [openLogoutDialog, setOpenLogoutDialog] = useState(false);
   const { logout } = useAuth();
   const [role, setRole] = useState<string>('');
+  const [userRoles, setUserRoles] = useState<string[]>([]);
   const navigate = useNavigate();
   const location = useLocation();
 
   const fullName = localStorage.getItem('full_name');
 
+  const loadUserRoles = () => {
+    setUserRoles(orderRoles(parseUserRoles()));
+  };
+
   useEffect(() => {
+    loadUserRoles();
     const storedRole = localStorage.getItem('Selected Role');
     if (storedRole) {
       setRole(storedRole);
@@ -247,11 +343,37 @@ export default function ModernNavigation({ children }: NavigationProps) {
   };
 
   const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    loadUserRoles();
     setAnchorEl(event.currentTarget);
   };
 
   const handleMenuClose = () => {
     setAnchorEl(null);
+  };
+
+  const getRoleIcon = (roleName: string) => {
+    switch (roleName) {
+      case 'Reconciler':
+        return <CorporateFare fontSize="small" sx={{ color: 'primary.main' }} />;
+      case 'Counter':
+        return <PointOfSale fontSize="small" sx={{ color: 'secondary.main' }} />;
+      case 'Checker':
+        return <FactCheck fontSize="small" sx={{ color: 'info.main' }} />;
+      default:
+        return <AccountCircle fontSize="small" />;
+    }
+  };
+
+  const handleRoleSwitch = (newRole: string) => {
+    if (newRole === role) {
+      handleMenuClose();
+      return;
+    }
+
+    localStorage.setItem('Selected Role', newRole);
+    setRole(newRole);
+    handleMenuClose();
+    navigate(getDefaultRouteForRole(newRole));
   };
 
   const confirmLogout = async () => {
@@ -266,17 +388,12 @@ export default function ModernNavigation({ children }: NavigationProps) {
 
       // Call the context logout
       await logout();
-      
+
       // Close the dialog
       setOpenLogoutDialog(false);
-      
-      // Navigate to login page with base URL
-      const getBaseURL = () => {
-        const baseUrl = window.location.pathname.split('/star-inventory/')[0] || '';
-        return baseUrl + '/star-inventory';
-      };
-      const baseURL = getBaseURL();
-      window.location.href = `${baseURL}/login`; // Using window.location to force a full page reload
+
+      // Navigate to login page
+      window.location.href = getLoginPath();
     } catch (error) {
       console.error('Logout failed:', error);
     }
@@ -294,84 +411,123 @@ export default function ModernNavigation({ children }: NavigationProps) {
   const renderMenuItems = (items: NavigationItem[]) => {
     return items.map((item) => {
       if (item.subItems.length === 0) {
+        const isClickable = Boolean(item.path);
+
         return (
-          <ListItemButton
+          <Tooltip
             key={item.text}
-            component={Link}
-            to={item.path || ''}
-            selected={isActive(item.path)}
-            sx={{
-              minHeight: 48,
-              justifyContent: collapsed ? 'center' : 'initial',
-              px: 2.5,
-            }}
+            title={collapsed ? item.text : ''}
+            placement="right"
+            arrow
           >
-            <ListItemIcon
+            <NavItem
+              {...(isClickable ? { component: Link, to: item.path as string } : {})}
+              disabled={!isClickable}
+              selected={isActive(item.path)}
               sx={{
-                minWidth: 0,
-                mr: collapsed ? 'auto' : 3,
-                justifyContent: 'center',
+                justifyContent: collapsed ? 'center' : 'initial',
+                px: collapsed ? 1.5 : 2,
               }}
             >
-              {item.icon}
-            </ListItemIcon>
-            {!collapsed && <ListItemText primary={item.text} />}
-          </ListItemButton>
+              <ListItemIcon
+                sx={{
+                  minWidth: 0,
+                  mr: collapsed ? 'auto' : 2.5,
+                  justifyContent: 'center',
+                }}
+              >
+                {item.icon}
+              </ListItemIcon>
+              {!collapsed && <ListItemText primary={item.text} />}
+            </NavItem>
+          </Tooltip>
         );
       }
 
+      const submenuOpen = Boolean(openSubmenus[item.text]);
+      const hasActiveChild = item.subItems.some((sub) => isActive(sub.path));
+
       return (
         <Box key={item.text}>
-          <ListItemButton
-            onClick={() => handleSubmenuToggle(item.text)}
-            sx={{
-              minHeight: 48,
-              justifyContent: collapsed ? 'center' : 'initial',
-              px: 2.5,
-            }}
-          >
-            <ListItemIcon
+          <Tooltip title={collapsed ? item.text : ''} placement="right" arrow>
+            <NavItem
+              onClick={() => {
+                if (collapsed) {
+                  setCollapsed(false);
+                  setOpenSubmenus((prev) => ({ ...prev, [item.text]: true }));
+                } else {
+                  handleSubmenuToggle(item.text);
+                }
+              }}
+              selected={collapsed && hasActiveChild}
               sx={{
-                minWidth: 0,
-                mr: collapsed ? 'auto' : 3,
-                justifyContent: 'center',
+                justifyContent: collapsed ? 'center' : 'initial',
+                px: collapsed ? 1.5 : 2,
               }}
             >
-              {item.icon}
-            </ListItemIcon>
-            {!collapsed && (
-              <>
-                <ListItemText primary={item.text} />
-                {openSubmenus[item.text] ? <ExpandLess /> : <ExpandMore />}
-              </>
-            )}
-          </ListItemButton>
-          <Collapse in={openSubmenus[item.text]} timeout="auto" unmountOnExit>
-            <List component="div" disablePadding>
-              {item.subItems.map((subItem) => (
-                <ListItemButton
+              <ListItemIcon
+                sx={{
+                  minWidth: 0,
+                  mr: collapsed ? 'auto' : 2.5,
+                  justifyContent: 'center',
+                }}
+              >
+                {item.icon}
+              </ListItemIcon>
+              {!collapsed && (
+                <>
+                  <ListItemText primary={item.text} />
+                  <ExpandMore
+                    sx={{
+                      color: 'rgba(255,255,255,0.55)',
+                      transition: 'transform 0.3s ease',
+                      transform: submenuOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                    }}
+                  />
+                </>
+              )}
+            </NavItem>
+          </Tooltip>
+          <Collapse in={submenuOpen && !collapsed} timeout={300} unmountOnExit>
+            <List component="div" disablePadding sx={{ position: 'relative' }}>
+              {/* connecting rail */}
+              <Box
+                sx={{
+                  position: 'absolute',
+                  left: 30,
+                  top: 6,
+                  bottom: 6,
+                  width: '2px',
+                  background: 'rgba(255,255,255,0.12)',
+                  borderRadius: 2,
+                }}
+              />
+              {item.subItems.map((subItem, index) => (
+                <NavItem
                   key={subItem.text}
                   component={Link}
                   to={subItem.path}
                   selected={isActive(subItem.path)}
                   sx={{
-                    pl: collapsed ? 2.5 : 4,
-                    py: 1,
-                    minHeight: 36,
-                    justifyContent: collapsed ? 'center' : 'initial',
+                    pl: 4,
+                    py: 0.75,
+                    minHeight: 40,
+                    animation: `${fadeSlideIn} 0.3s ease both`,
+                    animationDelay: `${index * 0.04}s`,
                   }}
                 >
                   <ListItemIcon
                     sx={{
                       minWidth: 0,
-                      mr: collapsed ? 'auto' : 3,
+                      mr: 2,
                       justifyContent: 'center',
+                      '& svg': { fontSize: '1.15rem' },
                     }}
                   >
                     {subItem.icon}
                   </ListItemIcon>
-                  {!collapsed && <ListItemText primary={subItem.text} />}
-                </ListItemButton>
+                  <ListItemText primary={subItem.text} />
+                </NavItem>
               ))}
             </List>
           </Collapse>
@@ -382,29 +538,62 @@ export default function ModernNavigation({ children }: NavigationProps) {
 
   const drawer = (
     <>
-      <DrawerHeader>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <ModernAvatar src="/logo.png" alt="Logo" />
+      <DrawerHeader sx={{ justifyContent: collapsed ? 'center' : 'space-between' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, overflow: 'hidden' }}>
+          <ModernAvatar
+            sx={{
+              bgcolor: 'rgba(255,255,255,0.14)',
+              boxShadow: '0 4px 14px rgba(0,0,0,0.28)',
+              border: '2px solid rgba(255,255,255,0.28)',
+              color: '#fff',
+              backgroundImage: 'linear-gradient(145deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.06) 100%)',
+            }}
+          >
+            <Box sx={{ position: 'relative', width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Inventory2 sx={{ fontSize: 20, opacity: 0.95 }} />
+              <AutoAwesome
+                sx={{
+                  fontSize: 11,
+                  position: 'absolute',
+                  top: -3,
+                  right: -4,
+                  color: '#FFD54F',
+                  filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.35))',
+                }}
+              />
+            </Box>
+          </ModernAvatar>
           {!collapsed && (
-            <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 600 }}>
-              Inventory Count
-            </Typography>
+            <Box sx={{ animation: `${fadeSlideIn} 0.4s ease` }}>
+              <Typography variant="subtitle1" noWrap sx={{ fontWeight: 800, color: '#fff', lineHeight: 1.1, letterSpacing: '-0.2px' }}>
+                Star Inventory
+              </Typography>
+              <Typography variant="caption" noWrap sx={{ color: 'rgba(255,255,255,0.55)' }}>
+                by Star Software
+              </Typography>
+            </Box>
           )}
         </Box>
-        <IconButton onClick={toggleCollapse}>
-          {collapsed ? <ChevronRight /> : <ChevronLeft />}
-        </IconButton>
+        {!collapsed && (
+          <IconButton onClick={toggleCollapse} sx={{ color: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(255,255,255,0.12)' } }}>
+            <ChevronLeft />
+          </IconButton>
+        )}
       </DrawerHeader>
 
-      <Box sx={{ overflow: 'auto', py: 2 }}>
-        {/* Only show Controller section if role is Controller */}
-        {role === 'Controller' && (
-          <Box key="Controller">
-            {!collapsed && <CategoryLabel>Controller</CategoryLabel>}
+      <Box sx={{ overflowX: 'hidden', overflowY: 'auto', py: 1.5, flex: 1,
+        '&::-webkit-scrollbar': { width: 6 },
+        '&::-webkit-scrollbar-thumb': { backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 3 },
+        '&::-webkit-scrollbar-track': { backgroundColor: 'transparent' },
+      }}>
+        {/* Only show Reconciler section if role is Reconciler */}
+        {role === 'Reconciler' && (
+          <Box key="Reconciler">
+            {!collapsed && <CategoryLabel>Reconciler</CategoryLabel>}
             <List disablePadding>
-              {renderMenuItems(menuItems.Controller)}
+              {renderMenuItems(menuItems.Reconciler)}
             </List>
-            {!collapsed && <Divider sx={{ my: 2, opacity: 0.1 }} />}
+            <CategoryDivider />
           </Box>
         )}
         {/* Always show Common section */}
@@ -413,7 +602,6 @@ export default function ModernNavigation({ children }: NavigationProps) {
           <List disablePadding>
             {renderMenuItems(menuItems.Common)}
           </List>
-          {!collapsed && <Divider sx={{ my: 2, opacity: 0.1 }} />}
         </Box>
       </Box>
     </>
@@ -447,6 +635,32 @@ export default function ModernNavigation({ children }: NavigationProps) {
           <Box sx={{ flexGrow: 1 }} />
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Chip
+              icon={<Security sx={{ fontSize: 18 }} />}
+              label={role || 'Reconciler'}
+              variant="outlined"
+              sx={{
+                borderRadius: 2,
+                fontWeight: 600,
+                borderColor: theme => alpha(theme.palette.primary.main, 0.4),
+                color: 'primary.main',
+                backgroundColor: theme => alpha(theme.palette.primary.main, 0.08),
+              }}
+            />
+            <Chip
+              label="SANDBOX"
+              size="small"
+              sx={(theme) => ({
+                borderRadius: 1.5,
+                fontWeight: 700,
+                fontSize: '0.7rem',
+                backgroundColor: alpha(theme.palette.warning.main, 0.15),
+                color: theme.palette.warning.dark,
+                border: `1px solid ${alpha(theme.palette.warning.main, 0.3)}`,
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+              })}
+            />
             <Box>
               <IconButton onClick={handleMenuOpen}>
                 <ModernAvatar>
@@ -473,6 +687,40 @@ export default function ModernNavigation({ children }: NavigationProps) {
                   <AccountCircle />
                   Profile
                 </MenuItem>
+                {userRoles.length > 1 && (
+                  <>
+                    <Divider sx={{ my: 1 }} />
+                    <Box sx={{ px: 2, py: 0.5, display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                      <SwapHoriz sx={{ fontSize: 16, color: 'text.secondary' }} />
+                      <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', letterSpacing: 0.4 }}>
+                        SWITCH ROLE
+                      </Typography>
+                    </Box>
+                    {userRoles.map((roleOption) => (
+                      <MenuItem
+                        key={roleOption}
+                        onClick={() => handleRoleSwitch(roleOption)}
+                        selected={roleOption === role}
+                        sx={{
+                          justifyContent: 'space-between',
+                          fontWeight: roleOption === role ? 600 : 400,
+                          bgcolor: roleOption === role
+                            ? (theme) => alpha(theme.palette.primary.main, 0.08)
+                            : 'transparent',
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                          {getRoleIcon(roleOption)}
+                          <Typography variant="body2">{roleOption}</Typography>
+                        </Box>
+                        {roleOption === role && (
+                          <Check fontSize="small" color="primary" />
+                        )}
+                      </MenuItem>
+                    ))}
+                  </>
+                )}
+                <Divider sx={{ my: 1 }} />
                 <MenuItem onClick={() => { handleMenuClose(); setOpenLogoutDialog(true); }}>
                   <LogoutIcon />
                   Logout

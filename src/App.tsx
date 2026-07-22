@@ -23,9 +23,15 @@ import Checker from './pages/checker';
 import CheckerLogs from './pages/checkerLogs';
 import ReconciliationRecords from './pages/reconciliationRecords';
 import ReconciliationPage from './pages/reconciliation';
+import ReconciliationCounterPage from './pages/reconciliation_counter';
+import ReconciliationCheckerPage from './pages/reconciliation_checker';
 import AdjustmentPage from './pages/adjustment';
+import StockAvailable from './pages/stockAvailable';
 // import Checker from './pages/checker_sku';
 // import CheckerHomeSky from "./pages/checkerHome_sky";
+import ReconciliationReport from "./pages/reconciliationReport";
+import ReconciliationReportView from "./pages/reconciliationReportView";
+import { getAppBasePath } from "./config/appPath";
 
 // Define Theme
 const theme = createTheme({
@@ -43,15 +49,7 @@ const theme = createTheme({
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem("token"));
 
-  // Dynamic base URL logic
-  const getBaseURL = () => {
-    console.log("baseURL");
-    const baseUrl = window.location.pathname.split('/star-inventory/')[0] || '';
-    return baseUrl + '/star-inventory';
-  };
-  
-  const baseURL = getBaseURL();
-  console.log("baseURL", baseURL);
+  const baseURL = getAppBasePath();
 
   // Handle Login Success
   useEffect(() => {
@@ -72,7 +70,7 @@ function App() {
   const getDefaultRoute = () => {
     const role = getUserRole();
     switch(role) {
-      case 'Controller':
+      case 'Reconciler':
         return '/dashboard';
       case 'Counter':
         return '/counter';
@@ -107,16 +105,24 @@ function App() {
                   <Route path="/checker-logs" element={<CheckerLogs />} />
                   <Route path="/count-review/:location_id" element={<CountReviewPage />} />
                   <Route path="/check-review/:location_id" element={<CheckReviewPage />} />
+                  <Route path="/reconciliation/counter/:location_id" element={<ReconciliationCounterPage />} />
+                  <Route path="/reconciliation/checker/:location_id" element={<ReconciliationCheckerPage />} />
                   <Route path="/reconciliation/:location_id" element={<ReconciliationPage />} />
                   <Route path="/reconciliation-records/:locationId" element={<ReconciliationRecords />} />
                   <Route path="/adjustment" element={<AdjustmentPage />} />
+                  <Route path="/stock-available" element={<StockAvailable />} />
                   {/* <Route path="/checker/12" element={<CheckerPage />} /> */}
                   <Route path="/assigned-counters" element={<AssignedPage />} />
                   <Route path="/assigned-checkers" element={<AssignedChecker />} />
                   <Route path="/teams" element={<AddTeam />} />
                   {/* If user tries to access login while authenticated, redirect based on role */}
                   <Route path="/login" element={<Navigate to={getDefaultRoute()} />} />
+                  {/* route for reconciliation report */}
+                  <Route path="/reports/reconciliation" element={<ReconciliationReport />} />
+                  {/* report page */}
+                  <Route path="/reports/reconciliation/view" element={<ReconciliationReportView />} />
                   {/* Redirect to role-appropriate page for any other routes */}
+
                   <Route path="*" element={<Navigate to={getDefaultRoute()} />} />
                 </Routes>
               </Navigations>

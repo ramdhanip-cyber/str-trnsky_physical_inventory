@@ -29,6 +29,7 @@ import { Save, Close, Add, Delete } from "@mui/icons-material";
 interface Transaction {
   transaction_id: number;
   tag_id: string;
+  sys_tag_no?: string;
   form: string;
   grade: string;
   size: string;
@@ -44,6 +45,7 @@ interface Transaction {
   mill?: string;
   heat?: string;
   type?: string;
+  location?: string;
 }
 
 interface Bundle {
@@ -81,6 +83,7 @@ const EditTransactionDialog: React.FC<EditTransactionDialogProps> = ({
 }) => {
   const theme = useTheme();
   const [totalQuantity, setTotalQuantity] = useState<number>(0);
+  const [error] = useState<string | null>(null);
 
   useEffect(() => {
     if (transaction) {
@@ -102,6 +105,39 @@ const EditTransactionDialog: React.FC<EditTransactionDialogProps> = ({
     onSave();
   };
 
+
+  // Match the visual style used on the Counter page (StyledTextField)
+  const modernFieldSx = {
+    '& .MuiInputLabel-root': {
+      fontWeight: 500,
+      '&.Mui-focused': {
+        color: theme.palette.primary.main || '#0088FE',
+      },
+    },
+    '& .MuiOutlinedInput-root': {
+      borderRadius: '12px',
+      backgroundColor: theme.palette.background.paper,
+      transition: 'all 0.3s ease',
+      '&:hover': {
+        backgroundColor: alpha(theme.palette.primary.main || '#0088FE', 0.02),
+        '& .MuiOutlinedInput-notchedOutline': {
+          borderColor: alpha(theme.palette.primary.main || '#0088FE', 0.3),
+        },
+      },
+      '&.Mui-focused': {
+        backgroundColor: alpha(theme.palette.primary.main || '#0088FE', 0.04),
+        '& .MuiOutlinedInput-notchedOutline': {
+          borderColor: theme.palette.primary.main || '#0088FE',
+          borderWidth: '2px',
+        },
+      },
+    },
+    '& .MuiInputBase-input': {
+      fontSize: '14px',
+      padding: '10px 12px',
+    },
+  };
+
   if (!transaction) return null;
 
   return (
@@ -117,43 +153,107 @@ const EditTransactionDialog: React.FC<EditTransactionDialogProps> = ({
         }
       }}
     >
-      <DialogTitle sx={{ 
-        borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
-        pb: 2
-      }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <DialogTitle
+        sx={{
+          p: 3,
+          background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.95)} 0%, ${alpha(
+            theme.palette.primary.dark,
+            0.92
+          )} 100%)`,
+          color: theme.palette.primary.contrastText,
+          borderBottom: `1px solid ${alpha(theme.palette.divider, 0.15)}`
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
           <Box>
-            <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
+            <Typography variant="h6" component="div" sx={{ fontWeight: 800, letterSpacing: '-0.01em' }}>
               Edit Transaction #{transaction.transaction_id}
             </Typography>
-            <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Tag ID: {transaction.tag_id}
+            <Typography variant="body2" sx={{ mt: 0.5, opacity: 0.92 }}>
+              Tag ID: <Box component="span" sx={{ fontWeight: 800 }}>{transaction.tag_id}</Box>
               {transaction.verified && (
-                <Chip 
-                  label="Verified" 
-                  size="small" 
-                  color="success" 
-                  sx={{ ml: 1 }} 
+                <Chip
+                  label="Verified"
+                  size="small"
+                  color="success"
+                  sx={{
+                    ml: 1,
+                    bgcolor: alpha(theme.palette.success.main, 0.18),
+                    color: theme.palette.success.contrastText
+                  }}
                 />
               )}
             </Typography>
           </Box>
-          <Chip 
-            label={`Total Quantity: ${totalQuantity}`}
-            color="primary"
-            variant="outlined"
-            sx={{ fontWeight: 600 }}
-          />
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Chip
+              label={`Total Qty: ${totalQuantity}`}
+              color="primary"
+              variant="outlined"
+              sx={{ fontWeight: 800, borderColor: alpha(theme.palette.common.white, 0.35) }}
+            />
+            <IconButton
+              onClick={onClose}
+              size="small"
+              sx={{
+                color: theme.palette.common.white,
+                bgcolor: alpha(theme.palette.common.white, 0.12),
+                ':hover': { bgcolor: alpha(theme.palette.common.white, 0.18) },
+                borderRadius: 2
+              }}
+            >
+              <Close fontSize="small" />
+            </IconButton>
+          </Box>
         </Box>
       </DialogTitle>
       
-      <DialogContent sx={{ mt: 2, p: 3 }}>
-        <Box sx={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(2, 1fr)', 
-          gap: 3,
-          mb: 3
-        }}>
+      <DialogContent sx={{ p: 3, pt: 2 }}>
+        {error && (
+          <Box sx={{ mb: 2, p: 2, backgroundColor: 'error.light', borderRadius: 1, color: 'error.contrastText' }}>
+            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+              ⚠️ {error}
+            </Typography>
+          </Box>
+        )}
+        <Box
+          sx={{
+            mb: 3,
+            p: 2.5,
+            borderRadius: 3,
+            bgcolor: alpha(theme.palette.primary.main || '#0088FE', 0.02),
+            border: `1px solid ${alpha(theme.palette.primary.main || '#0088FE', 0.1)}`
+          }}
+        >
+          <Typography
+            variant="subtitle2"
+            sx={{
+              fontWeight: 800,
+              mb: 2,
+              color: theme.palette.text.secondary,
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em'
+            }}
+          >
+            Core details
+          </Typography>
+
+          <Box sx={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(2, 1fr)',
+            gap: 3
+          }}>
+          <Box sx={{ gridColumn: 'span 2' }}>
+            <TextField
+              label="System Tag No"
+              value={transaction.sys_tag_no || ''}
+              onChange={(e) => handleFieldChange('sys_tag_no', e.target.value)}
+              fullWidth
+              size="small"
+              sx={modernFieldSx}
+            />
+          </Box>
           <TextField
             label="Form"
             value={transaction.form}
@@ -161,12 +261,7 @@ const EditTransactionDialog: React.FC<EditTransactionDialogProps> = ({
             fullWidth
             size="small"
             required
-            sx={{ 
-              '& .MuiInputBase-input': {
-                fontSize: '14px',
-                padding: '8px 12px'
-              }
-            }}
+            sx={modernFieldSx}
           />
           <TextField
             label="Grade"
@@ -175,12 +270,7 @@ const EditTransactionDialog: React.FC<EditTransactionDialogProps> = ({
             fullWidth
             size="small"
             required
-            sx={{ 
-              '& .MuiInputBase-input': {
-                fontSize: '14px',
-                padding: '8px 12px'
-              }
-            }}
+            sx={modernFieldSx}
           />
           <TextField
             label="Size"
@@ -189,12 +279,7 @@ const EditTransactionDialog: React.FC<EditTransactionDialogProps> = ({
             fullWidth
             size="small"
             required
-            sx={{ 
-              '& .MuiInputBase-input': {
-                fontSize: '14px',
-                padding: '8px 12px'
-              }
-            }}
+            sx={modernFieldSx}
           />
           <TextField
             label="Width"
@@ -204,12 +289,7 @@ const EditTransactionDialog: React.FC<EditTransactionDialogProps> = ({
             size="small"
             required
             type="number"
-            sx={{ 
-              '& .MuiInputBase-input': {
-                fontSize: '14px',
-                padding: '8px 12px'
-              }
-            }}
+            sx={modernFieldSx}
           />
           <TextField
             label="Finish"
@@ -218,6 +298,7 @@ const EditTransactionDialog: React.FC<EditTransactionDialogProps> = ({
             fullWidth
             size="small"
             required
+            sx={modernFieldSx}
           />
           <TextField
             label="Ext. Finish"
@@ -225,6 +306,7 @@ const EditTransactionDialog: React.FC<EditTransactionDialogProps> = ({
             onChange={(e) => handleFieldChange('ext_finish', e.target.value)}
             fullWidth
             size="small"
+            sx={modernFieldSx}
           />
           <TextField
             label="Length"
@@ -234,6 +316,7 @@ const EditTransactionDialog: React.FC<EditTransactionDialogProps> = ({
             size="small"
             required
             type="number"
+            sx={modernFieldSx}
           />
           <TextField
             label="Mill"
@@ -241,6 +324,7 @@ const EditTransactionDialog: React.FC<EditTransactionDialogProps> = ({
             onChange={(e) => handleFieldChange('mill', e.target.value)}
             fullWidth
             size="small"
+            sx={modernFieldSx}
           />
           <TextField
             label="Heat"
@@ -248,6 +332,7 @@ const EditTransactionDialog: React.FC<EditTransactionDialogProps> = ({
             onChange={(e) => handleFieldChange('heat', e.target.value)}
             fullWidth
             size="small"
+            sx={modernFieldSx}
           />
           <TextField
             label="Type"
@@ -255,6 +340,15 @@ const EditTransactionDialog: React.FC<EditTransactionDialogProps> = ({
             onChange={(e) => handleFieldChange('type', e.target.value)}
             fullWidth
             size="small"
+            sx={modernFieldSx}
+          />
+          <TextField
+            label="Location"
+            value={transaction.location || ''}
+            onChange={(e) => handleFieldChange('location', e.target.value)}
+            fullWidth
+            size="small"
+            sx={modernFieldSx}
           />
           <FormControl fullWidth size="small">
             <InputLabel>Count Type</InputLabel>
@@ -262,8 +356,9 @@ const EditTransactionDialog: React.FC<EditTransactionDialogProps> = ({
               value={transaction.count_type}
               onChange={(e) => handleFieldChange('count_type', e.target.value)}
               label="Count Type"
+              sx={modernFieldSx}
             >
-                              <MenuItem value="pcs">Pieces</MenuItem>
+              <MenuItem value="piece">Pieces</MenuItem>
               <MenuItem value="bundle">Bundle</MenuItem>
             </Select>
           </FormControl>
@@ -275,23 +370,42 @@ const EditTransactionDialog: React.FC<EditTransactionDialogProps> = ({
             fullWidth
             size="small"
             disabled={transaction.count_type === 'bundle'}
-                            required={transaction.count_type === 'piece'}
+            required={transaction.count_type === 'piece'}
+            sx={modernFieldSx}
           />
+          </Box>
         </Box>
 
-        {/* Additional Information Section */}
-        <Box sx={{ mt: 3, mb: 2 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
-            Additional Information
+        <Box
+          sx={{
+            mt: 3,
+            mb: 3,
+            p: 2.5,
+            borderRadius: 3,
+            bgcolor: alpha(theme.palette.grey[500], 0.04),
+            border: `1px solid ${alpha(theme.palette.divider, 0.15)}`
+          }}
+        >
+          <Typography
+            variant="subtitle2"
+            sx={{
+              fontWeight: 800,
+              mb: 2,
+              color: theme.palette.text.secondary,
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em'
+            }}
+          >
+            Notes
           </Typography>
-        </Box>
 
-        <Box sx={{ 
-          display: 'grid', 
-          gridTemplateColumns: '1fr', 
-          gap: 2,
-          mb: 3
-        }}>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: '1fr',
+              gap: 2
+            }}
+          >
           <TextField
             label="Quality (Remarks)"
             value={transaction.remarks || ''}
@@ -312,6 +426,7 @@ const EditTransactionDialog: React.FC<EditTransactionDialogProps> = ({
             rows={2}
             placeholder="Enter additional comments..."
           />
+          </Box>
         </Box>
 
         {transaction.count_type === 'bundle' && (
@@ -404,7 +519,12 @@ const EditTransactionDialog: React.FC<EditTransactionDialogProps> = ({
         <Button 
           onClick={onClose} 
           startIcon={<Close />}
-          sx={{ borderRadius: 2 }}
+          sx={{ 
+            borderRadius: 2,
+            textTransform: 'none',
+            fontWeight: 600,
+            padding: '10px 24px'
+          }}
         >
           Cancel
         </Button>
@@ -413,11 +533,22 @@ const EditTransactionDialog: React.FC<EditTransactionDialogProps> = ({
           variant="contained" 
           startIcon={isSaving ? <CircularProgress size={20} /> : <Save />}
           disabled={isSaving}
-          sx={{ borderRadius: 2 }}
+          sx={{ 
+            borderRadius: 2,
+            textTransform: 'none',
+            fontWeight: 600,
+            padding: '10px 24px',
+            boxShadow: 'none',
+            '&:hover': {
+              transform: 'translateY(-1px)',
+              boxShadow: `0 4px 16px ${alpha(theme.palette.primary.main || '#0088FE', 0.3)}`
+            }
+          }}
         >
           {isSaving ? 'Saving...' : 'Save Changes'}
         </Button>
       </DialogActions>
+
     </Dialog>
   );
 };

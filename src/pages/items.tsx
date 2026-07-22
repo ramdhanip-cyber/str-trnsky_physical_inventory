@@ -94,10 +94,14 @@ const AnalyseInventoryPage: React.FC = () => {
     try {
       const response = await servicesAPI.getAvailableWarehouses();
       if (response.data.success) {
-        setAvailableWarehouses(response.data.data);
+        setAvailableWarehouses(response.data.data || []);
+      } else {
+        console.error('Failed to fetch warehouses:', response.data.message);
+        setAvailableWarehouses([]);
       }
     } catch (error) {
       console.error('Failed to fetch available warehouses:', error);
+      setAvailableWarehouses([]);
     }
   };
 
@@ -628,11 +632,11 @@ const AnalyseInventoryPage: React.FC = () => {
                 return `${selected.length} warehouses selected`;
               }}
             >
-              {availableWarehouses.map((warehouse) => (
+              {availableWarehouses?.map((warehouse) => (
                 <MenuItem key={warehouse} value={warehouse}>
                   {warehouse}
                 </MenuItem>
-              ))}
+              )) || []}
             </Select>
           </FormControl>
           

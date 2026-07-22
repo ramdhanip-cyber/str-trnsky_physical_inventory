@@ -28,7 +28,11 @@ import {
   FormControl,
   InputLabel,
   Select,
-  MenuItem
+  MenuItem,
+  Checkbox,
+  Menu,
+  ListItemIcon,
+  ListItemText,
 } from '@mui/material';
 import {
   ChevronLeft,
@@ -41,7 +45,8 @@ import {
   KeyboardArrowUp,
   Edit,
   Save,
-  Cancel
+  Cancel,
+  MoreVert,
 } from '@mui/icons-material';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSnackbar } from 'notistack';
@@ -51,6 +56,24 @@ import { Transaction } from '../types/index';
 import { AxiosError } from 'axios';
 import * as XLSX from 'xlsx';
 
+const formatDateMMDDYYYY = (dateString: string): string => {
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return 'N/A';
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${month}/${day}/${year}`;
+};
+
+const getTransactionQty = (transaction: Transaction): number => {
+  if (transaction.count_type === 'bundle') {
+    return transaction.bundles?.reduce(
+      (total, bundle) => total + (bundle.num_of_bundle * bundle.bundle_count),
+      0
+    ) || 0;
+  }
+  return transaction.qty || 0;
+};
 
 interface Section {
   section_id: number;
@@ -109,6 +132,27 @@ const CheckerReviewPageImproved: React.FC = () => {
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [transactionIdMap, setTransactionIdMap] = useState<Map<string, number>>(new Map());
+  const [reconcileDialogOpen, setReconcileDialogOpen] = useState(false);
+  const [reconcileIncludeTag, setReconcileIncludeTag] = useState(true);
+  const [reconcileIncludeLocation, setReconcileIncludeLocation] = useState(true);
+  const [reconcileIncludeMill, setReconcileIncludeMill] = useState(true);
+  const [reconcileIncludeHeat, setReconcileIncludeHeat] = useState(true);
+  const [reconcileIncludeType, setReconcileIncludeType] = useState(true);
+  const [reconcileIncludeQuality, setReconcileIncludeQuality] = useState(true);
+  const [exportMenuAnchor, setExportMenuAnchor] = useState<null | HTMLElement>(null);
+  const [exportMenuPosition, setExportMenuPosition] = useState<{ top: number; left: number } | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  const getReconcileCompareFields = (): string[] => {
+    const fields: string[] = [];
+    if (reconcileIncludeTag) fields.push('sys_tag_no');
+    if (reconcileIncludeLocation) fields.push('location');
+    if (reconcileIncludeMill) fields.push('mill');
+    if (reconcileIncludeHeat) fields.push('heat');
+    if (reconcileIncludeType) fields.push('type');
+    if (reconcileIncludeQuality) fields.push('quality');
+    return fields;
+  };
 
   // Fetch sections
   const fetchSections = async () => {
@@ -205,8 +249,19 @@ const CheckerReviewPageImproved: React.FC = () => {
             console.log('First checker transaction sample:', {
               transaction_id: checkerResponse.data[0].transaction_id,
               tag_id: checkerResponse.data[0].tag_id,
+              sys_tag_no: checkerResponse.data[0].sys_tag_no,
               form: checkerResponse.data[0].form,
               role: checkerResponse.data[0].role
+            });
+            // Log all checker transactions to verify sys_tag_no is present
+            checkerResponse.data.forEach((t: any, index: number) => {
+              if (!t.sys_tag_no || t.sys_tag_no.trim() === '') {
+                console.warn(`Checker transaction ${index} missing sys_tag_no:`, {
+                  transaction_id: t.transaction_id,
+                  tag_id: t.tag_id,
+                  sys_tag_no: t.sys_tag_no
+                });
+              }
             });
           }
           console.log(`Section ${section.section_id} - Counter response:`, counterResponse.data);
@@ -359,9 +414,12 @@ const CheckerReviewPageImproved: React.FC = () => {
       return matchesSearch && matchesSection && matchesTeam && matchesForm && 
              matchesGrade && matchesCountType && matchesHasChanges;
     });
+
+    // Order by tag_id (numeric)
+    const sorted = [...filtered].sort((a, b) => (Number(a.tag_id) || 0) - (Number(b.tag_id) || 0));
     
-    console.log('filteredTransactions result:', filtered.length, 'items');
-    return filtered;
+    console.log('filteredTransactions result:', sorted.length, 'items');
+    return sorted;
   }, [allItems, filters]);
 
   // Summary calculations
@@ -416,11 +474,13 @@ const CheckerReviewPageImproved: React.FC = () => {
       }
     });
     
-    return Array.from(grouped.entries()).map(([tagId, group]) => ({
+    const entries = Array.from(grouped.entries()).map(([tagId, group]) => ({
       tagId,
       checker: group.checker,
       counter: group.counter
     }));
+    // Order by tag_id (numeric)
+    return entries.sort((a, b) => Number(a.tagId) - Number(b.tagId));
   };
 
   // Handle row expansion
@@ -453,7 +513,76 @@ const CheckerReviewPageImproved: React.FC = () => {
     setTransactions([]);
   };
 
-  const handleExport = () => {
+  const handleExportMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    const target = event.currentTarget;
+    const rect = target.getBoundingClientRect();
+    const menuWidth = 280;
+    setExportMenuAnchor(target);
+    setExportMenuPosition({
+      top: rect.bottom + 8,
+      left: Math.max(8, rect.right - menuWidth),
+    });
+  };
+
+  const handleExportMenuClose = () => {
+    setExportMenuAnchor(null);
+    setExportMenuPosition(null);
+  };
+
+  const checkerCountTransactions = useMemo(
+    () => filteredTransactions.filter((t) => t.role === 'Checker' || t.role === 'Recheck'),
+    [filteredTransactions]
+  );
+
+  const handleDownloadCount = async () => {
+    handleExportMenuClose();
+    setExporting(true);
+
+    try {
+      const data = checkerCountTransactions.map((transaction) => ({
+        'Tag No': transaction.sys_tag_no?.trim() ? transaction.sys_tag_no : transaction.tag_id,
+        'Form': transaction.form || '',
+        'Grade': transaction.grade || '',
+        'Size': transaction.size || '',
+        'Finish': transaction.finish || '',
+        'Ext Finish': transaction.ext_finish || '',
+        'Width': transaction.width || '',
+        'Length': transaction.length || '',
+        'Mill': transaction.mill || '',
+        'Heat': transaction.heat || '',
+        'Total Qty': getTransactionQty(transaction),
+        'Count Type': transaction.count_type || '',
+        'Type': transaction.type || '',
+        'Location': transaction.location || '',
+        'Quality': transaction.quality || '',
+        'Remarks': transaction.remarks || '',
+        'Additional Comments': transaction.ad_cmts || '',
+        'Location Description': transaction.location_desc || '',
+        'Section Description': transaction.section_desc || '',
+        'Warehouse': transaction.warehouse || '',
+        'Branch': transaction.branch || '',
+        'Team': transaction.team_name || '',
+        'Counted By': transaction.counted_by || '',
+        'Role': transaction.role || '',
+        'Counted At': transaction.created_at ? formatDateMMDDYYYY(transaction.created_at) : 'N/A',
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Checker Count');
+      const fileName = `Checker_Count_Location_${location_id}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      enqueueSnackbar('Checker count exported successfully!', { variant: 'success' });
+    } catch (error) {
+      console.error('Error exporting checker count:', error);
+      enqueueSnackbar('Failed to export checker count. Please try again.', { variant: 'error' });
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExportComparison = () => {
+    handleExportMenuClose();
     try {
       // Prepare data for export
       const exportData = getGroupedTransactions().map(({ tagId, checker, counter }) => {
@@ -561,7 +690,7 @@ const CheckerReviewPageImproved: React.FC = () => {
     }
   };
 
-  const handleReconcile = async () => {
+  const handleReconcile = async (compareFields: string[] = getReconcileCompareFields()) => {
     try {
       setLoading(prev => ({ ...prev, transactions: true }));
       
@@ -581,7 +710,9 @@ const CheckerReviewPageImproved: React.FC = () => {
       const payload = {
         location_id: location_id,
         warehouse: warehouse,
-        branch: branch
+        branch: branch,
+        role: 'Checker',  // Compare with Checker transactions only
+        compare_fields: compareFields
       };
   
       // Send to backend for reconciliation
@@ -590,6 +721,25 @@ const CheckerReviewPageImproved: React.FC = () => {
       const reconciliationResults = response.data;
       console.log('Reconciliation results:', reconciliationResults);
 
+      // Attempt to auto-save the reconciliation data right away
+      try {
+        const saveData = {
+          location_id: location_id,
+          warehouse: warehouse,
+          branch: branch,
+          summary_data: reconciliationResults.summary,
+          items_data: reconciliationResults.items,
+          checker_data: reconciliationResults.checker_data || [],
+          orphaned_checker_data: reconciliationResults.orphaned_checker_data || [],
+          notes: 'Auto-saved during reconciliation from checker review page'
+        };
+        
+        await servicesAPI.saveReconciliationWithComparison(saveData);
+        console.log('Reconciliation data successfully auto-saved');
+      } catch (saveError) {
+        console.error('Auto-save failed:', saveError);
+      }
+
       // Transform the data to match expected format
       const transformedData: ReconciliationData = {
         summary: reconciliationResults.summary,
@@ -597,7 +747,8 @@ const CheckerReviewPageImproved: React.FC = () => {
       };
       
       enqueueSnackbar('Reconciliation completed successfully', { variant: 'success' });
-      navigate(`/reconciliation/${location_id}`, { 
+      setReconcileDialogOpen(false);
+      navigate(`/reconciliation/checker/${location_id}`, { 
         state: { reconciliationData: transformedData }
       });
       
@@ -1036,7 +1187,7 @@ const CheckerReviewPageImproved: React.FC = () => {
             <Button
               variant="contained"
               color="primary"
-              onClick={handleReconcile}
+              onClick={() => setReconcileDialogOpen(true)}
               disabled={
                 loading.transactions || 
                 sections.length === 0 || 
@@ -1059,23 +1210,39 @@ const CheckerReviewPageImproved: React.FC = () => {
             </Button>
             <Button
               variant="outlined"
-              startIcon={<Download />}
-              onClick={handleExport}
-              disabled={loading.transactions || transactions.length === 0}
+              onClick={handleExportMenuOpen}
+              endIcon={<MoreVert />}
+              disabled={loading.transactions || filteredTransactions.length === 0 || exporting}
+              sx={{ borderRadius: 2, fontWeight: 600, textTransform: 'none' }}
             >
-              Export
+              {exporting ? 'Exporting...' : 'Export'}
             </Button>
-          </Box>
-          
-          {/* Debug Info */}
-          <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1, fontSize: '0.875rem' }}>
-            <Typography variant="body2" color="text.secondary">
-              <strong>Debug Info:</strong><br />
-              Sections loaded: {sections.length}<br />
-              Section statuses: {sections.map(s => `${s.section_desc}: ${s.status}`).join(', ')}<br />
-              All sections completed: {sections.every(s => s.status === 'Completed') ? 'Yes' : 'No'}<br />
-              Reconcile button disabled: {loading.transactions || sections.length === 0 || !sections.every(s => s.status === 'Completed') ? 'Yes' : 'No'}
-            </Typography>
+            <Menu
+              open={!!exportMenuAnchor}
+              onClose={handleExportMenuClose}
+              anchorReference="anchorPosition"
+              anchorPosition={exportMenuPosition ?? undefined}
+              anchorEl={exportMenuAnchor}
+              disableScrollLock
+              PaperProps={{
+                sx: {
+                  minWidth: 280,
+                  borderRadius: 2,
+                  boxShadow: `0 8px 24px ${alpha(theme.palette.common.black, 0.12)}`,
+                },
+              }}
+            >
+              <MenuItem onClick={handleDownloadCount} disabled={exporting || checkerCountTransactions.length === 0}>
+                <ListItemIcon>
+                  {exporting ? <CircularProgress size={20} /> : <Download fontSize="small" />}
+                </ListItemIcon>
+                <ListItemText primary="Download Count" secondary="Checker verified counts (Excel)" />
+              </MenuItem>
+              <MenuItem onClick={handleExportComparison} disabled={exporting || getGroupedTransactions().length === 0}>
+                <ListItemIcon><CompareArrows fontSize="small" /></ListItemIcon>
+                <ListItemText primary="Export Comparison" secondary="Checker vs counter with changes" />
+              </MenuItem>
+            </Menu>
           </Box>
         </Box>
       </Paper>
@@ -1120,9 +1287,78 @@ const CheckerReviewPageImproved: React.FC = () => {
             <CircularProgress />
           </Box>
         ) : (
-          <TableContainer sx={{ maxHeight: '70vh' }}>
-            <Table size="small">
-              <TableHead>
+          <Box>
+            {/* Color Legend */}
+            <Box sx={{ 
+              display: 'flex', 
+              gap: 2, 
+              mb: 2, 
+              p: 2, 
+              bgcolor: alpha(theme.palette.background.paper, 0.5),
+              borderRadius: 1,
+              flexWrap: 'wrap',
+              alignItems: 'center'
+            }}>
+              <Typography variant="body2" sx={{ fontWeight: 600, mr: 1 }}>
+                Color Legend:
+              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box 
+                  sx={{ 
+                    width: 20, 
+                    height: 20, 
+                    bgcolor: 'inherit', 
+                    border: '1px solid',
+                    borderColor: theme.palette.divider,
+                    borderRadius: 0.5
+                  }} 
+                />
+                <Typography variant="body2">Checker Verified</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box 
+                  sx={{ 
+                    width: 20, 
+                    height: 20, 
+                    bgcolor: alpha(theme.palette.warning.main, 0.05),
+                    border: '1px solid',
+                    borderColor: theme.palette.warning.main,
+                    borderRadius: 0.5
+                  }} 
+                />
+                <Typography variant="body2">Counter Only (Not Verified)</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box 
+                  sx={{ 
+                    width: 20, 
+                    height: 20, 
+                    bgcolor: alpha(theme.palette.error.main, 0.1),
+                    border: '1px solid',
+                    borderColor: theme.palette.error.main,
+                    borderRadius: 0.5
+                  }} 
+                />
+                <Typography variant="body2">Recheck Item</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box 
+                  sx={{ 
+                    width: 20, 
+                    height: 20, 
+                    bgcolor: alpha(theme.palette.info.main, 0.05),
+                    border: '1px solid',
+                    borderColor: theme.palette.info.main,
+                    borderRadius: 0.5
+                  }} 
+                />
+                <Typography variant="body2">Counter (Expanded View)</Typography>
+              </Box>
+            </Box>
+            
+            <TableContainer sx={{ maxHeight: '70vh' }}>
+              <Table size="small">
+                <TableHead>
                 <TableRow>
                   <TableCell width="50px"></TableCell>
                   <TableCell>Tag</TableCell>
@@ -1150,23 +1386,137 @@ const CheckerReviewPageImproved: React.FC = () => {
               </TableHead>
               <TableBody>
                 {getGroupedTransactions().map(({ tagId, checker, counter }) => {
-                  if (!checker) return null; // Only show rows with checker data
-                  
+                  // Show all transactions: checker rows (with or without counter) and counter-only rows
                   const isExpanded = expandedRows.has(parseInt(tagId));
                   const hasCounter = !!counter;
-                  // Get transaction_id from map if not available in checker object
-                  const checkerTransactionId = checker.transaction_id || transactionIdMap.get(checker.tag_id);
-                  const isEditing = editingId === checkerTransactionId;
+                  const isCounterOnly = !checker && !!counter; // Counter transaction without checker verification
+                  
+                  // Get transaction_id from map if not available
+                  const transactionId = checker 
+                    ? (checker.transaction_id || transactionIdMap.get(checker.tag_id))
+                    : (counter?.transaction_id || (counter?.tag_id ? transactionIdMap.get(counter.tag_id) : undefined));
+                  const isEditing = editingId === transactionId;
                   
                   // Debug logging for edit state
-                  if (checker.tag_id === '504') { // Debug for the specific transaction
+                  if (checker && checker.tag_id === '504') { // Debug for the specific transaction
                     console.log('Edit state debug for tag_id 504:', {
                       editingId,
-                      checkerTransactionId,
+                      transactionId,
                       isEditing,
                       editingTransaction: editingTransaction ? 'exists' : 'null'
                     });
                   }
+                  
+                  // If counter-only (no checker verification), render counter row
+                  if (isCounterOnly && counter) {
+                    return (
+                      <TableRow 
+                        key={tagId}
+                        hover
+                        sx={{
+                          bgcolor: alpha(theme.palette.warning.main, 0.05),
+                          '&:hover': {
+                            bgcolor: alpha(theme.palette.warning.main, 0.1)
+                          }
+                        }}
+                      >
+                        <TableCell></TableCell>
+                        <TableCell>
+                          <Chip 
+                            label={`#${counter.sys_tag_no || counter.tag_id || tagId}`}
+                            size="small"
+                            color="warning"
+                            variant="outlined"
+                            sx={{ fontWeight: 600 }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Chip 
+                            label={counter.section_desc || '-'} 
+                            size="small" 
+                            variant="outlined"
+                            color="warning"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Chip 
+                            label={counter.form || '-'} 
+                            size="small" 
+                            variant="outlined"
+                            sx={{ fontWeight: 500 }}
+                          />
+                        </TableCell>
+                        <TableCell>{counter.grade || '-'}</TableCell>
+                        <TableCell>{counter.size || '-'}</TableCell>
+                        <TableCell>{counter.finish || '-'}</TableCell>
+                        <TableCell>{counter.ext_finish || '-'}</TableCell>
+                        <TableCell>{counter.width || '-'}</TableCell>
+                        <TableCell>{counter.length || '-'}</TableCell>
+                        <TableCell>{counter.mill || '-'}</TableCell>
+                        <TableCell>{counter.heat || '-'}</TableCell>
+                        <TableCell>
+                          <Chip 
+                            label={counter.qty || 0}
+                            color={counter.count_type === 'bundle' ? 'primary' : 'default'}
+                            variant="outlined"
+                            size="small"
+                            sx={{ fontWeight: 600 }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Chip 
+                            label={counter.count_type || '-'}
+                            size="small"
+                            color={counter.count_type === 'bundle' ? 'primary' : 'secondary'}
+                          />
+                        </TableCell>
+                        <TableCell>{counter.type || '-'}</TableCell>
+                        <TableCell>{counter.location || '-'}</TableCell>
+                        <TableCell>{counter.remarks || '-'}</TableCell>
+                        <TableCell>
+                          <Chip 
+                            label={counter.team_name || '-'} 
+                            size="small" 
+                            sx={{ fontWeight: 500 }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <Avatar sx={{ 
+                              width: 24, 
+                              height: 24, 
+                              mr: 1,
+                              fontSize: '0.75rem',
+                              bgcolor: alpha(theme.palette.info.main, 0.1),
+                              color: theme.palette.info.dark
+                            }}>
+                              {counter.counted_by ? counter.counted_by.charAt(0) : '?'}
+                            </Avatar>
+                            {counter.counted_by || '-'}
+                          </Box>
+                        </TableCell>
+                        <TableCell>
+                          <Chip 
+                            label={counter.role || 'Counter'} 
+                            size="small" 
+                            color="info"
+                            variant="outlined"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" noWrap>
+                            {counter.created_at ? new Date(counter.created_at).toLocaleDateString() : '-'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          {/* No edit action for counter-only items */}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }
+                  
+                  // If checker exists, render checker row (with optional counter expansion)
+                  if (!checker) return null;
                   
                   return (
                     <React.Fragment key={tagId}>
@@ -1194,7 +1544,7 @@ const CheckerReviewPageImproved: React.FC = () => {
                         <TableCell>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, position: 'relative' }}>
                             <Chip 
-                              label={`#${tagId}`}
+                              label={`#${checker.sys_tag_no || checker.tag_id || tagId}`}
                               size="small"
                               color="primary"
                               variant="outlined"
@@ -1403,8 +1753,17 @@ const CheckerReviewPageImproved: React.FC = () => {
                             checker.type || '-'
                           )}
                         </TableCell>
-                        <TableCell>
-                          {checker.location || '-'}
+                        <TableCell sx={{ bgcolor: getCellBackgroundColor('location', checker, counter) }}>
+                          {isEditing ? (
+                            <TextField
+                              size="small"
+                              value={editingTransaction?.location || ''}
+                              onChange={(e) => handleTransactionChange('location', e.target.value)}
+                              sx={{ minWidth: 100 }}
+                            />
+                          ) : (
+                            checker.location || '-'
+                          )}
                         </TableCell>
                         <TableCell sx={{ bgcolor: getCellBackgroundColor('remarks', checker, counter) }}>
                           {isEditing ? (
@@ -1481,7 +1840,7 @@ const CheckerReviewPageImproved: React.FC = () => {
                           <TableCell></TableCell>
                           <TableCell>
                             <Chip 
-                              label={`#${tagId}`}
+                              label={`#${counter.sys_tag_no || counter.tag_id || tagId}`}
                               size="small"
                               color="info"
                               variant="outlined"
@@ -1577,8 +1936,42 @@ const CheckerReviewPageImproved: React.FC = () => {
               </TableBody>
             </Table>
           </TableContainer>
+          </Box>
         )}
       </Paper>
+
+      <Dialog
+        open={reconcileDialogOpen}
+        onClose={() => setReconcileDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Reconcile options</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Choose fields to include when matching Checker counted rows with system rows.
+          </Typography>
+          {[
+            { label: 'Tag / System Tag No', checked: reconcileIncludeTag, setChecked: setReconcileIncludeTag },
+            { label: 'Location', checked: reconcileIncludeLocation, setChecked: setReconcileIncludeLocation },
+            { label: 'Mill', checked: reconcileIncludeMill, setChecked: setReconcileIncludeMill },
+            { label: 'Heat', checked: reconcileIncludeHeat, setChecked: setReconcileIncludeHeat },
+            { label: 'Type', checked: reconcileIncludeType, setChecked: setReconcileIncludeType },
+            { label: 'Quality', checked: reconcileIncludeQuality, setChecked: setReconcileIncludeQuality }
+          ].map((field) => (
+            <Box key={field.label} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 0.5 }}>
+              <Typography variant="body2">{field.label}</Typography>
+              <Checkbox checked={field.checked} onChange={() => field.setChecked((v: boolean) => !v)} />
+            </Box>
+          ))}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setReconcileDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={() => handleReconcile(getReconcileCompareFields())}>
+            Reconcile
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Change Details Dialog */}
       <Dialog 

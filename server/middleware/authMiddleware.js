@@ -1,8 +1,6 @@
-const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
 const dotenv = require("dotenv");
-const { verifyToken } = require("../controllers/authController");
 
 dotenv.config();
 
@@ -63,17 +61,26 @@ const fetchNewAccessToken = async () => {
             console.log("Created temp directory:", tempDir);
         }
 
-        const response = await axios.post(process.env.OAUTH_TOKEN_URL, new URLSearchParams({
+        const body = new URLSearchParams({
             grant_type: "client_credentials",
             client_id: process.env.OAUTH_CLIENT_ID,
             client_secret: process.env.OAUTH_CLIENT_SECRET,
-        }), {
-            headers: { "Content-Type": "application/x-www-form-urlencoded" }
         });
+        const response = await fetch(process.env.OAUTH_TOKEN_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: body.toString(),
+        });
+        if (!response.ok) {
+            const errText = await response.text();
+            console.error("OAuth token HTTP error:", response.status, errText);
+            throw new Error("Failed to get access token");
+        }
+        const tokenJson = await response.json();
 
         const tokenData = {
-            access_token: response.data.access_token,
-            expires_at: Date.now() + response.data.expires_in * 1000
+            access_token: tokenJson.access_token,
+            expires_at: Date.now() + tokenJson.expires_in * 1000
         };
 
         // Write token data with proper error handling

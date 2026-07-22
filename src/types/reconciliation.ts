@@ -1,4 +1,6 @@
 export interface ReconciliationItem {
+  tag_no?: string;
+  prd_tag_no?: string;
   form: string;
   grade: string;
   size: string;
@@ -23,7 +25,8 @@ export interface ReconciliationItem {
   total_qty: number; // Total quantity from database query
   counted_qty: number;
   variance: number;
-  status: 'Match' | 'Overcount' | 'Undercount' | 'Not Counted' | 'Counted Not In System' | 'Rechecking in Progress' | 'Rechecked';
+  difference?: number;
+  status: 'Match' | 'Matched' | 'Overcount' | 'Undercount' | 'Not Counted' | 'Counted Not In System' | 'Rechecking in Progress' | 'Rechecked';
   transaction_count?: number;
   teams?: string;
   counters?: string;
@@ -94,6 +97,10 @@ export interface ReconciliationSummary {
   total_system_quantity: number;
   total_counted_items?: number;
   total_reconciliation_items?: number;
+  totalItems?: number;
+  matchedItems?: number;
+  discrepancies?: number;
+  missingItems?: number;
   items_matched?: number;
   overcounts?: number;
   undercounts?: number;

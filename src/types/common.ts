@@ -5,7 +5,9 @@ export interface Bundle {
 }
 
 export interface Transaction {
+  transaction_id?: number;
   tag_id: number | string;
+  sys_tag_no?: string;
   form: string;
   grade: string;
   size: string;
@@ -13,7 +15,14 @@ export interface Transaction {
   ext_finish: string;
   width: string;
   length: string;
+  mill?: string;
+  heat?: string;
+  location?: string;
+  type?: string;
   remarks?: string;
+  ad_cmts?: string;
+  page_number?: string;
+  serial_number?: string;
   qty?: number;
   quantity?: number;
   count_type: 'bundle' | 'piece';

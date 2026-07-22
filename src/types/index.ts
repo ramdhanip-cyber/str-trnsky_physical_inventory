@@ -10,6 +10,7 @@ export interface User {
 export interface Transaction {
   transaction_id: number;
   tag_id: string;
+  sys_tag_no?: string;
   count_type: 'bundle' | 'piece';
   quantity: number;
   created_at: string;
@@ -90,6 +91,7 @@ export interface FormData {
   grade: string;
   size: string;
   width: string;
+  sysTag: string;
   length: string;
   finish: string;
   extendedFinish: string;

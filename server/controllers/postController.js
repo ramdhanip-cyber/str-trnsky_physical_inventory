@@ -1,5 +1,5 @@
 const pool = require("../database/db");
-const axios = require('axios');
+const { runErpSql } = require("../database/erpOdbc");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const { createLocation } = require("../models/locationModel");
@@ -353,11 +353,11 @@ exports.deleteUser = async (req, res) => {
 exports.addLocation = async (req, res) => {
     try {
       const { location_desc, warehouse, branch } = req.body;
-      if (!location_desc || !warehouse || !branch) {
+      if (!location_desc || !warehouse) {
         return res.status(400).json({ message: "Location description and warehouse are required" });
       }
-  
-      const newLocation = await createLocation(location_desc, warehouse, branch);
+
+      const newLocation = await createLocation(location_desc, warehouse, branch ?? null);
       res.status(201).json(newLocation);
     } catch (error) {
       res.status(500).json({ message: "Error creating location", error });
@@ -442,15 +442,60 @@ exports.addLocation = async (req, res) => {
       }
   }
 
-  exports.deleteLocation = async (req,res) => {
+  exports.deleteLocation = async (req, res) => {
     try {
-        const { location_id } = req.params;
-        await pool.query("DELETE FROM st_locations WHERE location_id = $1", [location_id]);
-        res.status(200).json({ message: "location deleted successfully" });
-      } catch (error) {
-        console.error("Error deleting location:", error);
-        res.status(500).json({ error: "Server error while deleting location" });
+      const { location_id } = req.params;
+      console.log('Deleting location:', location_id);
+      
+      // Start transaction
+      await pool.query('BEGIN');
+      
+      // Check if there are any transactions linked to this location
+      const transactionCheck = await pool.query(
+        'SELECT COUNT(*) as count FROM transactions WHERE location_id = $1',
+        [location_id]
+      );
+      
+      const transactionCount = parseInt(transactionCheck.rows[0].count);
+      
+      if (transactionCount > 0) {
+        await pool.query('ROLLBACK');
+        return res.status(400).json({ 
+          message: `Cannot delete location. There are ${transactionCount} transaction(s) linked to this physical inventory.`,
+          hasTransactions: true,
+          transactionCount 
+        });
       }
+      
+      // Delete assigned items for this location
+      await pool.query("DELETE FROM assigned_items WHERE location_id = $1", [location_id]);
+      
+      // Delete assigned locations (team assignments)
+      await pool.query("DELETE FROM assigned_locations WHERE location_id = $1", [location_id]);
+      
+      // Delete all sections for this location
+      await pool.query("DELETE FROM st_sections WHERE location_id = $1", [location_id]);
+      
+      // Finally, delete the location
+      await pool.query("DELETE FROM st_locations WHERE location_id = $1", [location_id]);
+      
+      // Commit transaction
+      await pool.query('COMMIT');
+      
+      console.log('Location deleted successfully:', location_id);
+      res.status(200).json({ 
+        message: "Physical inventory deleted successfully",
+        success: true 
+      });
+      
+    } catch (error) {
+      await pool.query('ROLLBACK');
+      console.error("Error deleting location:", error);
+      res.status(500).json({ 
+        error: "Server error while deleting physical inventory",
+        message: error.message 
+      });
+    }
   }
 
   exports.assignUserToSubLocation = async (req, res) => {
@@ -677,7 +722,7 @@ exports.postTeams = async (req, res) => {
       }
 
       // Validate tag range values
-      if (!tagRange.from || !tagRange.to) {
+      if (tagRange.from === undefined || tagRange.to === undefined) {
         await pool.query('ROLLBACK');
         return res.status(400).json({ 
           success: false,
@@ -696,12 +741,15 @@ exports.postTeams = async (req, res) => {
         });
       }
 
-      if (tagFrom >= tagTo) {
-        await pool.query('ROLLBACK');
-        return res.status(400).json({ 
-          success: false,
-          message: "Tag 'from' must be less than tag 'to'" 
-        });
+      // Allow 0-0 as default, otherwise tagFrom must be less than tagTo
+      if (tagFrom !== 0 || tagTo !== 0) {
+        if (tagFrom >= tagTo) {
+          await pool.query('ROLLBACK');
+          return res.status(400).json({ 
+            success: false,
+            message: "Tag 'from' must be less than tag 'to'" 
+          });
+        }
       }
 
       // Check for duplicate team name
@@ -718,42 +766,46 @@ exports.postTeams = async (req, res) => {
         });
       }
 
-      // Check for tag range conflicts
-      const existingTagRanges = await pool.query(`
-        SELECT team_id, team_name, tag_from, tag_to 
-        FROM teams 
-        WHERE (
-          ($1 BETWEEN CAST(tag_from AS INTEGER) AND CAST(tag_to AS INTEGER)) OR
-          ($2 BETWEEN CAST(tag_from AS INTEGER) AND CAST(tag_to AS INTEGER)) OR
-          (CAST(tag_from AS INTEGER) BETWEEN $1 AND $2) OR
-          (CAST(tag_to AS INTEGER) BETWEEN $1 AND $2)
-        )
-      `, [tagFrom, tagTo]);
+      // Check for tag range conflicts (skip if both are 0, as 0-0 is the default/unassigned value)
+      if (tagFrom !== 0 || tagTo !== 0) {
+        const existingTagRanges = await pool.query(`
+          SELECT team_id, team_name, tag_from, tag_to 
+          FROM teams 
+          WHERE (
+            ($1 BETWEEN CAST(tag_from AS INTEGER) AND CAST(tag_to AS INTEGER)) OR
+            ($2 BETWEEN CAST(tag_from AS INTEGER) AND CAST(tag_to AS INTEGER)) OR
+            (CAST(tag_from AS INTEGER) BETWEEN $1 AND $2) OR
+            (CAST(tag_to AS INTEGER) BETWEEN $1 AND $2)
+          )
+        `, [tagFrom, tagTo]);
 
-      if (existingTagRanges.rows.length > 0) {
-        const conflictingTeam = existingTagRanges.rows[0];
-        await pool.query('ROLLBACK');
-        return res.status(400).json({ 
-          success: false,
-          message: `Tag range ${tagFrom}-${tagTo} conflicts with existing team "${conflictingTeam.team_name}" (${conflictingTeam.tag_from}-${conflictingTeam.tag_to}). Please choose a different range.`
-        });
+        if (existingTagRanges.rows.length > 0) {
+          const conflictingTeam = existingTagRanges.rows[0];
+          await pool.query('ROLLBACK');
+          return res.status(400).json({ 
+            success: false,
+            message: `Tag range ${tagFrom}-${tagTo} conflicts with existing team "${conflictingTeam.team_name}" (${conflictingTeam.tag_from}-${conflictingTeam.tag_to}). Please choose a different range.`
+          });
+        }
       }
 
-      // Get the highest tag_to value to suggest next available range
-      const maxTagResult = await pool.query(`
-        SELECT MAX(CAST(tag_to AS INTEGER)) as max_tag_to 
-        FROM teams 
-        WHERE tag_to IS NOT NULL AND tag_to != ''
-      `);
+      // Get the highest tag_to value to suggest next available range (skip if tagFrom is 0, as 0-0 is default/unassigned)
+      if (tagFrom !== 0 || tagTo !== 0) {
+        const maxTagResult = await pool.query(`
+          SELECT MAX(CAST(tag_to AS INTEGER)) as max_tag_to 
+          FROM teams 
+          WHERE tag_to IS NOT NULL AND tag_to != ''
+        `);
 
-      const maxTagTo = maxTagResult.rows[0].max_tag_to;
-      if (maxTagTo && tagFrom <= maxTagTo) {
-        const suggestedFrom = maxTagTo + 1;
-        await pool.query('ROLLBACK');
-        return res.status(400).json({ 
-          success: false,
-          message: `Tag range already in use. Next available range starts from ${suggestedFrom}. Please use ${suggestedFrom} or higher for tag 'from'.`
-        });
+        const maxTagTo = maxTagResult.rows[0].max_tag_to;
+        if (maxTagTo && tagFrom <= maxTagTo) {
+          const suggestedFrom = maxTagTo + 1;
+          await pool.query('ROLLBACK');
+          return res.status(400).json({ 
+            success: false,
+            message: `Tag range already in use. Next available range starts from ${suggestedFrom}. Please use ${suggestedFrom} or higher for tag 'from'.`
+          });
+        }
       }
 
       // Validate that no duplicate user-role combinations exist within the new team
@@ -773,7 +825,7 @@ exports.postTeams = async (req, res) => {
       // Insert into teams table
       const teamResult = await pool.query(
         "INSERT INTO teams (team_name, tag_from, tag_to, current_tag) VALUES ($1, $2, $3, $4) RETURNING team_id",
-        [teamName.trim(), tagRange.from, tagRange.to, current_tag]
+        [teamName.trim(), tagRange.from, '10000000', current_tag]
       );
       
       if (!teamResult.rows || teamResult.rows.length === 0) {
@@ -1017,12 +1069,16 @@ exports.PostTransactions = async (req, res) => {
     const transactionQuery = `
       INSERT INTO transactions (
         tag_id, form, type, grade, size, finish, ext_finish, 
-        width, length, remarks, count_type, qty,
-        counted_by, team_id, location_id, section_id, mill, heat, ad_cmts, role, location
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+        width, length, sys_tag_no, remarks, count_type, qty,
+        counted_by, team_id, location_id, section_id, mill, heat, ad_cmts, role, location, page_number, serial_number
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
       RETURNING transaction_id
     `;
     
+    const sysTagNo = req.body.sys_tag_no != null && String(req.body.sys_tag_no).trim() !== ''
+      ? String(req.body.sys_tag_no).trim()
+      : null;
+
     const transactionResult = await pool.query(transactionQuery, [
       currentTag,
       req.body.form,
@@ -1033,6 +1089,7 @@ exports.PostTransactions = async (req, res) => {
       req.body.ext_finish,
       req.body.width,
       req.body.length,
+      sysTagNo,
       req.body.remarks,
       req.body.count_type,
       req.body.qty,
@@ -1044,7 +1101,9 @@ exports.PostTransactions = async (req, res) => {
       req.body.heat,
       req.body.ad_cmts,
       req.body.role,
-      req.body.location
+      req.body.location,
+      req.body.page_number || null,
+      req.body.serial_number || null
     ]);
 
     const transactionId = transactionResult.rows[0].transaction_id;
@@ -1124,6 +1183,7 @@ exports.PostTransactions = async (req, res) => {
     res.status(201).json({
       success: true,
       id: transactionId,
+      transaction_id: transactionId, // Also include transaction_id for compatibility
       bundles,
       statusUpdated: transactionCount === 0 // Indicates if status was updated
     });
@@ -1224,6 +1284,56 @@ exports.updateLocationStatus = async (req, res) => {
     await pool.query('ROLLBACK');
     console.error('Error:', error);
     res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Complete checker verification for a location and section
+exports.completeCheckerVerification = async (req, res) => {
+  const { location_id, section_id } = req.body;
+  
+  if (!location_id || !section_id) {
+    return res.status(400).json({
+      success: false,
+      message: 'Location ID and Section ID are required'
+    });
+  }
+
+  try {
+    await pool.query('BEGIN');
+
+    const updateQuery = `
+      UPDATE assigned_locations 
+      SET status = 'Completed'
+      WHERE location_id = $1 
+      AND sub_location_id = $2
+      RETURNING *;
+    `;
+
+    const { rows } = await pool.query(updateQuery, [location_id, section_id]);
+
+    if (rows.length === 0) {
+      await pool.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'No matching assigned location found'
+      });
+    }
+
+    await pool.query('COMMIT');
+    res.status(200).json({
+      success: true,
+      message: 'Checker verification completed successfully',
+      data: rows[0]
+    });
+
+  } catch (error) {
+    await pool.query('ROLLBACK');
+    console.error('Error completing checker verification:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
   }
 };
 
@@ -1361,6 +1471,130 @@ exports.PostCheckerTransactions = async (req, res) => {
 };
 
 // New dedicated endpoint for updating transactions in checker review page
+// New endpoint specifically for counter review transaction updates
+exports.updateCounterReviewTransaction = async (req, res) => {
+  try {
+    console.log('Counter Review - Received transaction update request:', req.body);
+    console.log('Transaction ID from params:', req.params.transaction_id);
+    
+    const transactionId = req.params.transaction_id;
+    const {
+      tag_id,
+      sys_tag_no,
+      form,
+      grade,
+      size,
+      finish,
+      ext_finish,
+      width,
+      length,
+      mill,
+      heat,
+      location,
+      type,
+      remarks,
+      ad_cmts,
+      page_number,
+      serial_number,
+      qty
+    } = req.body;
+
+    // Validate required fields
+    if (!transactionId) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "Transaction ID is required" 
+      });
+    }
+
+    console.log('Updating counter review transaction:', {
+      transactionId,
+      form,
+      grade,
+      size,
+      finish,
+      ext_finish,
+      width,
+      length,
+      mill,
+      heat,
+      remarks,
+      qty
+    });
+
+    // Update the transaction with the new data
+    const updateQuery = `
+      UPDATE transactions 
+      SET 
+        tag_id = COALESCE($2, tag_id),
+        sys_tag_no = COALESCE($3, sys_tag_no),
+        form = COALESCE($4, form),
+        grade = COALESCE($5, grade),
+        size = COALESCE($6, size),
+        finish = COALESCE($7, finish),
+        ext_finish = COALESCE($8, ext_finish),
+        width = COALESCE($9, width),
+        length = COALESCE($10, length),
+        mill = COALESCE($11, mill),
+        heat = COALESCE($12, heat),
+        location = COALESCE($13, location),
+        type = COALESCE($14, type),
+        remarks = COALESCE($15, remarks),
+        ad_cmts = COALESCE($16, ad_cmts),
+        page_number = COALESCE($17, page_number),
+        serial_number = COALESCE($18, serial_number),
+        qty = COALESCE($19, qty),
+        updated_at = NOW()
+      WHERE transaction_id = $1
+      RETURNING *`;
+
+    const { rows } = await pool.query(updateQuery, [
+      transactionId,
+      tag_id,
+      sys_tag_no,
+      form,
+      grade,
+      size,
+      finish,
+      ext_finish,
+      width,
+      length,
+      mill,
+      heat,
+      location,
+      type,
+      remarks,
+      ad_cmts,
+      page_number,
+      serial_number,
+      qty
+    ]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Transaction not found"
+      });
+    }
+
+    console.log('Counter review transaction updated successfully:', rows[0]);
+
+    res.json({
+      success: true,
+      message: "Counter review transaction updated successfully",
+      data: rows[0]
+    });
+
+  } catch (error) {
+    console.error('Error updating counter review transaction:', error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to update counter review transaction",
+      details: error.message
+    });
+  }
+};
+
 exports.updateTransactionById = async (req, res) => {
   try {
     console.log('Received transaction update request:', req.body);
@@ -1504,6 +1738,115 @@ exports.updateTransactionById = async (req, res) => {
   }
 };
 
+async function syncCounterTransactionFromChecker({
+  originalTransactionId,
+  tagId,
+  form,
+  type,
+  grade,
+  size,
+  width,
+  finish,
+  ext_finish,
+  length,
+  count_type,
+  qty,
+  checker_count,
+  location_id,
+  section_id,
+  location,
+  bundles,
+  remarks,
+  mill,
+  heat,
+  ad_cmts,
+  now
+}) {
+  let counterTxId = originalTransactionId || null;
+
+  if (!counterTxId && tagId !== undefined && tagId !== null) {
+    const counterLookup = await pool.query(
+      `SELECT transaction_id
+       FROM transactions
+       WHERE tag_id = $1 AND role = 'Counter'
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [tagId]
+    );
+    counterTxId = counterLookup.rows[0]?.transaction_id || null;
+  }
+
+  if (!counterTxId) return null;
+
+  await pool.query(
+    `UPDATE transactions SET
+      form = $2,
+      type = $3,
+      grade = $4,
+      size = $5,
+      width = $6,
+      finish = $7,
+      ext_finish = $8,
+      length = $9,
+      count_type = $10,
+      qty = $11,
+      checker_count = $12,
+      location_id = $13,
+      section_id = $14,
+      location = $15,
+      remarks = $16,
+      mill = $17,
+      heat = $18,
+      ad_cmts = $19,
+      verified = true,
+      updated_at = $20
+    WHERE transaction_id = $1 AND role = 'Counter'`,
+    [
+      counterTxId,
+      form,
+      type,
+      grade,
+      size,
+      width,
+      finish,
+      ext_finish,
+      length,
+      count_type,
+      qty,
+      checker_count,
+      location_id,
+      section_id,
+      location,
+      remarks,
+      mill,
+      heat,
+      ad_cmts,
+      now
+    ]
+  );
+
+  await pool.query('DELETE FROM bundles WHERE transaction_id = $1', [counterTxId]);
+  if (count_type === 'bundle' && bundles && Array.isArray(bundles) && bundles.length > 0) {
+    const bundleInsertQuery = `
+      INSERT INTO bundles (
+        transaction_id, tag_id, num_of_bundle, bundle_count, created_at
+      ) VALUES ${bundles.map((_, i) => `($${i * 5 + 1}, $${i * 5 + 2}, $${i * 5 + 3}, $${i * 5 + 4}, $${i * 5 + 5})`).join(', ')}
+    `;
+
+    const bundleValues = bundles.flatMap(bundle => [
+      counterTxId,
+      tagId,
+      bundle.num_of_bundle,
+      bundle.bundle_count,
+      now
+    ]);
+
+    await pool.query(bundleInsertQuery, bundleValues);
+  }
+
+  return counterTxId;
+}
+
 exports.updateTransactions = async (req, res) => {
   try {
             const {
@@ -1617,13 +1960,29 @@ exports.updateTransactions = async (req, res) => {
 
         // Note: Removed checker_activity_logs insertion as requested
 
-        // Verify the original counter transaction
-        const verifyCounterQuery = `
-          UPDATE transactions SET 
-            verified = true
-          WHERE tag_id = $1 AND role = 'Counter'
-        `;
-        await pool.query(verifyCounterQuery, [tag_id]);
+        await syncCounterTransactionFromChecker({
+          tagId: tag_id,
+          form,
+          type,
+          grade,
+          size,
+          width,
+          finish,
+          ext_finish,
+          length,
+          count_type,
+          qty: totalQty,
+          checker_count: calculatedCheckerCount,
+          location_id,
+          section_id,
+          location,
+          bundles,
+          remarks,
+          mill,
+          heat,
+          ad_cmts,
+          now
+        });
 
         await pool.query('COMMIT');
         return res.status(200).json({
@@ -1887,6 +2246,657 @@ exports.verifyTransactions = async (req, res) => {
     console.error('Error verifying transaction:', error);
     res.status(500).json({ 
       error: 'Failed to verify transaction',
+      details: error.message 
+    });
+  }
+};
+
+// Quick verify for marked items from checker_sku_item
+exports.quickVerifyMarkedItem = async (req, res) => {
+  const { checker_sku_item_id, original_transaction_id } = req.body;
+  const checker_user_id = req.headers['x-selected-user'] || req.body.counted_by || req.user?.user_id;
+  
+  if (!checker_sku_item_id) {
+    return res.status(400).json({ 
+      error: "checker_sku_item_id is required" 
+    });
+  }
+
+  try {
+    await pool.query('BEGIN');
+
+    // 1. Get the checker_sku_item details
+    const getCheckerSkuItemQuery = `
+      SELECT * FROM checker_sku_item WHERE id = $1
+    `;
+    const checkerSkuResult = await pool.query(getCheckerSkuItemQuery, [checker_sku_item_id]);
+    
+    if (checkerSkuResult.rows.length === 0) {
+      await pool.query('ROLLBACK');
+      return res.status(404).json({ error: 'Checker SKU item not found' });
+    }
+
+    const checkerSkuItem = checkerSkuResult.rows[0];
+
+    // Use transaction_id from checker_sku_item if original_transaction_id not provided
+    const txIdToUse = original_transaction_id || checkerSkuItem.transaction_id;
+    
+    if (!txIdToUse) {
+      await pool.query('ROLLBACK');
+      return res.status(400).json({ error: 'Original transaction ID not found in checker_sku_item' });
+    }
+
+    // 2. Get the original counter transaction
+    const getOriginalTxQuery = `
+      SELECT * FROM transactions WHERE transaction_id = $1 AND role = 'Counter'
+    `;
+    const originalTxResult = await pool.query(getOriginalTxQuery, [txIdToUse]);
+    
+    if (originalTxResult.rows.length === 0) {
+      await pool.query('ROLLBACK');
+      return res.status(404).json({ error: 'Original counter transaction not found' });
+    }
+
+    const originalTransaction = originalTxResult.rows[0];
+    const checkerCount = originalTransaction.qty; // checker_count = qty
+
+    // 3. Update checker_sku_item: set verified=true, verified_at, checker_count
+    const updateCheckerSkuQuery = `
+      UPDATE checker_sku_item
+      SET verified = true,
+          verified_at = CURRENT_TIMESTAMP,
+          checker_count = $1
+      WHERE id = $2
+      RETURNING *
+    `;
+      await pool.query(updateCheckerSkuQuery, [checkerCount, checker_sku_item_id]);
+
+    // 4. Update recheck_items: mark as verified (if exists)
+    // Find recheck_item by matching fields
+    const updateRecheckQuery = `
+      UPDATE recheck_items
+      SET status = 'Completed',
+          rechecked_by = $1,
+          rechecked_at = CURRENT_TIMESTAMP
+      WHERE location_id = $2
+        AND form = $3
+        AND grade = $4
+        AND size = $5
+        AND finish = $6
+        AND ext_finish = COALESCE($7, ext_finish)
+        AND width = COALESCE($8, width)
+        AND length = COALESCE($9, length)
+        AND status != 'Completed'
+      RETURNING id
+    `;
+    await pool.query(updateRecheckQuery, [
+      checker_user_id,
+      checkerSkuItem.location_id,
+      checkerSkuItem.form,
+      checkerSkuItem.grade,
+      checkerSkuItem.size,
+      checkerSkuItem.finish,
+      checkerSkuItem.ext_finish,
+      checkerSkuItem.width,
+      checkerSkuItem.length
+    ]);
+
+    // 5. Create new transaction with role='Checker'
+    const createCheckerTxQuery = `
+      INSERT INTO transactions (
+        tag_id, form, grade, size, finish, ext_finish, width, length,
+        count_type, qty, checker_count, location_id, section_id, team_id,
+        counted_by, role, verified, mill, heat, type, remarks, location, sys_tag_no, page_number, serial_number
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+      RETURNING *
+    `;
+    const newCheckerTx = await pool.query(createCheckerTxQuery, [
+      originalTransaction.tag_id,
+      originalTransaction.form,
+      originalTransaction.grade,
+      originalTransaction.size,
+      originalTransaction.finish,
+      originalTransaction.ext_finish,
+      originalTransaction.width,
+      originalTransaction.length,
+      originalTransaction.count_type || 'piece',
+      originalTransaction.qty,
+      checkerCount, // checker_count = qty
+      originalTransaction.location_id,
+      originalTransaction.section_id,
+      originalTransaction.team_id,
+      checker_user_id,
+      'Checker',
+      true,
+      originalTransaction.mill,
+      originalTransaction.heat,
+      originalTransaction.type,
+      originalTransaction.remarks,
+      originalTransaction.location,
+      originalTransaction.sys_tag_no, // sys_tag_no must come from the original counter transaction
+      originalTransaction.page_number || null,
+      originalTransaction.serial_number || null
+    ]);
+
+    await syncCounterTransactionFromChecker({
+      originalTransactionId: txIdToUse,
+      tagId: originalTransaction.tag_id,
+      form: originalTransaction.form,
+      type: originalTransaction.type,
+      grade: originalTransaction.grade,
+      size: originalTransaction.size,
+      width: originalTransaction.width,
+      finish: originalTransaction.finish,
+      ext_finish: originalTransaction.ext_finish,
+      length: originalTransaction.length,
+      count_type: originalTransaction.count_type || 'piece',
+      qty: originalTransaction.qty,
+      checker_count: checkerCount,
+      location_id: originalTransaction.location_id,
+      section_id: originalTransaction.section_id,
+      location: originalTransaction.location,
+      bundles: [],
+      remarks: originalTransaction.remarks,
+      mill: originalTransaction.mill,
+      heat: originalTransaction.heat,
+      ad_cmts: originalTransaction.ad_cmts,
+      now: new Date().toISOString()
+    });
+
+    await pool.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: 'Item quick verified successfully',
+      data: {
+        checker_sku_item: checkerSkuItem,
+        new_checker_transaction: newCheckerTx.rows[0],
+        original_transaction_id: txIdToUse
+      }
+    });
+
+  } catch (error) {
+    await pool.query('ROLLBACK');
+    console.error('Error quick verifying marked item:', error);
+    res.status(500).json({ 
+      error: 'Failed to quick verify item',
+      details: error.message 
+    });
+  }
+};
+
+// Edit and verify marked item - similar to quick verify but with edited values
+exports.editAndVerifyMarkedItem = async (req, res) => {
+  const { 
+    checker_sku_item_id, 
+    original_transaction_id,
+    // Edited values
+    sys_tag_no,
+    form,
+    grade,
+    size,
+    finish,
+    ext_finish,
+    width,
+    length,
+    mill,
+    heat,
+    type,
+    remarks,
+    location,
+    checker_count,
+    bundles
+  } = req.body;
+  const checker_user_id = req.headers['x-selected-user'] || req.body.counted_by || req.user?.user_id;
+  
+  if (!checker_sku_item_id) {
+    return res.status(400).json({ 
+      error: "checker_sku_item_id is required" 
+    });
+  }
+
+  try {
+    await pool.query('BEGIN');
+
+    // 1. Get the checker_sku_item details
+    const getCheckerSkuItemQuery = `
+      SELECT * FROM checker_sku_item WHERE id = $1
+    `;
+    const checkerSkuResult = await pool.query(getCheckerSkuItemQuery, [checker_sku_item_id]);
+    
+    if (checkerSkuResult.rows.length === 0) {
+      await pool.query('ROLLBACK');
+      return res.status(404).json({ error: 'Checker SKU item not found' });
+    }
+
+    const checkerSkuItem = checkerSkuResult.rows[0];
+
+    // Use transaction_id from checker_sku_item if original_transaction_id not provided
+    const txIdToUse = original_transaction_id || checkerSkuItem.transaction_id;
+    
+    if (!txIdToUse) {
+      await pool.query('ROLLBACK');
+      return res.status(400).json({ error: 'Original transaction ID not found in checker_sku_item' });
+    }
+
+    // 2. Get the original counter transaction
+    const getOriginalTxQuery = `
+      SELECT * FROM transactions WHERE transaction_id = $1 AND role = 'Counter'
+    `;
+    const originalTxResult = await pool.query(getOriginalTxQuery, [txIdToUse]);
+    
+    if (originalTxResult.rows.length === 0) {
+      await pool.query('ROLLBACK');
+      return res.status(404).json({ error: 'Original counter transaction not found' });
+    }
+
+    const originalTransaction = originalTxResult.rows[0];
+    
+    // Use edited checker_count if provided, otherwise use qty from original transaction
+    const finalCheckerCount = checker_count !== undefined ? checker_count : originalTransaction.qty;
+
+    // 3. Update checker_sku_item with edited values and set verified=true
+    // Use edited values if provided, otherwise keep existing values
+    const updateCheckerSkuQuery = `
+      UPDATE checker_sku_item
+      SET verified = true,
+          verified_at = CURRENT_TIMESTAMP,
+          checker_count = $1,
+          form = COALESCE($2, form),
+          grade = COALESCE($3, grade),
+          size = COALESCE($4, size),
+          finish = COALESCE($5, finish),
+          ext_finish = COALESCE($6, ext_finish),
+          width = COALESCE($7, width),
+          length = COALESCE($8, length),
+          mill = COALESCE($9, mill),
+          heat = COALESCE($10, heat),
+          type = COALESCE($11, type),
+          location = COALESCE($12, location)
+      WHERE id = $13
+      RETURNING *
+    `;
+    await pool.query(updateCheckerSkuQuery, [
+      finalCheckerCount,
+      form || null,
+      grade || null,
+      size || null,
+      finish || null,
+      ext_finish || null,
+      width !== undefined ? width : null,
+      length !== undefined ? length : null,
+      mill || null,
+      heat || null,
+      type || null,
+      location || null,
+      checker_sku_item_id
+    ]);
+
+    // 4. Update recheck_items: mark as verified (if exists)
+    // Use edited values if provided, otherwise use values from checker_sku_item
+    const updateRecheckQuery = `
+      UPDATE recheck_items
+      SET status = 'Completed',
+          rechecked_by = $1,
+          rechecked_at = CURRENT_TIMESTAMP
+      WHERE location_id = $2
+        AND form = $3
+        AND grade = $4
+        AND size = $5
+        AND finish = $6
+        AND ext_finish = COALESCE($7, ext_finish)
+        AND width = $8
+        AND length = $9
+        AND status != 'Completed'
+      RETURNING id
+    `;
+    await pool.query(updateRecheckQuery, [
+      checker_user_id,
+      checkerSkuItem.location_id,
+      form || checkerSkuItem.form,
+      grade || checkerSkuItem.grade,
+      size || checkerSkuItem.size,
+      finish || checkerSkuItem.finish,
+      ext_finish || checkerSkuItem.ext_finish,
+      width || checkerSkuItem.width,
+      length || checkerSkuItem.length
+    ]);
+
+    // 5. Calculate total qty for bundle count type
+    let totalQty = finalCheckerCount;
+    if (bundles && Array.isArray(bundles) && bundles.length > 0) {
+      totalQty = bundles.reduce((sum, bundle) => 
+        sum + (bundle.num_of_bundle * bundle.bundle_count), 0
+      );
+    }
+
+    // 6. Update existing Checker transaction for this tag_id if present,
+    // otherwise create a new Checker transaction.
+    const findExistingCheckerTxQuery = `
+      SELECT transaction_id
+      FROM transactions
+      WHERE tag_id = $1
+        AND role = 'Checker'
+        AND location_id = $2
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    const existingCheckerTxResult = await pool.query(findExistingCheckerTxQuery, [
+      originalTransaction.tag_id,
+      originalTransaction.location_id
+    ]);
+
+    let checkerTxRow;
+    if (existingCheckerTxResult.rows.length > 0) {
+      const existingCheckerTxId = existingCheckerTxResult.rows[0].transaction_id;
+      const updateCheckerTxQuery = `
+        UPDATE transactions
+        SET form = $1,
+            grade = $2,
+            size = $3,
+            finish = $4,
+            ext_finish = $5,
+            width = $6,
+            length = $7,
+            count_type = $8,
+            qty = $9,
+            checker_count = $10,
+            location_id = $11,
+            section_id = $12,
+            team_id = $13,
+            counted_by = $14,
+            verified = true,
+            mill = $15,
+            heat = $16,
+            type = $17,
+            remarks = $18,
+            location = $19,
+            sys_tag_no = $20,
+            page_number = $21,
+            serial_number = $22,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE transaction_id = $23
+        RETURNING *
+      `;
+      const updatedCheckerTx = await pool.query(updateCheckerTxQuery, [
+        form || originalTransaction.form,
+        grade || originalTransaction.grade,
+        size || originalTransaction.size,
+        finish || originalTransaction.finish,
+        ext_finish || originalTransaction.ext_finish,
+        width || originalTransaction.width,
+        length || originalTransaction.length,
+        originalTransaction.count_type || 'piece',
+        totalQty,
+        finalCheckerCount,
+        originalTransaction.location_id,
+        originalTransaction.section_id,
+        originalTransaction.team_id,
+        checker_user_id,
+        mill || originalTransaction.mill,
+        heat || originalTransaction.heat,
+        type || originalTransaction.type,
+        remarks || originalTransaction.remarks,
+        location || originalTransaction.location,
+        sys_tag_no || originalTransaction.sys_tag_no,
+        originalTransaction.page_number || null,
+        originalTransaction.serial_number || null,
+        existingCheckerTxId
+      ]);
+      checkerTxRow = updatedCheckerTx.rows[0];
+    } else {
+      const createCheckerTxQuery = `
+        INSERT INTO transactions (
+          tag_id, form, grade, size, finish, ext_finish, width, length,
+          count_type, qty, checker_count, location_id, section_id, team_id,
+          counted_by, role, verified, mill, heat, type, remarks, location, sys_tag_no, page_number, serial_number
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+        RETURNING *
+      `;
+      const newCheckerTx = await pool.query(createCheckerTxQuery, [
+        originalTransaction.tag_id,
+        form || originalTransaction.form,
+        grade || originalTransaction.grade,
+        size || originalTransaction.size,
+        finish || originalTransaction.finish,
+        ext_finish || originalTransaction.ext_finish,
+        width || originalTransaction.width,
+        length || originalTransaction.length,
+        originalTransaction.count_type || 'piece',
+        totalQty,
+        finalCheckerCount,
+        originalTransaction.location_id,
+        originalTransaction.section_id,
+        originalTransaction.team_id,
+        checker_user_id,
+        'Checker',
+        true,
+        mill || originalTransaction.mill,
+        heat || originalTransaction.heat,
+        type || originalTransaction.type,
+        remarks || originalTransaction.remarks,
+        location || originalTransaction.location,
+        sys_tag_no || originalTransaction.sys_tag_no,
+        originalTransaction.page_number || null,
+        originalTransaction.serial_number || null
+      ]);
+      checkerTxRow = newCheckerTx.rows[0];
+    }
+
+    // 7. Replace bundles for the checker transaction when editing.
+    // This prevents duplicate bundle lines if the checker row already existed.
+    await pool.query(
+      'DELETE FROM bundles WHERE transaction_id = $1',
+      [checkerTxRow.transaction_id]
+    );
+    if (bundles && Array.isArray(bundles) && bundles.length > 0) {
+      const bundleInsertQuery = `
+        INSERT INTO bundles (transaction_id, tag_id, num_of_bundle, bundle_count)
+        VALUES ${bundles.map((_, i) => `($${i * 4 + 1}, $${i * 4 + 2}, $${i * 4 + 3}, $${i * 4 + 4})`).join(', ')}
+      `;
+      const bundleValues = bundles.flatMap((bundle) => [
+        checkerTxRow.transaction_id,
+        originalTransaction.tag_id,
+        bundle.num_of_bundle,
+        bundle.bundle_count
+      ]);
+      await pool.query(bundleInsertQuery, bundleValues);
+    }
+
+    await syncCounterTransactionFromChecker({
+      originalTransactionId: txIdToUse,
+      tagId: originalTransaction.tag_id,
+      form: form || originalTransaction.form,
+      type: type || originalTransaction.type,
+      grade: grade || originalTransaction.grade,
+      size: size || originalTransaction.size,
+      width: width || originalTransaction.width,
+      finish: finish || originalTransaction.finish,
+      ext_finish: ext_finish || originalTransaction.ext_finish,
+      length: length || originalTransaction.length,
+      count_type: originalTransaction.count_type || 'piece',
+      qty: totalQty,
+      checker_count: finalCheckerCount,
+      location_id: originalTransaction.location_id,
+      section_id: originalTransaction.section_id,
+      location: location || originalTransaction.location,
+      bundles: bundles || [],
+      remarks: remarks || originalTransaction.remarks,
+      mill: mill || originalTransaction.mill,
+      heat: heat || originalTransaction.heat,
+      ad_cmts: originalTransaction.ad_cmts,
+      now: new Date().toISOString()
+    });
+
+    await pool.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: 'Item edited and verified successfully',
+      data: {
+        checker_sku_item: checkerSkuItem,
+        new_checker_transaction: checkerTxRow,
+        original_transaction_id: txIdToUse
+      }
+    });
+
+  } catch (error) {
+    await pool.query('ROLLBACK');
+    console.error('Error editing and verifying marked item:', error);
+    res.status(500).json({ 
+      error: 'Failed to edit and verify item',
+      details: error.message 
+    });
+  }
+};
+
+// Unverify marked item - reverses the quick verify process
+exports.unverifyMarkedItem = async (req, res) => {
+  const { checker_sku_item_id, original_transaction_id } = req.body;
+  const checker_user_id = req.headers['x-selected-user'] || req.body.counted_by || req.user?.user_id;
+  
+  if (!checker_sku_item_id) {
+    return res.status(400).json({ 
+      error: "checker_sku_item_id is required" 
+    });
+  }
+
+  try {
+    await pool.query('BEGIN');
+
+    // 1. Get the checker_sku_item details
+    const getCheckerSkuItemQuery = `
+      SELECT * FROM checker_sku_item WHERE id = $1
+    `;
+    const checkerSkuResult = await pool.query(getCheckerSkuItemQuery, [checker_sku_item_id]);
+    
+    if (checkerSkuResult.rows.length === 0) {
+      await pool.query('ROLLBACK');
+      return res.status(404).json({ error: 'Checker SKU item not found' });
+    }
+
+    const checkerSkuItem = checkerSkuResult.rows[0];
+
+    // Use transaction_id from checker_sku_item if original_transaction_id not provided
+    const txIdToUse = original_transaction_id || checkerSkuItem.transaction_id;
+    
+    if (!txIdToUse) {
+      await pool.query('ROLLBACK');
+      return res.status(400).json({ error: 'Original transaction ID not found in checker_sku_item' });
+    }
+
+    // 2. Get the original counter transaction to find its tag_id
+    const getOriginalTxQuery = `
+      SELECT tag_id FROM transactions WHERE transaction_id = $1 AND role = 'Counter' LIMIT 1
+    `;
+    const originalTxResult = await pool.query(getOriginalTxQuery, [txIdToUse]);
+    
+    let deletedCheckerTxId = null;
+    if (originalTxResult.rows.length > 0) {
+      const tagId = originalTxResult.rows[0].tag_id;
+      
+      // Find and delete the checker transaction (role = 'Checker' with same tag_id)
+      // If checker_user_id is provided, match it; otherwise delete the most recent one
+      let getCheckerTxQuery = '';
+      let checkerTxParams = [];
+      
+      if (checker_user_id) {
+        getCheckerTxQuery = `
+          SELECT transaction_id FROM transactions 
+          WHERE tag_id = $1
+            AND role = 'Checker'
+            AND counted_by = $2
+          ORDER BY created_at DESC
+          LIMIT 1
+        `;
+        checkerTxParams = [tagId, checker_user_id];
+      } else {
+        getCheckerTxQuery = `
+          SELECT transaction_id FROM transactions 
+          WHERE tag_id = $1
+            AND role = 'Checker'
+          ORDER BY created_at DESC
+          LIMIT 1
+        `;
+        checkerTxParams = [tagId];
+      }
+      
+      const checkerTxResult = await pool.query(getCheckerTxQuery, checkerTxParams);
+      
+      if (checkerTxResult.rows.length > 0) {
+        deletedCheckerTxId = checkerTxResult.rows[0].transaction_id;
+        const deleteCheckerTxQuery = `DELETE FROM transactions WHERE transaction_id = $1`;
+        await pool.query(deleteCheckerTxQuery, [deletedCheckerTxId]);
+      }
+    }
+
+    // 3. Update checker_sku_item: set verified=false, verified_at=null, checker_count=null
+    const updateCheckerSkuQuery = `
+      UPDATE checker_sku_item
+      SET verified = false,
+          verified_at = NULL,
+          checker_count = NULL
+      WHERE id = $1
+      RETURNING *
+    `;
+    await pool.query(updateCheckerSkuQuery, [checker_sku_item_id]);
+
+    // 4. Update recheck_items: set status back to pending (or original status)
+    const updateRecheckQuery = `
+      UPDATE recheck_items
+      SET status = 'Pending',
+          rechecked_by = NULL,
+          rechecked_at = NULL
+      WHERE location_id = $1
+        AND form = $2
+        AND grade = $3
+        AND size = $4
+        AND finish = $5
+        AND ext_finish = COALESCE($6, ext_finish)
+        AND width = COALESCE($7, width)
+        AND length = COALESCE($8, length)
+        AND status = 'Completed'
+      RETURNING id
+    `;
+    await pool.query(updateRecheckQuery, [
+      checkerSkuItem.location_id,
+      checkerSkuItem.form,
+      checkerSkuItem.grade,
+      checkerSkuItem.size,
+      checkerSkuItem.finish,
+      checkerSkuItem.ext_finish,
+      checkerSkuItem.width,
+      checkerSkuItem.length
+    ]);
+
+    // 5. Update original counter transaction to verified=false
+    const updateOriginalTxQuery = `
+      UPDATE transactions
+      SET verified = false
+      WHERE transaction_id = $1 AND role = 'Counter'
+      RETURNING *
+    `;
+    await pool.query(updateOriginalTxQuery, [txIdToUse]);
+
+    await pool.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: 'Item unverified successfully',
+      data: {
+        checker_sku_item_id: checker_sku_item_id,
+        deleted_checker_transaction_id: deletedCheckerTxId,
+        original_transaction_id: txIdToUse
+      }
+    });
+
+  } catch (error) {
+    await pool.query('ROLLBACK');
+    console.error('Error unverifying marked item:', error);
+    res.status(500).json({ 
+      error: 'Failed to unverify item',
       details: error.message 
     });
   }
@@ -2758,8 +3768,8 @@ exports.addLineItem = async (req, res) => {
       INSERT INTO transactions (
         tag_id, form, type, grade, size, finish, ext_finish, 
         width, length, remarks, count_type, qty,
-        counted_by, team_id, location_id, section_id, mill, heat, ad_cmts, role, location
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+        counted_by, team_id, location_id, section_id, mill, heat, ad_cmts, sys_tag_no, role, location
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
       RETURNING transaction_id
     `;
     
@@ -2783,6 +3793,7 @@ exports.addLineItem = async (req, res) => {
       req.body.mill,
       req.body.heat,
       req.body.ad_cmts,
+      req.body.sys_tag_no,
       req.body.role,
       req.body.location
     ]);
@@ -3078,27 +4089,9 @@ exports.getAdjustmentData = async (req, res) => {
 
     console.log('Adjustment query:', query);
 
-    // Execute the query using the OAuth API
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: query },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE
-        },
-        timeout: 60000,
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity,
-        validateStatus: function (status) {
-          return status >= 200 && status < 300;
-        }
-      }
-    );
+    const response = { data: await runErpSql(query, { timeoutSeconds: 60 }) };
 
-    console.log('OAuth API Response Status:', response.status);
-    console.log('OAuth API Response Data:', response.data);
+    console.log('ERP ODBC Response Data:', response.data);
     
     // Handle the OAuth API response structure - data is in response.data.Data (capital D)
     const responseData = response.data?.Data || response.data || [];
@@ -3122,17 +4115,116 @@ exports.getAdjustmentData = async (req, res) => {
 
   } catch (error) {
     console.error('Get adjustment data error:', error);
-    console.error('Error details:', {
-      message: error.message,
-      response: error.response?.data,
-      status: error.response?.status,
-      headers: error.response?.headers
+    console.error('Error details:', { message: error.message });
+    res.status(500).json({
+      success: false,
+      error: "Failed to get adjustment data",
+      details: error.message,
     });
+  }
+};
+
+exports.createBulkSections = async (req, res) => {
+  try {
+    const { location_id, sections } = req.body;
+    console.log('Bulk creating sections:', { location_id, sections });
+    
+    if (!location_id || !Array.isArray(sections) || sections.length === 0) {
+      return res.status(400).json({ message: "Location ID and sections array are required" });
+    }
+
+    const createdSections = [];
+    const skippedSections = [];
+    
+    // Use a transaction to ensure all sections are created or none
+    await pool.query('BEGIN');
+    
+    try {
+      for (const section_desc of sections) {
+        if (!section_desc || typeof section_desc !== 'string') {
+          throw new Error(`Invalid section description: ${section_desc}`);
+        }
+        
+        // Check if section already exists
+        const trimmedSectionDesc = section_desc.trim();
+        console.log(`Checking if section "${trimmedSectionDesc}" exists for location ${location_id}...`);
+        
+        const existingSection = await pool.query(
+          "SELECT section_id FROM st_sections WHERE location_id = $1 AND section_desc = $2",
+          [location_id, trimmedSectionDesc]
+        );
+        
+        if (existingSection.rows.length > 0) {
+          console.log(`Section "${trimmedSectionDesc}" already exists (ID: ${existingSection.rows[0].section_id}), skipping...`);
+          skippedSections.push(trimmedSectionDesc);
+          continue;
+        }
+        
+        console.log(`Section "${trimmedSectionDesc}" does not exist, creating...`);
+        
+        const newSubLocation = await pool.query(
+          "INSERT INTO st_sections (location_id, section_desc) VALUES ($1, $2) RETURNING *",
+          [location_id, section_desc]
+        );
+        
+        createdSections.push(newSubLocation.rows[0]);
+      }
+      
+      await pool.query('COMMIT');
+      
+      const response = {
+        message: `${createdSections.length} sections created successfully`,
+        sections: createdSections,
+        created: createdSections.length,
+        skipped: skippedSections.length,
+        skippedSections: skippedSections
+      };
+      
+      if (skippedSections.length > 0) {
+        response.message += `, ${skippedSections.length} sections already existed`;
+      }
+      
+      res.status(201).json(response);
+    } catch (error) {
+      await pool.query('ROLLBACK');
+      throw error;
+    }
+  } catch (error) {
+    console.error('Error creating bulk sections:', error);
+    res.status(500).json({ message: "Error creating sections", error: error.message });
+  }
+};
+
+exports.updateTransactionTagId = async (req, res) => {
+  try {
+    const { transactionId } = req.params;
+    const { tag_id } = req.body;
+    
+    if (!transactionId || !tag_id) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Transaction ID and tag_id are required' 
+      });
+    }
+    
+    const query = `
+      UPDATE transactions 
+      SET tag_id = $1 
+      WHERE transaction_id = $2
+    `;
+    
+    await pool.query(query, [tag_id, transactionId]);
+    
+    res.json({ 
+      success: true, 
+      message: 'Transaction tag_id updated successfully' 
+    });
+  } catch (error) {
+    console.error('Error updating transaction tag_id:', error);
     res.status(500).json({ 
       success: false, 
-      error: "Failed to get adjustment data", 
-      details: error.message,
-      response: error.response?.data
+      message: 'Failed to update transaction tag_id', 
+      error: error.message 
     });
   }
 };

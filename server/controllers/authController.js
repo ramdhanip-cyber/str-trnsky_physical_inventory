@@ -23,6 +23,7 @@ exports.registerUser = async (req, res) => {
 exports.loginUser = async (req, res) => {
   const { user_name, password } = req.body;
   console.log(user_name, password);
+  console.log(typeof user_name, typeof password);
 
   try {
       // Query to check if user exists

@@ -19,15 +19,11 @@ import {
   Breadcrumbs,
   Link,
   Chip,
+  MenuItem,
+  Checkbox,
   FormControl,
   InputLabel,
   Select,
-  MenuItem,
-  Collapse,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
-  Checkbox,
   IconButton,
   Tooltip,
   Dialog,
@@ -44,15 +40,14 @@ import {
   ChevronLeft,
   Home,
   LocationOn,
-  FilterList,
-  ExpandMore,
-  Clear,
   Refresh,
   Edit,
   CheckCircleOutline,
   CompareArrows,
   KeyboardArrowDown,
-  Tune
+  Tune,
+  ExpandMore,
+  Clear
 } from '@mui/icons-material';
 import * as XLSX from 'xlsx';
 import { useSnackbar } from 'notistack';
@@ -61,11 +56,17 @@ import type { ReconciliationData } from '../types/reconciliation';
 import { servicesAPI } from '../config/api';
 
 const ReconciliationPage: React.FC = () => {
+  console.log('Regular ReconciliationPage loaded!');
   const { location_id } = useParams<{ location_id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
   const theme = useTheme();
   const { enqueueSnackbar } = useSnackbar();
+
+  // Detect role from URL path
+  const currentPath = location.pathname;
+  const pageRole = currentPath.includes('/reconciliation/counter/') ? 'counter' : 
+                   currentPath.includes('/reconciliation/checker/') ? 'checker' : 'counter';
 
   const [reconciliationData, setReconciliationData] = useState<ReconciliationData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -101,8 +102,7 @@ const ReconciliationPage: React.FC = () => {
   const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
 
   
-  // Filter states
-  const [showFilters, setShowFilters] = useState(false);
+  // Filter states (kept for internal filtering logic, but UI removed)
   const [filters, setFilters] = useState({
     form: '',
     grade: '',
@@ -132,48 +132,9 @@ const ReconciliationPage: React.FC = () => {
     }
   }, [location_id, location.state]);
 
-  // Check for existing reconciliation data
-  const checkExistingData = async () => {
-    if (!location_id || !reconciliationData) return false;
-    
-    try {
-      const warehouse = reconciliationData.summary.warehouse;
-      const branch = reconciliationData.summary.branch;
-      
-      const response = await servicesAPI.checkExistingReconciliation({
-        location_id,
-        warehouse,
-        branch
-      });
-      
-      if (response.data.exists) {
-        const choice = window.confirm(
-          `Existing reconciliation data found for ${branch}/${warehouse}.\n\n` +
-          `Record: ${response.data.record.record_name}\n` +
-          `Created: ${new Date(response.data.record.created_at).toLocaleString()}\n\n` +
-          `Click OK to use existing data, or Cancel to create new data (will delete old record).`
-        );
-        
-        if (choice) {
-          // User chose to use existing data
-          const success = await loadExistingData(response.data.record);
-          return success; // Return whether data was successfully loaded
-        } else {
-          // User chose to create new data - delete the old record
-          await deleteExistingRecord(response.data.record.id);
-          return false; // Indicate that no data was loaded, proceed with new generation
-        }
-      }
-      
-      return false; // Indicate that no data was loaded
-    } catch (error) {
-      console.error('Error checking existing data:', error);
-      return false;
-    }
-  };
 
-  // Delete existing reconciliation record
-  const deleteExistingRecord = async (recordId: number) => {
+  // Delete existing reconciliation record - Commented out as feature is disabled
+  /* const deleteExistingRecord = async (recordId: number) => {
     try {
       const response = await servicesAPI.deleteReconciliationRecord(recordId.toString());
       if (response.data.success) {
@@ -183,7 +144,7 @@ const ReconciliationPage: React.FC = () => {
       console.error('Error deleting existing record:', error);
       enqueueSnackbar('Failed to delete old record, but proceeding with new data', { variant: 'warning' });
     }
-  };
+  }; */
 
   // Load existing reconciliation data
   const loadExistingData = async (record: any): Promise<boolean> => {
@@ -344,7 +305,8 @@ const ReconciliationPage: React.FC = () => {
   };
 
   // Check if an item can be selected for adjustment (all items can be adjusted)
-  const canSelectForAdjustment = (item: any) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const canSelectForAdjustment = (_item: any) => {
     return showComparison; // All items can be selected for adjustment when comparison is shown
   };
 
@@ -596,7 +558,7 @@ const ReconciliationPage: React.FC = () => {
         ad_cmts: matchingChecker.ad_cmts || ''
       };
 
-      const updateResponse = await servicesAPI.updateTransaction(updateTransactionData);
+      const updateResponse = await servicesAPI.updateCheckerTransaction(updateTransactionData);
 
       if (!updateResponse.data.success) {
         enqueueSnackbar('Failed to update transaction in database', { variant: 'error' });
@@ -725,7 +687,11 @@ const ReconciliationPage: React.FC = () => {
     if (!location_id || !reconciliationData) return;
     
     try {
+      // Skip auto-save - feature not yet implemented
+      console.log('Skipping auto-save of reconciliation data');
+      return;
       
+      /* Commented out until backend endpoint is implemented
       const warehouse = reconciliationData.summary.warehouse;
       const branch = reconciliationData.summary.branch;
       
@@ -745,6 +711,7 @@ const ReconciliationPage: React.FC = () => {
       if (response.data.success) {
         enqueueSnackbar('Reconciliation data saved successfully', { variant: 'success' });
       }
+      */
     } catch (error) {
       console.error('Error saving reconciliation data:', error);
       enqueueSnackbar('Failed to save reconciliation data', { variant: 'error' });
@@ -753,176 +720,6 @@ const ReconciliationPage: React.FC = () => {
     }
   };
 
-  // Fetch checker data and create comparison
-  const fetchCheckerDataAndCompare = async () => {
-    if (!location_id || !reconciliationData) return;
-    
-    try {
-      setLoadingChecker(true);
-      
-      // Check for existing data first
-      const dataLoaded = await checkExistingData();
-      if (dataLoaded) {
-        // Data was loaded from existing record, ensure comparison is shown
-        setShowComparison(true);
-        return; // Data was loaded from existing record
-      }
-      
-      // Fetch sections first
-      const sectionsResponse = await servicesAPI.getSections(location_id);
-      const sections = sectionsResponse.data;
-      
-      if (sections.length === 0) {
-        enqueueSnackbar('No sections found for this location', { variant: 'error' });
-        return;
-      }
-      
-      // Fetch all checker transactions from all sections
-      const allCheckerTransactions: any[] = [];
-      
-      for (const section of sections) {
-        try {
-          const checkerResponse = await servicesAPI.getReviewTransactionsForChecker(location_id, section.section_id.toString());
-          const checkerTransactions = checkerResponse.data.map((t: any) => ({
-            ...t,
-            section_id: section.section_id,
-            section_desc: section.section_desc,
-            location_desc: section.location_desc,
-            warehouse: section.warehouse,
-            branch: section.branch
-          }));
-          allCheckerTransactions.push(...checkerTransactions);
-        } catch (error) {
-          console.error(`Error fetching checker transactions for section ${section.section_id}:`, error);
-        }
-      }
-      
-      // Consolidate checker data by specified fields
-      const consolidated = new Map<string, any>();
-      
-      allCheckerTransactions.forEach(transaction => {
-        
-        // Normalize the key fields to match system data format
-        const normalizedForm = String(transaction.form || '').trim();
-        const normalizedGrade = String(transaction.grade || '').trim();
-        const normalizedSize = String(transaction.size || '').trim();
-        const normalizedFinish = String(transaction.finish || '').trim();
-        const normalizedExtFinish = String(transaction.ext_finish || '').trim();
-        const normalizedWidth = String(Number(transaction.width || 0)).trim();
-        const normalizedLength = String(Number(transaction.length || 0)).trim();
-        const normalizedLocation = String(transaction.location || '').trim();
-        const normalizedType = String(transaction.type || '').trim();
-        const normalizedRemarks = String(transaction.remarks || '').trim();
-        
-        const key = `${normalizedForm}|${normalizedGrade}|${normalizedSize}|${normalizedFinish}|${normalizedExtFinish}|${normalizedWidth}|${normalizedLength}|${normalizedLocation}|${normalizedType}|${normalizedRemarks}`;
-        
-        if (consolidated.has(key)) {
-          const existing = consolidated.get(key)!;
-          existing.qty += transaction.qty || 0;
-          existing.transaction_count += 1;
-          
-          // Collect all tag_ids for this consolidated item
-          if (!existing.tag_ids) {
-            existing.tag_ids = [existing.tag_id].filter(Boolean);
-          }
-          if (transaction.tag_id && !existing.tag_ids.includes(transaction.tag_id)) {
-            existing.tag_ids.push(transaction.tag_id);
-          }
-          
-          // Add section information if not already present
-          if (!existing.sections) {
-            existing.sections = [];
-          }
-          
-          // Check if this section is already in the list
-          const existingSection = existing.sections.find((s: any) => s.section_id === transaction.section_id);
-          if (existingSection) {
-            existingSection.qty += transaction.qty || 0;
-            existingSection.transaction_count += 1;
-            
-            // Collect tag_ids for this specific section
-            if (!existingSection.tag_ids) {
-              existingSection.tag_ids = [];
-            }
-            if (transaction.tag_id && !existingSection.tag_ids.includes(transaction.tag_id)) {
-              existingSection.tag_ids.push(transaction.tag_id);
-            }
-          } else {
-            existing.sections.push({
-              section_id: transaction.section_id,
-              section_desc: transaction.section_desc,
-              qty: transaction.qty || 0,
-              transaction_count: 1,
-              tag_ids: transaction.tag_id ? [transaction.tag_id] : []
-            });
-          }
-        } else {
-          consolidated.set(key, {
-            form: normalizedForm,
-            grade: normalizedGrade,
-            size: normalizedSize,
-            finish: normalizedFinish,
-            ext_finish: normalizedExtFinish,
-            width: normalizedWidth,
-            length: normalizedLength,
-            location: normalizedLocation,
-            type: normalizedType,
-            remarks: normalizedRemarks,
-            tag_id: transaction.tag_id,
-            tag_ids: transaction.tag_id ? [transaction.tag_id] : [],
-            qty: transaction.qty || 0,
-            transaction_count: 1,
-            sections: [{
-              section_id: transaction.section_id,
-              section_desc: transaction.section_desc,
-              qty: transaction.qty || 0,
-              transaction_count: 1,
-              tag_ids: transaction.tag_id ? [transaction.tag_id] : []
-            }]
-          });
-        }
-      });
-      
-      const consolidatedCheckerData = Array.from(consolidated.values()).sort((a: any, b: any) => {
-        // Primary sort: Form
-        const formA = (a.form || '').toString().toLowerCase();
-        const formB = (b.form || '').toString().toLowerCase();
-        if (formA !== formB) {
-          return formA.localeCompare(formB);
-        }
-
-        // Secondary sort: Size (numeric, with fallback for non-numeric)
-        const sizeA = parseFloat(a.size || '0') || 999999999;
-        const sizeB = parseFloat(b.size || '0') || 999999999;
-        if (sizeA !== sizeB) {
-          return sizeA - sizeB;
-        }
-        // If numeric values are equal, sort alphabetically
-        return (a.size || '').localeCompare(b.size || '');
-      });
-      
-      setCheckerData(consolidatedCheckerData);
-      
-      // Find orphaned checker data (checker items that don't match any system data)
-      const orphanedData = findOrphanedCheckerData(consolidatedCheckerData);
-      setOrphanedCheckerData(orphanedData);
-      
-      setShowComparison(true);
-      enqueueSnackbar(
-        `Checker data loaded successfully - ${consolidatedCheckerData.length} consolidated items, ${orphanedData.length} orphaned items`, 
-        { variant: 'success' }
-      );
-      
-      // Automatically save the reconciliation data
-      await saveReconciliationData();
-      
-    } catch (error) {
-      console.error('Error fetching checker data:', error);
-      enqueueSnackbar('Failed to fetch checker data', { variant: 'error' });
-    } finally {
-      setLoadingChecker(false);
-    }
-  };
 
   // Function to re-reconcile after transaction update
   const reReconcileAfterUpdate = async () => {
@@ -937,24 +734,39 @@ const ReconciliationPage: React.FC = () => {
         return;
       }
       
-      // Fetch all checker transactions from all sections
+      // Fetch all transactions from all sections (based on pageRole)
       const allCheckerTransactions: any[] = [];
       
       for (const section of sections) {
         try {
-          const checkerResponse = await servicesAPI.getReviewTransactionsForChecker(location_id, section.section_id.toString());
-          const checkerTransactions = checkerResponse.data.map((t: any) => ({
+          // Use the correct endpoint based on page role
+          const transactionResponse = pageRole === 'checker' 
+            ? await servicesAPI.getReviewTransactionsForChecker(location_id, section.section_id.toString())
+            : await servicesAPI.getReviewTransactionsForCounter(location_id, section.section_id.toString());
+            
+          const transactions = transactionResponse.data
+            .filter((t: any) => pageRole !== 'checker' || t.verified === true)
+            .map((t: any) => ({
             ...t,
             section_id: section.section_id,
             section_desc: section.section_desc,
             location_desc: section.location_desc,
             warehouse: section.warehouse,
             branch: section.branch
-          }));
-          allCheckerTransactions.push(...checkerTransactions);
-        } catch (error) {
-          console.error(`Error fetching checker transactions for section ${section.section_id}:`, error);
+            }));
+          allCheckerTransactions.push(...transactions);
+        } catch (error: any) {
+          if (error?.response?.status === 404) {
+            console.log(`Section ${section.section_id}: No ${pageRole} transactions found during re-reconciliation`);
+          } else {
+            console.error(`Error fetching ${pageRole} transactions for section ${section.section_id}:`, error);
+          }
         }
+      }
+      
+      if (allCheckerTransactions.length === 0) {
+        console.log(`No ${pageRole} transactions found during re-reconciliation`);
+        return;
       }
       
       // Consolidate checker data by specified fields (same logic as fetchCheckerDataAndCompare)
@@ -1143,55 +955,90 @@ const ReconciliationPage: React.FC = () => {
   const findMatchingCheckerData = (systemItem: any) => {
     if (!checkerData.length) return null;
     
-          const match = checkerData.find(checkerItem => {
-        // Handle field type mismatches by converting to strings for comparison
-        // Remove trailing spaces and normalize data
-        const systemForm = String(systemItem.form || '').trim();
-        const checkerForm = String(checkerItem.form || '').trim();
-        
-        const systemGrade = String(systemItem.grade || '').trim();
-        const checkerGrade = String(checkerItem.grade || '').trim();
-        
-        const systemSize = String(systemItem.size || '').trim();
-        const checkerSize = String(checkerItem.size || '').trim();
-        
-        const systemFinish = String(systemItem.finish || '').trim();
-        const checkerFinish = String(checkerItem.finish || '').trim();
-        
-        const systemExtFinish = String(systemItem.ext_finish || '').trim();
-        const checkerExtFinish = String(checkerItem.ext_finish || '').trim();
-        
-        // Handle numeric fields - convert to numbers and back to strings to normalize
-        const systemWidth = String(Number(systemItem.width || 0)).trim();
-        const checkerWidth = String(Number(checkerItem.width || 0)).trim();
-        
-        const systemLength = String(Number(systemItem.length || 0)).trim();
-        const checkerLength = String(Number(checkerItem.length || 0)).trim();
-        
-        const systemLocation = String(systemItem.location || '').trim();
-        const checkerLocation = String(checkerItem.location || '').trim();
-        
-        // Map field names correctly
-        const systemType = String(systemItem.inv_type || '').trim();
-        const checkerType = String(checkerItem.type || '').trim();
-        
-        const systemQuality = String(systemItem.inv_quality || '').trim();
-        const checkerQuality = String(checkerItem.remarks || '').trim();
-        
-        
-        const isMatch = (
-          systemForm === checkerForm &&
-          systemGrade === checkerGrade &&
-          systemSize === checkerSize &&
-          systemFinish === checkerFinish &&
-          systemExtFinish === checkerExtFinish &&
-          systemWidth === checkerWidth &&
-          systemLength === checkerLength &&
-          systemLocation === checkerLocation &&
-          systemType === checkerType &&
-          systemQuality === checkerQuality
-        );
+    // Normalize numeric values for width and length to handle "0.0000" vs "0" and "612.0000" vs "612"
+    const normalizeNumeric = (value: unknown): string => {
+      if (value === null || value === undefined || value === '') {
+        return '';
+      }
+      const numValue = parseFloat(String(value));
+      if (isNaN(numValue)) {
+        return String(value).trim();
+      }
+      // Normalize: 0 becomes "0", other numbers to 4 decimal places
+      return numValue === 0 ? '0' : numValue.toFixed(4);
+    };
+    
+    // Normalize quality value for comparison - uses the shared normalization function
+    const normalizeQuality = normalizeQualityForComparison;
+    
+    const match = checkerData.find(checkerItem => {
+      // Tag Number - get from various possible field names
+      const systemTagId = String(systemItem.tag_no || systemItem.prd_tag_no || systemItem.sys_tag_no || systemItem.sys_tag_id || '').trim().toLowerCase();
+      const checkerTagId = String(checkerItem.tag_no || checkerItem.prd_tag_no || checkerItem.sys_tag_no || checkerItem.sys_tag_id || '').trim().toLowerCase();
       
+      // Form
+      const systemForm = String(systemItem.form || '').trim().toLowerCase();
+      const checkerForm = String(checkerItem.form || '').trim().toLowerCase();
+      
+      // Grade
+      const systemGrade = String(systemItem.grade || '').trim().toLowerCase();
+      const checkerGrade = String(checkerItem.grade || '').trim().toLowerCase();
+      
+      // Size
+      const systemSize = String(systemItem.size || '').trim().toLowerCase();
+      const checkerSize = String(checkerItem.size || '').trim().toLowerCase();
+      
+      // Finish
+      const systemFinish = String(systemItem.finish || '').trim().toLowerCase();
+      const checkerFinish = String(checkerItem.finish || '').trim().toLowerCase();
+      
+      // Ext. Finish
+      const systemExtFinish = String(systemItem.ext_finish || '').trim().toLowerCase();
+      const checkerExtFinish = String(checkerItem.ext_finish || '').trim().toLowerCase();
+      
+      // Width and Length - normalized numeric values
+      const systemWidth = normalizeNumeric(systemItem.width);
+      const checkerWidth = normalizeNumeric(checkerItem.width);
+      
+      const systemLength = normalizeNumeric(systemItem.length);
+      const checkerLength = normalizeNumeric(checkerItem.length);
+      
+      // Location
+      const systemLocation = String(systemItem.location || '').trim().toLowerCase();
+      const checkerLocation = String(checkerItem.location || '').trim().toLowerCase();
+      
+      // Mill
+      const systemMill = String(systemItem.mill || '').trim().toLowerCase();
+      const checkerMill = String(checkerItem.mill || '').trim().toLowerCase();
+      
+      // Heat
+      const systemHeat = String(systemItem.heat || '').trim().toLowerCase();
+      const checkerHeat = String(checkerItem.heat || '').trim().toLowerCase();
+      
+      // Type
+      const systemType = String(systemItem.inv_type || '').trim().toLowerCase();
+      const checkerType = String(checkerItem.type || '').trim().toLowerCase();
+      
+      // Quality - normalized
+      const systemQuality = normalizeQuality(systemItem.inv_quality);
+      const checkerQuality = normalizeQuality(checkerItem.remarks);
+      
+      // Compare all 13 fields
+      const isMatch = (
+        systemTagId === checkerTagId &&
+        systemForm === checkerForm &&
+        systemGrade === checkerGrade &&
+        systemSize === checkerSize &&
+        systemFinish === checkerFinish &&
+        systemExtFinish === checkerExtFinish &&
+        systemWidth === checkerWidth &&
+        systemLength === checkerLength &&
+        systemLocation === checkerLocation &&
+        systemMill === checkerMill &&
+        systemHeat === checkerHeat &&
+        systemType === checkerType &&
+        systemQuality === checkerQuality
+      );
       
       return isMatch;
     });
@@ -1201,26 +1048,47 @@ const ReconciliationPage: React.FC = () => {
 
 
 
-  // Get unique values for filter dropdowns
+  // Get unique values for filter dropdowns (including orphaned items)
   const uniqueValues = useMemo(() => {
-    if (!reconciliationData?.items) return {};
+    // Get system items (default to empty array if not available)
+    const systemItems = reconciliationData?.items || [];
     
-    const items = reconciliationData.items;
+    // Get orphaned items
+    const orphanedItems = orphanedCheckerData || [];
+    
+    // Combine all items for unique values
+    const allItems = [
+      ...systemItems,
+      ...orphanedItems.map((item: any) => ({
+        ...item,
+        total_qty: 0,
+        system_qty: 0,
+        checker_qty: item.qty,
+        variance: item.qty,
+        status: 'Not In System',
+        is_orphaned: true,
+        branch: '-',
+        warehouse: '-',
+        prd_ohd_mat_val: 0,
+        prd_ohd_mat_cst: 0
+      }))
+    ];
+    
     return {
-      form: [...new Set(items.map((item: any) => item.form).filter(Boolean))].sort(),
-      grade: [...new Set(items.map((item: any) => item.grade).filter(Boolean))].sort(),
-      size: [...new Set(items.map((item: any) => item.size).filter(Boolean))].sort(),
-      finish: [...new Set(items.map((item: any) => item.finish).filter(Boolean))].sort(),
-      ext_finish: [...new Set(items.map((item: any) => item.ext_finish).filter(Boolean))].sort(),
-      width: [...new Set(items.map((item: any) => item.width).filter(Boolean))].sort(),
-      length: [...new Set(items.map((item: any) => item.length).filter(Boolean))].sort(),
-      location: [...new Set(items.map((item: any) => item.location).filter(Boolean))].sort(),
-      inv_type: [...new Set(items.map((item: any) => item.inv_type).filter(Boolean))].sort(),
-      inv_quality: [...new Set(items.map((item: any) => item.inv_quality).filter(Boolean))].sort(),
-      branch: [...new Set(items.map((item: any) => item.branch).filter(Boolean))].sort(),
-      warehouse: [...new Set(items.map((item: any) => item.warehouse).filter(Boolean))].sort(),
+      form: [...new Set(allItems.map((item: any) => item.form).filter(Boolean))].sort(),
+      grade: [...new Set(allItems.map((item: any) => item.grade).filter(Boolean))].sort(),
+      size: [...new Set(allItems.map((item: any) => item.size).filter(Boolean))].sort(),
+      finish: [...new Set(allItems.map((item: any) => item.finish).filter(Boolean))].sort(),
+      ext_finish: [...new Set(allItems.map((item: any) => item.ext_finish).filter(Boolean))].sort(),
+      width: [...new Set(allItems.map((item: any) => item.width).filter(Boolean))].sort(),
+      length: [...new Set(allItems.map((item: any) => item.length).filter(Boolean))].sort(),
+      location: [...new Set(allItems.map((item: any) => item.location).filter(Boolean))].sort(),
+      inv_type: [...new Set(allItems.map((item: any) => item.inv_type).filter(Boolean))].sort(),
+      inv_quality: [...new Set(allItems.map((item: any) => item.inv_quality).filter(Boolean))].sort(),
+      branch: [...new Set(allItems.map((item: any) => item.branch).filter(Boolean))].sort(),
+      warehouse: [...new Set(allItems.map((item: any) => item.warehouse).filter(Boolean))].sort(),
       status: showComparison ? [...new Set([
-        ...items.map((item: any) => {
+        ...allItems.map((item: any) => {
           const checkerItem = findMatchingCheckerData(item);
           if (!checkerItem) return 'Counted Not In System';
           const variance = (checkerItem.qty || 0) - (item.total_qty || 0);
@@ -1231,11 +1099,12 @@ const ReconciliationPage: React.FC = () => {
         ...(orphanedCheckerData.length > 0 ? ['Not In System'] : [])
       ].filter(Boolean))].sort() : []
     };
-  }, [reconciliationData?.items, showComparison]);
+  }, [reconciliationData?.items, orphanedCheckerData, showComparison]);
 
   // Filter data based on search term and filters
   const filteredData = useMemo(() => {
-    if (!reconciliationData?.items) return [];
+    // Get system items (default to empty array if not available)
+    const systemItems = reconciliationData?.items || [];
     
     // Sort orphaned items before adding them
     const sortedOrphanedItems = orphanedCheckerData.sort((a: any, b: any) => {
@@ -1258,7 +1127,7 @@ const ReconciliationPage: React.FC = () => {
 
     // Combine system items with orphaned items
     const allItems = [
-      ...reconciliationData.items,
+      ...systemItems,
       ...sortedOrphanedItems.map((item: any) => ({
         ...item,
         total_qty: 0,
@@ -1299,19 +1168,77 @@ const ReconciliationPage: React.FC = () => {
         if (!searchMatch) return false;
       }
       
-      // Column filters
-      if (filters.form && item.form !== filters.form) return false;
-      if (filters.grade && item.grade !== filters.grade) return false;
-      if (filters.size && item.size !== filters.size) return false;
-      if (filters.finish && item.finish !== filters.finish) return false;
-      if (filters.ext_finish && item.ext_finish !== filters.ext_finish) return false;
-      if (filters.width && item.width !== filters.width) return false;
-      if (filters.length && item.length !== filters.length) return false;
-      if (filters.location && item.location !== filters.location) return false;
-      if (filters.inv_type && item.inv_type !== filters.inv_type) return false;
-      if (filters.inv_quality && item.inv_quality !== filters.inv_quality) return false;
-      if (filters.branch && item.branch !== filters.branch) return false;
-      if (filters.warehouse && item.warehouse !== filters.warehouse) return false;
+      // Column filters - EXACT MATCH ONLY (with normalization)
+      if (filters.form) {
+        const itemForm = String(item.form || '').trim();
+        const filterForm = String(filters.form).trim();
+        if (itemForm !== filterForm) return false;
+      }
+      if (filters.grade) {
+        const itemGrade = String(item.grade || '').trim();
+        const filterGrade = String(filters.grade).trim();
+        if (itemGrade !== filterGrade) return false;
+      }
+      if (filters.size) {
+        const itemSize = String(item.size || '').trim();
+        const filterSize = String(filters.size).trim();
+        if (itemSize !== filterSize) return false;
+      }
+      if (filters.finish) {
+        const itemFinish = String(item.finish || '').trim();
+        const filterFinish = String(filters.finish).trim();
+        if (itemFinish !== filterFinish) return false;
+      }
+      if (filters.ext_finish) {
+        const itemExtFinish = String(item.ext_finish || '').trim();
+        const filterExtFinish = String(filters.ext_finish).trim();
+        if (itemExtFinish !== filterExtFinish) return false;
+      }
+      if (filters.width) {
+        // Normalize numeric values for exact comparison
+        const itemWidth = item.width !== null && item.width !== undefined 
+          ? (typeof item.width === 'number' ? item.width.toFixed(4) : parseFloat(String(item.width)).toFixed(4))
+          : '';
+        const filterWidthStr = String(filters.width);
+        const filterWidthNum = parseFloat(filterWidthStr);
+        const filterWidth = !isNaN(filterWidthNum) ? filterWidthNum.toFixed(4) : filterWidthStr.trim();
+        if (itemWidth !== filterWidth) return false;
+      }
+      if (filters.length) {
+        // Normalize numeric values for exact comparison
+        const itemLength = item.length !== null && item.length !== undefined 
+          ? (typeof item.length === 'number' ? item.length.toFixed(4) : parseFloat(String(item.length)).toFixed(4))
+          : '';
+        const filterLengthStr = String(filters.length);
+        const filterLengthNum = parseFloat(filterLengthStr);
+        const filterLength = !isNaN(filterLengthNum) ? filterLengthNum.toFixed(4) : filterLengthStr.trim();
+        if (itemLength !== filterLength) return false;
+      }
+      if (filters.location) {
+        const itemLocation = String(item.location || '').trim();
+        const filterLocation = String(filters.location).trim();
+        if (itemLocation !== filterLocation) return false;
+      }
+      if (filters.inv_type) {
+        const itemInvType = String(item.inv_type || '').trim();
+        const filterInvType = String(filters.inv_type).trim();
+        if (itemInvType !== filterInvType) return false;
+      }
+      if (filters.inv_quality) {
+        const itemInvQuality = String(item.inv_quality || '').trim();
+        const filterInvQuality = String(filters.inv_quality).trim();
+        if (itemInvQuality !== filterInvQuality) return false;
+      }
+      if (filters.branch) {
+        const itemBranch = String(item.branch || '').trim();
+        const filterBranch = String(filters.branch).trim();
+        if (itemBranch !== filterBranch) return false;
+      }
+      if (filters.warehouse) {
+        const itemWarehouse = String(item.warehouse || '').trim();
+        const filterWarehouse = String(filters.warehouse).trim();
+        if (itemWarehouse !== filterWarehouse) return false;
+      }
       
       // Status filter (only when comparison is shown)
       if (showComparison && filters.status) {
@@ -1378,7 +1305,6 @@ const ReconciliationPage: React.FC = () => {
       warehouse: '',
       status: ''
     });
-    setSearchTerm('');
   };
 
   // Export to Excel
@@ -1871,47 +1797,126 @@ const ReconciliationPage: React.FC = () => {
     }
   };
 
-  // Function to map quality standards to codes
-  const getQualityStandardCode = (quality: string): string => {
-    if (!quality) return '-';
-    
-    const qualityLower = quality.toLowerCase().trim();
-    
-    // Map quality standards to correct codes as specified
-    const qualityMap: { [key: string]: string } = {
-      'conforms to std': '-',
-      'conforms to standard': '-',
-      'conforms to std.': '-',
-      'conforms to standard.': '-',
-      'conforms': '-',
-      'standard': '-',
-      'std': '-',
-      'std.': '-',
-      'standard.': '-',
-      'secondary': 'X',
-      'mill claim': 'M',
-      'reject': 'R',
-      'rejected': 'R',
-      'scrap': 'S',
-      'price protected': 'P',
-      'price protection': 'P',
-      'protected': 'P'
-    };
-    
-    // Check for exact matches first
-    if (qualityMap[qualityLower]) {
-      return qualityMap[qualityLower];
+  // Quality standards mapping - matches backend normalization
+  // Maps codes to descriptions (bidirectional)
+  const qualityCodeToDescription: { [key: string]: string } = {
+    '-': 'Prime',
+    'C': 'Claim',
+    'R': 'Reject',
+    'S': 'Scrap',
+    'Y': 'Secondary',
+    'P': 'Processing',
+    'X': 'Special Buy',
+    'Z': 'Write Down',
+    'B': 'Buyout',
+    'G': 'BERG Pipe',
+    'U': 'Used',
+    'J': 'ReJect',
+    'M': 'Mill Claim',
+    'E': 'Price Protct Ex',
+    'A': 'Pre-Bill Collec',
+    'T': 'Solar 0 Value',
+    'N': 'NZ Write Down',
+    'O': 'Over-roll NZ'
+  };
+
+  // Reverse mapping - descriptions to codes
+  const qualityDescriptionToCode: { [key: string]: string } = {};
+  Object.entries(qualityCodeToDescription).forEach(([code, desc]) => {
+    qualityDescriptionToCode[desc.toLowerCase()] = code;
+    // Handle variations
+    if (desc === 'ReJect') {
+      qualityDescriptionToCode['reject'] = code;
+    }
+    if (desc === 'Mill Claim') {
+      qualityDescriptionToCode['millclaim'] = code;
+      qualityDescriptionToCode['mill claim'] = code;
+    }
+    if (desc === 'Special Buy') {
+      qualityDescriptionToCode['specialbuy'] = code;
+      qualityDescriptionToCode['special buy'] = code;
+    }
+    if (desc === 'Write Down') {
+      qualityDescriptionToCode['writedown'] = code;
+      qualityDescriptionToCode['write down'] = code;
+    }
+    if (desc === 'Price Protct Ex') {
+      qualityDescriptionToCode['price protct ex'] = code;
+      qualityDescriptionToCode['priceprotected'] = code;
+    }
+    if (desc === 'Pre-Bill Collec') {
+      qualityDescriptionToCode['pre-bill collec'] = code;
+      qualityDescriptionToCode['prebill'] = code;
+    }
+    if (desc === 'Solar 0 Value') {
+      qualityDescriptionToCode['solar 0 value'] = code;
+      qualityDescriptionToCode['solar'] = code;
+    }
+    if (desc === 'NZ Write Down') {
+      qualityDescriptionToCode['nz write down'] = code;
+      qualityDescriptionToCode['nzwritedown'] = code;
+    }
+    if (desc === 'Over-roll NZ') {
+      qualityDescriptionToCode['over-roll nz'] = code;
+      qualityDescriptionToCode['overroll'] = code;
+    }
+    // Handle common variations
+    if (desc === 'Prime') {
+      qualityDescriptionToCode['conforms to std'] = code;
+      qualityDescriptionToCode['conforms to standard'] = code;
+      qualityDescriptionToCode['conforms'] = code;
+      qualityDescriptionToCode['standard'] = code;
+      qualityDescriptionToCode['std'] = code;
+    }
+  });
+
+  // Normalize quality value - converts both codes and descriptions to normalized description format
+  // This matches the backend normalization logic
+  const normalizeQualityForComparison = (quality: unknown): string => {
+    // Handle empty, null, undefined, and dash values - all should normalize to 'prime'
+    if (!quality || quality === '' || quality === '-' || quality === null || quality === undefined) {
+      return 'prime'; // Default to prime for empty values (lowercase for comparison)
     }
     
-    // Check for partial matches
-    for (const [key, code] of Object.entries(qualityMap)) {
-      if (qualityLower.includes(key) || key.includes(qualityLower)) {
-        return code;
+    const qualityStr = String(quality).trim();
+    
+    // If after trimming it's empty or dash, return 'prime'
+    if (qualityStr === '' || qualityStr === '-') {
+      return 'prime';
+    }
+    
+    // First check if it's a code (single character or '-')
+    if (qualityCodeToDescription[qualityStr]) {
+      return qualityCodeToDescription[qualityStr].toLowerCase();
+    }
+    
+    // Check if it's a description (case-insensitive)
+    const qualityLower = qualityStr.toLowerCase();
+    if (qualityDescriptionToCode[qualityLower]) {
+      // It's a description, convert to code then back to description for normalization
+      const code = qualityDescriptionToCode[qualityLower];
+      return qualityCodeToDescription[code].toLowerCase();
+    }
+    
+    // Check for partial matches in descriptions
+    for (const [, desc] of Object.entries(qualityCodeToDescription)) {
+      const descLower = desc.toLowerCase();
+      if (qualityLower.includes(descLower) || descLower.includes(qualityLower)) {
+        return descLower; // Return normalized description (lowercase)
       }
     }
     
-    // If no match found, return the original value (for any other quality standards)
-    return quality;
+    // If no match found, return lowercase version
+    return qualityLower;
+  };
+
+  // Legacy function for backward compatibility (for export functionality)
+  const getQualityStandardCode = (quality: string): string => {
+    if (!quality) return '-';
+    const normalized = normalizeQualityForComparison(quality);
+    // Convert back to code for export
+    const code = qualityDescriptionToCode[normalized];
+    return code || quality;
   };
 
   if (loading) {
@@ -2071,11 +2076,15 @@ const ReconciliationPage: React.FC = () => {
               </MenuItem>
             </Menu>
             
-            {/* Compare Button */}
+            {/* Compare Button - Shows comparison between System and Counter/Checker data */}
             <Button
               variant="contained"
               color="primary"
-              onClick={fetchCheckerDataAndCompare}
+              onClick={() => {
+                // Simple comparison without field selection dialog
+                setShowComparison(true);
+                enqueueSnackbar('Comparison enabled', { variant: 'info' });
+              }}
               disabled={loadingChecker}
               startIcon={loadingChecker ? <CircularProgress size={20} /> : <CompareArrows />}
               sx={{ 
@@ -2085,7 +2094,7 @@ const ReconciliationPage: React.FC = () => {
                 boxShadow: 2
               }}
             >
-              {loadingChecker ? 'Loading...' : 'Compare with Checker'}
+              {loadingChecker ? 'Loading...' : `Compare with ${pageRole.charAt(0).toUpperCase() + pageRole.slice(1)}`}
             </Button>
 
             {/* Secondary Actions - Only show when comparison is active */}
@@ -2222,273 +2231,148 @@ const ReconciliationPage: React.FC = () => {
             }}
             sx={{ maxWidth: 400 }}
           />
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button
-              variant="outlined"
-              startIcon={<FilterList />}
-              onClick={() => setShowFilters(!showFilters)}
-            >
-              {showFilters ? 'Hide Filters' : 'Show Filters'}
-            </Button>
-            <Button
-              variant="outlined"
-              startIcon={<Clear />}
-              onClick={clearAllFilters}
-              disabled={!searchTerm && Object.values(filters).every(v => !v)}
-            >
-              Clear All
-            </Button>
-          </Box>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={clearAllFilters}
+            disabled={Object.values(filters).every(v => !v)}
+          >
+            Clear Filters
+          </Button>
         </Box>
-
-        {/* Filter Accordion */}
-        <Collapse in={showFilters}>
-          <Accordion defaultExpanded sx={{ boxShadow: 'none', border: '1px solid', borderColor: 'divider' }}>
-            <AccordionSummary expandIcon={<ExpandMore />}>
-              <Typography variant="h6">Column Filters</Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              <Grid container spacing={2}>
-                <Grid item xs={12} sm={6} md={3}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Form</InputLabel>
-                    <Select
-                      value={filters.form}
-                      onChange={(e) => handleFilterChange('form', e.target.value)}
-                      label="Form"
-                    >
-                      <MenuItem value="">All</MenuItem>
-                      {uniqueValues.form?.map((value: string) => (
-                        <MenuItem key={value} value={value}>{value}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid item xs={12} sm={6} md={3}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Grade</InputLabel>
-                    <Select
-                      value={filters.grade}
-                      onChange={(e) => handleFilterChange('grade', e.target.value)}
-                      label="Grade"
-                    >
-                      <MenuItem value="">All</MenuItem>
-                      {uniqueValues.grade?.map((value: string) => (
-                        <MenuItem key={value} value={value}>{value}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid item xs={12} sm={6} md={3}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Size</InputLabel>
-                    <Select
-                      value={filters.size}
-                      onChange={(e) => handleFilterChange('size', e.target.value)}
-                      label="Size"
-                    >
-                      <MenuItem value="">All</MenuItem>
-                      {uniqueValues.size?.map((value: string) => (
-                        <MenuItem key={value} value={value}>{value}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid item xs={12} sm={6} md={3}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Finish</InputLabel>
-                    <Select
-                      value={filters.finish}
-                      onChange={(e) => handleFilterChange('finish', e.target.value)}
-                      label="Finish"
-                    >
-                      <MenuItem value="">All</MenuItem>
-                      {uniqueValues.finish?.map((value: string) => (
-                        <MenuItem key={value} value={value}>{value}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid item xs={12} sm={6} md={3}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Extended Finish</InputLabel>
-                    <Select
-                      value={filters.ext_finish}
-                      onChange={(e) => handleFilterChange('ext_finish', e.target.value)}
-                      label="Extended Finish"
-                    >
-                      <MenuItem value="">All</MenuItem>
-                      {uniqueValues.ext_finish?.map((value: string) => (
-                        <MenuItem key={value} value={value}>{value}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid item xs={12} sm={6} md={3}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Width</InputLabel>
-                    <Select
-                      value={filters.width}
-                      onChange={(e) => handleFilterChange('width', e.target.value)}
-                      label="Width"
-                    >
-                      <MenuItem value="">All</MenuItem>
-                      {uniqueValues.width?.map((value: string) => (
-                        <MenuItem key={value} value={value}>{value}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid item xs={12} sm={6} md={3}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Length</InputLabel>
-                    <Select
-                      value={filters.length}
-                      onChange={(e) => handleFilterChange('length', e.target.value)}
-                      label="Length"
-                    >
-                      <MenuItem value="">All</MenuItem>
-                      {uniqueValues.length?.map((value: string) => (
-                        <MenuItem key={value} value={value}>{value}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid item xs={12} sm={6} md={3}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Location</InputLabel>
-                    <Select
-                      value={filters.location}
-                      onChange={(e) => handleFilterChange('location', e.target.value)}
-                      label="Location"
-                    >
-                      <MenuItem value="">All</MenuItem>
-                      {uniqueValues.location?.map((value: string) => (
-                        <MenuItem key={value} value={value}>{value}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid item xs={12} sm={6} md={3}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Inventory Type</InputLabel>
-                    <Select
-                      value={filters.inv_type}
-                      onChange={(e) => handleFilterChange('inv_type', e.target.value)}
-                      label="Inventory Type"
-                    >
-                      <MenuItem value="">All</MenuItem>
-                      {uniqueValues.inv_type?.map((value: string) => (
-                        <MenuItem key={value} value={value}>{value}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid item xs={12} sm={6} md={3}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Quality Standards</InputLabel>
-                    <Select
-                      value={filters.inv_quality}
-                      onChange={(e) => handleFilterChange('inv_quality', e.target.value)}
-                      label="Quality Standards"
-                    >
-                      <MenuItem value="">All</MenuItem>
-                      {uniqueValues.inv_quality?.map((value: string) => (
-                        <MenuItem key={value} value={value}>
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-                            <span>{value}</span>
-                            <Chip 
-                              label={getQualityStandardCode(value)} 
-                              size="small" 
-                              variant="outlined"
-                              color="primary"
-                              sx={{ ml: 1, minWidth: 20 }}
-                            />
-                          </Box>
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid item xs={12} sm={6} md={3}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Branch</InputLabel>
-                    <Select
-                      value={filters.branch}
-                      onChange={(e) => handleFilterChange('branch', e.target.value)}
-                      label="Branch"
-                    >
-                      <MenuItem value="">All</MenuItem>
-                      {uniqueValues.branch?.map((value: string) => (
-                        <MenuItem key={value} value={value}>{value}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid item xs={12} sm={6} md={3}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Warehouse</InputLabel>
-                    <Select
-                      value={filters.warehouse}
-                      onChange={(e) => handleFilterChange('warehouse', e.target.value)}
-                      label="Warehouse"
-                    >
-                      <MenuItem value="">All</MenuItem>
-                      {uniqueValues.warehouse?.map((value: string) => (
-                        <MenuItem key={value} value={value}>{value}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                {showComparison && (
-                  <Grid item xs={12} sm={6} md={3}>
-                    <FormControl fullWidth size="small">
-                      <InputLabel>Status</InputLabel>
-                      <Select
-                        value={filters.status}
-                        onChange={(e) => handleFilterChange('status', e.target.value)}
-                        label="Status"
-                      >
-                        <MenuItem value="">All</MenuItem>
-                        {uniqueValues.status?.map((value: string) => (
-                          <MenuItem key={value} value={value}>{value}</MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  </Grid>
-                )}
-              </Grid>
-            </AccordionDetails>
-          </Accordion>
-        </Collapse>
         
-        {/* Active Filters Summary */}
-        {(searchTerm || Object.values(filters).some(v => v)) && (
-          <Box sx={{ mt: 2, p: 1, backgroundColor: alpha(theme.palette.info.main, 0.1), borderRadius: 1 }}>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              Active Filters:
-            </Typography>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-              {searchTerm && (
+        {/* Filter Row */}
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mt: 2 }}>
+          <FormControl size="small" sx={{ minWidth: 120 }}>
+            <InputLabel>Form</InputLabel>
+            <Select
+              value={filters.form || ''}
+              label="Form"
+              onChange={(e) => handleFilterChange('form', e.target.value)}
+            >
+              <MenuItem value="">All</MenuItem>
+              {uniqueValues.form?.map((value) => (
+                <MenuItem key={String(value)} value={String(value)}>{String(value)}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          
+          <FormControl size="small" sx={{ minWidth: 120 }}>
+            <InputLabel>Grade</InputLabel>
+            <Select
+              value={filters.grade || ''}
+              label="Grade"
+              onChange={(e) => handleFilterChange('grade', e.target.value)}
+            >
+              <MenuItem value="">All</MenuItem>
+              {uniqueValues.grade?.map((value) => (
+                <MenuItem key={String(value)} value={String(value)}>{String(value)}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          
+          <FormControl size="small" sx={{ minWidth: 120 }}>
+            <InputLabel>Size</InputLabel>
+            <Select
+              value={filters.size || ''}
+              label="Size"
+              onChange={(e) => handleFilterChange('size', e.target.value)}
+            >
+              <MenuItem value="">All</MenuItem>
+              {uniqueValues.size?.map((value: string) => (
+                <MenuItem key={value} value={value}>{value}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          
+          <FormControl size="small" sx={{ minWidth: 120 }}>
+            <InputLabel>Finish</InputLabel>
+            <Select
+              value={filters.finish || ''}
+              label="Finish"
+              onChange={(e) => handleFilterChange('finish', e.target.value)}
+            >
+              <MenuItem value="">All</MenuItem>
+              {uniqueValues.finish?.map((value: string) => (
+                <MenuItem key={value} value={value}>{value}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          
+          <FormControl size="small" sx={{ minWidth: 140 }}>
+            <InputLabel>Location</InputLabel>
+            <Select
+              value={filters.location || ''}
+              label="Location"
+              onChange={(e) => handleFilterChange('location', e.target.value)}
+            >
+              <MenuItem value="">All</MenuItem>
+              {uniqueValues.location?.map((value: string) => (
+                <MenuItem key={value} value={value}>{value}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          
+          <FormControl size="small" sx={{ minWidth: 120 }}>
+            <InputLabel>Branch</InputLabel>
+            <Select
+              value={filters.branch || ''}
+              label="Branch"
+              onChange={(e) => handleFilterChange('branch', e.target.value)}
+            >
+              <MenuItem value="">All</MenuItem>
+              {uniqueValues.branch?.map((value: string) => (
+                <MenuItem key={value} value={value}>{value}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          
+          <FormControl size="small" sx={{ minWidth: 120 }}>
+            <InputLabel>Warehouse</InputLabel>
+            <Select
+              value={filters.warehouse || ''}
+              label="Warehouse"
+              onChange={(e) => handleFilterChange('warehouse', e.target.value)}
+            >
+              <MenuItem value="">All</MenuItem>
+              {uniqueValues.warehouse?.map((value: string) => (
+                <MenuItem key={value} value={value}>{value}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          
+          {showComparison && (
+            <FormControl size="small" sx={{ minWidth: 140 }}>
+              <InputLabel>Status</InputLabel>
+              <Select
+                value={filters.status || ''}
+                label="Status"
+                onChange={(e) => handleFilterChange('status', e.target.value)}
+              >
+                <MenuItem value="">All</MenuItem>
+                {uniqueValues.status?.map((value: string) => (
+                  <MenuItem key={value} value={value}>{value}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+        </Box>
+        
+        {/* Active Filters Display */}
+        {Object.values(filters).some(v => v) && (
+          <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+            {Object.entries(filters).map(([key, value]) => 
+              value && (
                 <Chip 
-                  label={`Search: "${searchTerm}"`} 
+                  key={key}
+                  label={`${key.replace('_', ' ').toUpperCase()}: ${value}`} 
                   size="small" 
-                  onDelete={() => setSearchTerm('')}
+                  onDelete={() => handleFilterChange(key, '')}
                   color="primary"
+                  variant="outlined"
                 />
-              )}
-              {Object.entries(filters).map(([key, value]) => 
-                value && (
-                  <Chip 
-                    key={key}
-                    label={`${key.replace('_', ' ').toUpperCase()}: ${value}`} 
-                    size="small" 
-                    onDelete={() => handleFilterChange(key, '')}
-                    color="secondary"
-                  />
-                )
-              )}
-            </Box>
+              )
+            )}
           </Box>
         )}
       </Paper>

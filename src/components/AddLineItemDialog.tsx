@@ -51,6 +51,23 @@ const COUNT_TYPES = {
   BUNDLES: 'bundle' as CountType
 };
 
+interface TagRecord {
+  form: string;
+  grade: string;
+  size: string;
+  finish: string;
+  ext_finish: string;
+  width: string;
+  length: string;
+  mill: string;
+  heat: string;
+  location: string;
+  type?: string;
+  inventory_type?: string;
+  quality: string;
+  type_display?: string;
+}
+
 const createEmptyBundle = (): BundleItem => ({
   quantity: 0,
   tag_id: '',
@@ -72,6 +89,7 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
     size: '',
     width: '',
     length: '',
+    sysTag: '',
     finish: '',
     extendedFinish: '',
     mill: '-',
@@ -433,6 +451,7 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
     length: false,
     mill: false,
     heat: false,
+    sysTag: false,
     location: false,
     general: false,
     submitting: false
@@ -465,6 +484,10 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
   const [locationData, setLocationData] = useState<Location | null>(null);
   const [sectionData, setSectionData] = useState<Section | null>(null);
   const [teamData, setTeamData] = useState<Team | null>(null);
+
+  // Multiple records for a System Tag No (Counter page behavior)
+  const [tagRecordsDialogOpen, setTagRecordsDialogOpen] = useState(false);
+  const [tagRecordsList, setTagRecordsList] = useState<TagRecord[]>([]);
 
   // Fetch initial data including current tag
   useEffect(() => {
@@ -1020,19 +1043,95 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
     });
   };
 
+  const applyTagRecordToForm = (data: TagRecord) => {
+    const widthStr =
+      data.width != null && data.width !== '' && !isNaN(Number(data.width))
+        ? Number(data.width).toFixed(4)
+        : (data.width ?? '');
+    const finishVal = (data.finish ?? '').toString().trim();
+    const extFinishVal = (data.ext_finish ?? '').toString().trim();
+
+    const rawLen = data.length;
+    const hasLength =
+      rawLen !== null &&
+      rawLen !== undefined &&
+      String(rawLen).trim() !== '';
+    const totalInches = hasLength ? parseFloat(String(rawLen)) : NaN;
+
+    // System length from API is in inches; we store inches as `length` in the dialog,
+    // and later convert to feet when submitting.
+    let lenStr = '';
+    if (Number.isFinite(totalInches)) {
+      lenStr = totalInches.toFixed(4); // keep 0 as "0.0000"
+    }
+
+    setFormData(prev => ({
+      ...prev,
+      form: data.form ?? prev.form,
+      grade: data.grade ?? prev.grade,
+      size: data.size ?? prev.size,
+      width: widthStr || prev.width,
+      length: lenStr || prev.length,
+      finish: finishVal !== '' ? finishVal : ' ',
+      extendedFinish: extFinishVal !== '' ? extFinishVal : ' ',
+      mill: data.mill ?? prev.mill,
+      heat: data.heat ?? prev.heat,
+      location: data.location ?? prev.location,
+      type: (data.type ?? data.inventory_type ?? prev.type) || prev.type,
+      remarks: (data.quality ?? prev.remarks) || prev.remarks,
+    }));
+  };
+
+  const handleSelectTagRecord = (record: TagRecord) => {
+    applyTagRecordToForm(record);
+    setTagRecordsDialogOpen(false);
+    setTagRecordsList([]);
+    setError(null);
+  };
+
+  const fetchBySystemTagNo = async (tagNo: string) => {
+    const tag = (tagNo ?? '').toString().trim();
+    if (!tag) return;
+
+    setError(null);
+    setLoading(prev => ({ ...prev, sysTag: true }));
+    try {
+      const response = await servicesAPI.getProductByTag(tag);
+      if (response.data?.multiple && response.data?.Records?.length) {
+        setTagRecordsList(response.data.Records as TagRecord[]);
+        setTagRecordsDialogOpen(true);
+        return;
+      }
+
+      const data = response.data?.Data;
+      if (!data) {
+        setError(response.data?.message || 'No record found for this System Tag No');
+        return;
+      }
+
+      applyTagRecordToForm(data);
+    } catch (err) {
+      console.error('Fetch by system tag error:', err);
+      setError('Failed to fetch System Tag No details.');
+    } finally {
+      setLoading(prev => ({ ...prev, sysTag: false }));
+    }
+  };
+
   const handleSubmit = async () => {
     const selectedRole = localStorage.getItem('Selected Role');
     const selectedUser = localStorage.getItem('User ID');
     
     const payload = {
       tag_id: formData.tag_id,
+      sys_tag_no: formData.sysTag || null,
       form: formData.form,
       grade: formData.grade,
       size: formData.size,
       finish: formData.finish || null,
       ext_finish: formData.extendedFinish || null,
       width: formData.width ? parseFloat(formData.width) : null,
-      length: formData.length ? parseFloat(formData.length) : null,
+      length: formData.length ? parseFloat(formData.length) / 12 : null,
       mill: formData.mill || null,
       heat: formData.heat || null,
       type: formData.type || 'M',
@@ -1082,6 +1181,7 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
       size: '',
       width: '',
       length: '',
+      sysTag: '',
       finish: '',
       extendedFinish: '',
       mill: '-',
@@ -1134,6 +1234,58 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
         )}
 
         <Grid container spacing={2} sx={{ mt: 1 }}>
+          {/* System Tag No Field (Counter page pattern) */}
+          <Grid item xs={12}>
+            <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+              <Autocomplete
+                freeSolo
+                options={[]}
+                value={formData.sysTag}
+                onChange={(_, value) => setFormData(prev => ({ ...prev, sysTag: value ?? '' }))}
+                onInputChange={(_, value) => setFormData(prev => ({ ...prev, sysTag: value ?? '' }))}
+                loading={loading.sysTag}
+                sx={{ flex: 1 }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="System Tag No"
+                    fullWidth
+                    placeholder="Enter tag number and click Fetch to fill fields"
+                    inputRef={(input) => {
+                      fieldRefs.current.sysTag = input;
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        fetchBySystemTagNo(formData.sysTag);
+                      }
+                    }}
+                    disabled={loading.sysTag}
+                    InputProps={{
+                      ...params.InputProps,
+                      endAdornment: (
+                        <>
+                          {loading.sysTag ? <CircularProgress color="inherit" size={20} /> : null}
+                          {params.InputProps.endAdornment}
+                        </>
+                      ),
+                    }}
+                  />
+                )}
+              />
+
+              <Button
+                type="button"
+                variant="outlined"
+                onClick={() => fetchBySystemTagNo(formData.sysTag)}
+                disabled={loading.sysTag || !formData.sysTag.trim()}
+                sx={{ minWidth: 100, mt: 1 }}
+              >
+                {loading.sysTag ? 'Fetching...' : 'Fetch'}
+              </Button>
+            </Box>
+          </Grid>
+
           {/* Form Field */}
           <Grid item xs={12} sm={6}>
             <Autocomplete
@@ -1779,6 +1931,76 @@ const AddLineItemDialog: React.FC<AddLineItemDialogProps> = ({
           {loading.submitting ? 'Submitting...' : 'Add Line Item'}
         </Button>
       </DialogActions>
+
+      {/* Multiple records by System Tag - select one */}
+      <Dialog
+        open={tagRecordsDialogOpen}
+        onClose={() => {
+          setTagRecordsDialogOpen(false);
+          setTagRecordsList([]);
+        }}
+        maxWidth="xl"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 2 } }}
+      >
+        <DialogTitle>Multiple records found. Please select one.</DialogTitle>
+        <DialogContent>
+          <TableContainer component={Paper} variant="outlined" sx={{ mt: 1, maxHeight: 440 }}>
+            <Table size="small" stickyHeader>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Form</TableCell>
+                  <TableCell>Grade</TableCell>
+                  <TableCell>Size</TableCell>
+                  <TableCell>Finish</TableCell>
+                  <TableCell>Ext Finish</TableCell>
+                  <TableCell>Width</TableCell>
+                  <TableCell>Length</TableCell>
+                  <TableCell>Mill</TableCell>
+                  <TableCell>Heat</TableCell>
+                  <TableCell>Location</TableCell>
+                  <TableCell>Type</TableCell>
+                  <TableCell>Quality</TableCell>
+                  <TableCell align="right">Action</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {tagRecordsList.map((rec, idx) => (
+                  <TableRow key={idx} hover>
+                    <TableCell>{rec.form}</TableCell>
+                    <TableCell>{rec.grade}</TableCell>
+                    <TableCell>{rec.size}</TableCell>
+                    <TableCell>{rec.finish}</TableCell>
+                    <TableCell>{rec.ext_finish}</TableCell>
+                    <TableCell>{rec.width}</TableCell>
+                    <TableCell>{rec.length}</TableCell>
+                    <TableCell>{rec.mill}</TableCell>
+                    <TableCell>{rec.heat}</TableCell>
+                    <TableCell>{rec.location}</TableCell>
+                    <TableCell>{rec.type_display ?? rec.type ?? rec.inventory_type ?? ''}</TableCell>
+                    <TableCell>{rec.quality}</TableCell>
+                    <TableCell align="right">
+                      <Button size="small" variant="contained" onClick={() => handleSelectTagRecord(rec)}>
+                        Select
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setTagRecordsDialogOpen(false);
+              setTagRecordsList([]);
+            }}
+          >
+            Cancel
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Bundle Modal */}
       <Dialog 

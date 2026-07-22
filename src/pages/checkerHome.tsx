@@ -115,6 +115,8 @@ const CheckerHome: React.FC = () => {
         return <AssignmentInd sx={{ color: '#42A5F5' }} />; // Blue
       case 'check completed':
         return <VerifiedUser sx={{ color: '#66BB6A' }} />; // Green
+      case 'completed':
+        return <TaskAlt sx={{ color: '#4CAF50' }} />; // Bright Green
       default:
         return <Warning sx={{ color: '#EF5350' }} />; // Red
     }
@@ -145,6 +147,13 @@ const CheckerHome: React.FC = () => {
           bgcolor: '#E8F5E9',
           color: '#2E7D32',
           borderColor: '#81C784'
+        };
+      case 'completed':
+        return {
+          bgcolor: '#E8F5E9',
+          color: '#1B5E20',
+          borderColor: '#4CAF50',
+          fontWeight: 700
         };
       default:
         return {

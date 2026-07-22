@@ -3,7 +3,6 @@ import {
   Button,
   Typography,
   Dialog,
-  DialogTitle,
   DialogContent,
   DialogActions,
   TextField,
@@ -31,7 +30,8 @@ import {
   InputAdornment,
   CircularProgress,
   Tooltip,
-  Alert
+  Alert,
+  Autocomplete
 } from "@mui/material";
 import {
   MoreVert,
@@ -46,10 +46,11 @@ import {
   LocationOn,
   Category,
   GroupWork,
-  CompareArrows
+  Delete,
+  Clear,
+  Warning
 } from "@mui/icons-material";
 import { servicesAPI } from "../config/api";
-import { useNavigate } from "react-router-dom";
 import Sections from "./sections";
 import ViewSectionsDialog from "./viewSections";
 import AssignItem from "./assignItem";
@@ -75,26 +76,30 @@ interface Location {
   };
 }
 
-interface Branch {
-  brh_brh: string;
+interface Warehouse {
+  whs_whs: string;
+  whs_whs_nm: string;
 }
 
+const BRAND_GRADIENT = 'linear-gradient(135deg, #0C2C48 0%, #1E5A8A 100%)';
 
+const STAT_GRADIENTS = {
+  filtered: 'linear-gradient(135deg, #4776E6 0%, #8E54E9 100%)',
+  warehouses: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+  itemGroups: 'linear-gradient(135deg, #fc4a1a 0%, #f7b733 100%)',
+};
 
 const LocationManagement: React.FC = () => {
   const theme = useTheme();
-  const navigate = useNavigate();
   const [openDialog, setOpenDialog] = useState<boolean>(false);
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [warehouses, setWarehouses] = useState<string[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [warehousesLoading, setWarehousesLoading] = useState<boolean>(false);
 
   const [locations, setLocations] = useState<Location[]>([]);
   const [filteredLocations, setFilteredLocations] = useState<Location[]>([]);
-  const [selectedBranch, setSelectedBranch] = useState<string>("");
+  const [selectedWarehouseFilter, setSelectedWarehouseFilter] = useState<string>("");
 
   // Separate state for create location dialog
-  const [dialogBranch, setDialogBranch] = useState<string>("");
   const [dialogWarehouse, setDialogWarehouse] = useState<string>("");
 
   const [locationDesc, setLocationDesc] = useState<string>("");
@@ -104,9 +109,14 @@ const LocationManagement: React.FC = () => {
   const [openViewSectionDialog, setOpenViewSectionDialog] = useState<boolean>(false);
   const [openAssignItemDialog, setOpenAssignItemDialog] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
+  const [createLoading, setCreateLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState<boolean>(false);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const normalizeText = (value: unknown): string => String(value ?? '').toLowerCase().trim();
 
   // Fetch total form values and overall weight/amount for a specific location's branch and warehouse
   const fetchTotalFormValues = async (branch: string, warehouse: string) => {
@@ -132,46 +142,32 @@ const LocationManagement: React.FC = () => {
     }
   };
 
-  // Fetch branches
-  useEffect(() => {
-    const fetchBranches = async () => {
-      try {
-        const response = await servicesAPI.getBranches();
-        setBranches(response.data.Data);
-      } catch (error) {
-        console.error("Error fetching branches:", error);
-        setError("Failed to load branches");
-      }
-    };
-    fetchBranches();
-  }, []);
-
-  // Fetch warehouses when branch changes
+  // Fetch warehouses when dialog opens
   useEffect(() => {
     const fetchWarehouses = async () => {
-      if (dialogBranch && dialogBranch.trim() !== '') {
+      if (openDialog) {
         try {
           setWarehousesLoading(true);
-          console.log('Fetching warehouses for branch:', dialogBranch);
-          const response = await servicesAPI.getWarehouses(dialogBranch);
+          console.log('Fetching all warehouses');
+          const response = await servicesAPI.getAllWarehouses();
           console.log('Warehouses response:', response);
           
           if (response && response.data) {
             const warehouseData = response.data.Data || response.data || [];
-            console.log('Setting warehouses:', warehouseData);
-            // Extract warehouse names from the objects and ensure they're strings
-            const warehouseNames = Array.isArray(warehouseData) 
-              ? warehouseData
-                  .map(item => {
-                    if (typeof item === 'string') return item;
-                    if (item && typeof item === 'object' && item.whs_whs) return item.whs_whs;
-                    return null;
-                  })
-                  .filter(Boolean)
-                  .filter(warehouse => typeof warehouse === 'string' && warehouse.trim() !== '')
-              : [];
-            console.log('Processed warehouse names:', warehouseNames);
-            setWarehouses(warehouseNames);
+            console.log('Raw warehouse data:', warehouseData);
+            
+            // Remove duplicates based on whs_whs (warehouse code)
+            const uniqueWarehouses = warehouseData.reduce((acc: Warehouse[], current: Warehouse) => {
+              const exists = acc.find(item => item.whs_whs === current.whs_whs);
+              if (!exists) {
+                acc.push(current);
+              }
+              return acc;
+            }, []);
+            
+            console.log('Unique warehouses:', uniqueWarehouses);
+            console.log('Duplicate count:', warehouseData.length - uniqueWarehouses.length);
+            setWarehouses(uniqueWarehouses);
           } else {
             console.log('No warehouse data in response');
             setWarehouses([]);
@@ -179,39 +175,22 @@ const LocationManagement: React.FC = () => {
         } catch (error) {
           console.error("Error fetching warehouses:", error);
           setWarehouses([]);
-          // Don't set error state here to avoid breaking the UI
         } finally {
           setWarehousesLoading(false);
         }
-      } else {
-        setWarehouses([]);
-        setWarehousesLoading(false);
       }
     };
     
-    // Only fetch if we have a valid branch
-    if (dialogBranch) {
-      try {
-        fetchWarehouses();
-      } catch (error) {
-        console.error("Error in warehouse fetch effect:", error);
-        setWarehouses([]);
-        setWarehousesLoading(false);
-      }
+    if (openDialog) {
+      fetchWarehouses();
     }
-  }, [dialogBranch]);
-
-  // Reset warehouse selection when branch changes
-  useEffect(() => {
-    if (dialogBranch !== '') {
-      setDialogWarehouse('');
-    }
-  }, [dialogBranch]);
+  }, [openDialog]);
 
 
   // Fetch locations from the database
   const fetchLocations = async () => {
     try {
+      setLoading(true);
       setRefreshing(true);
       setError(null);
       
@@ -335,48 +314,65 @@ const LocationManagement: React.FC = () => {
     fetchLocations();
   }, []);
 
-  // Filter locations based on search term and branch
+  // Filter locations based on search term and warehouse
   useEffect(() => {
     let filtered = locations;
 
-    // Filter by search term
+    // Advanced search: null-safe, token-based matching with simple relevance ranking
     if (searchTerm.trim() !== '') {
-      filtered = filtered.filter(location =>
-        location.location_desc.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        location.branch.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        location.warehouse.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+      const search = normalizeText(searchTerm);
+      const tokens = search.split(/\s+/).filter(Boolean);
+
+      filtered = filtered
+        .map((location) => {
+          const desc = normalizeText(location.location_desc);
+          const warehouse = normalizeText(location.warehouse);
+          const id = String(location.location_id ?? '');
+          const haystack = `${desc} ${warehouse} ${id}`;
+          const matchesAll = tokens.every((token) => haystack.includes(token));
+          if (!matchesAll) return null;
+
+          let score = 0;
+          if (desc.startsWith(search)) score += 4;
+          if (warehouse.startsWith(search)) score += 3;
+          if (id.startsWith(search)) score += 1;
+
+          return { location, score };
+        })
+        .filter((entry): entry is { location: Location; score: number } => entry !== null)
+        .sort((a, b) => b.score - a.score || a.location.location_desc.localeCompare(b.location.location_desc))
+        .map((entry) => entry.location);
     }
 
-    // Filter by branch
-    if (selectedBranch !== '') {
-      filtered = filtered.filter(location => location.branch === selectedBranch);
+    // Filter by warehouse
+    if (selectedWarehouseFilter !== '') {
+      filtered = filtered.filter(location => location.warehouse === selectedWarehouseFilter);
     }
 
     console.log('Filtering results:', {
       totalLocations: locations.length,
       filteredCount: filtered.length,
       searchTerm,
-      selectedBranch,
+      selectedWarehouseFilter,
       filters: {
         search: searchTerm.trim() !== '',
-        branch: selectedBranch !== ''
+        warehouse: selectedWarehouseFilter !== ''
       }
     });
     setFilteredLocations(filtered);
-  }, [searchTerm, selectedBranch, locations]);
+  }, [searchTerm, selectedWarehouseFilter, locations]);
 
   const createLocation = async () => {
-    if (!dialogBranch || !locationDesc || !dialogWarehouse) {
-      setError("Please fill all fields");
+    if (!locationDesc || !dialogWarehouse) {
+      setError("Please fill all required fields");
       return;
     }
 
     try {
-      setLoading(true);
+      setCreateLoading(true);
       await servicesAPI.createLocation({
         location_desc: locationDesc,
-        branch: dialogBranch,
+        branch: null,
         warehouse: dialogWarehouse,
       });
 
@@ -387,7 +383,7 @@ const LocationManagement: React.FC = () => {
       console.error("Error creating location:", error);
       setError("Failed to create location");
     } finally {
-      setLoading(false);
+      setCreateLoading(false);
     }
   };
 
@@ -415,41 +411,87 @@ const LocationManagement: React.FC = () => {
     handleMenuClose();
   };
 
+  const handleDeletePhysicalInventory = () => {
+    setDeleteDialogOpen(true);
+    handleMenuClose();
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!selectedLocation) return;
+
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    try {
+      // Check if there are any transactions linked to this location
+      const response = await servicesAPI.checkLocationTransactions(selectedLocation.location_id.toString());
+      
+      if (response.data.hasTransactions) {
+        setDeleteError(`Cannot delete this location. There are ${response.data.transactionCount} transaction(s) linked to this physical inventory.`);
+        return;
+      }
+
+      // If no transactions, proceed with deletion
+      await servicesAPI.deleteLocation(selectedLocation.location_id.toString());
+      
+      // Close dialog and refresh locations
+      setDeleteDialogOpen(false);
+      setSelectedLocation(null);
+      await fetchLocations();
+      
+    } catch (error: unknown) {
+      console.error('Error deleting physical inventory:', error);
+      const errorMessage = error && typeof error === 'object' && 'response' in error && 
+        error.response && typeof error.response === 'object' && 'data' in error.response &&
+        error.response.data && typeof error.response.data === 'object' && 'message' in error.response.data
+        ? String(error.response.data.message)
+        : 'Failed to delete physical inventory. Please try again.';
+      setDeleteError(errorMessage);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleCancelDelete = () => {
+    setDeleteDialogOpen(false);
+    setDeleteError(null);
+  };
+
   const handleRefresh = () => {
     fetchLocations();
   };
 
   const resetDialogState = () => {
     setLocationDesc("");
-    setDialogBranch("");
     setDialogWarehouse("");
-    setWarehouses([]);
     setError(null);
   };
 
-  // Safety function to ensure branches is always an array
-  const getSafeBranches = () => {
-    if (!Array.isArray(branches)) return [];
-    // Remove duplicates and ensure unique branches
-    const uniqueBranches = [...new Set(branches.map(branch => branch.brh_brh))].map(brh_brh => ({ brh_brh }));
-    return uniqueBranches;
-  };
-
-  // Safety function to ensure warehouses is always an array
+  // Unique warehouse options from loaded locations
   const getSafeWarehouses = () => {
-    if (!Array.isArray(warehouses)) return [];
-    // Ensure all warehouses are strings and filter out any invalid values
-    return warehouses.filter(warehouse => typeof warehouse === 'string' && warehouse.trim() !== '');
+    const uniqueWarehouses = [...new Set(locations.map(location => location.warehouse).filter(Boolean))];
+    return uniqueWarehouses.sort();
   };
 
-  if (loading && !refreshing) {
+  const totalItemGroups = locations.reduce((sum, loc) => sum + (loc.item_group_count || 0), 0);
+  const hasActiveFilters = Boolean(searchTerm || selectedWarehouseFilter);
+
+  if (loading) {
     return (
       <Box sx={{ p: 3 }}>
-        <Skeleton variant="rectangular" width="100%" height={120} sx={{ mb: 3, borderRadius: 2 }} />
+        <Skeleton variant="rectangular" width="100%" height={140} sx={{ mb: 3, borderRadius: '20px' }} />
+        <Grid container spacing={2} sx={{ mb: 3 }}>
+          {[...Array(4)].map((_, index) => (
+            <Grid item xs={6} md={3} key={index}>
+              <Skeleton variant="rectangular" width="100%" height={88} sx={{ borderRadius: '16px' }} />
+            </Grid>
+          ))}
+        </Grid>
+        <Skeleton variant="rectangular" width="100%" height={72} sx={{ mb: 3, borderRadius: '16px' }} />
         <Grid container spacing={3}>
           {[...Array(6)].map((_, index) => (
             <Grid item xs={12} sm={6} md={4} key={index}>
-              <Skeleton variant="rectangular" width="100%" height={180} sx={{ borderRadius: 2 }} />
+              <Skeleton variant="rectangular" width="100%" height={280} sx={{ borderRadius: '16px' }} />
             </Grid>
           ))}
         </Grid>
@@ -476,69 +518,132 @@ const LocationManagement: React.FC = () => {
 
   try {
     return (
-      <Box sx={{ p: 3 }}>
-        {/* Header Section */}
-        <Paper sx={{ 
-          p: 3, 
-          mb: 3, 
-          borderRadius: 3,
-          background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.05)}, ${alpha(theme.palette.secondary.main, 0.05)})`,
-          boxShadow: '0 4px 20px rgba(0,0,0,0.05)'
-        }}>
-        <Box sx={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center',
-          flexDirection: { xs: 'column', sm: 'row' },
-          gap: 2
-        }}>
-          <Box sx={{ textAlign: { xs: 'center', sm: 'left' } }}>
-            <Typography variant="h4" sx={{ 
-              fontWeight: 700, 
-              display: 'flex', 
-              alignItems: 'center',
-              justifyContent: { xs: 'center', sm: 'flex-start' }
-            }}>
-              <Warehouse sx={{ 
-                mr: 2, 
-                fontSize: 40,
-                color: theme.palette.primary.main 
-              }} />
-              Inventory Locations
-            </Typography>
-            <Typography variant="subtitle1" color="text.secondary" sx={{ mt: 1 }}>
-              Manage all your inventory locations in one place
+      <Box sx={{ p: 3, position: 'relative' }}>
+        {/* Refreshing Overlay */}
+        {refreshing && !loading && (
+          <Box sx={{
+            position: 'fixed',
+            top: 80,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 1300,
+            backgroundColor: theme.palette.background.paper,
+            borderRadius: 2,
+            boxShadow: 3,
+            px: 3,
+            py: 1.5,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 2
+          }}>
+            <CircularProgress size={20} />
+            <Typography variant="body2" color="text.secondary">
+              Refreshing locations...
             </Typography>
           </Box>
-          <Button 
-            variant="contained" 
-            color="primary" 
-            onClick={() => setOpenDialog(true)}
-            startIcon={<Add />}
-            sx={{ 
-              height: 48,
-              minWidth: 180,
-              borderRadius: 2,
-              boxShadow: 'none',
-              '&:hover': {
-                boxShadow: 'none'
-              }
-            }}
-          >
-            New Location
-          </Button>
+        )}
+        
+        {/* Hero Header */}
+        <Box
+          sx={{
+            position: 'relative',
+            overflow: 'hidden',
+            borderRadius: '20px',
+            mb: 3,
+            px: { xs: 2.5, sm: 4 },
+            py: { xs: 3, sm: 3.5 },
+            background: BRAND_GRADIENT,
+            color: '#fff',
+            boxShadow: '0 14px 40px 0 rgba(12,44,72,0.30)'
+          }}
+        >
+          <Box sx={{ position: 'absolute', top: -60, right: -40, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.06)' }} />
+          <Box sx={{ position: 'absolute', bottom: -80, right: 130, width: 180, height: 180, borderRadius: '50%', background: 'rgba(255,255,255,0.04)' }} />
+
+          <Box sx={{
+            position: 'relative',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: { xs: 'flex-start', sm: 'center' },
+            flexDirection: { xs: 'column', sm: 'row' },
+            gap: { xs: 2.5, sm: 0 }
+          }}>
+            <Box display="flex" alignItems="center" gap={2}>
+              <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.15)', width: 56, height: 56 }}>
+                <Warehouse sx={{ fontSize: 30, color: '#fff' }} />
+              </Avatar>
+              <Box>
+                <Typography variant="h4" component="h1" fontWeight={800} sx={{ letterSpacing: '-0.5px', lineHeight: 1.15 }}>
+                  Inventory Counts
+                </Typography>
+                <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.75)', mt: 0.5 }}>
+                  Manage all your inventory locations in one place
+                </Typography>
+              </Box>
+            </Box>
+            <Button
+              variant="contained"
+              onClick={() => setOpenDialog(true)}
+              startIcon={<Add />}
+              sx={{
+                backgroundColor: '#fff',
+                color: theme.palette.primary.main,
+                borderRadius: '10px',
+                textTransform: 'none',
+                fontWeight: 700,
+                px: 2.5,
+                whiteSpace: 'nowrap',
+                boxShadow: '0 6px 18px rgba(0,0,0,0.18)',
+                '&:hover': { backgroundColor: 'rgba(255,255,255,0.9)' }
+              }}
+            >
+              New Count
+            </Button>
+          </Box>
         </Box>
-      </Paper>
+
+        {/* Stats Strip */}
+        <Grid container spacing={2} sx={{ mb: 3 }}>
+          {[
+            { label: 'Total Locations', value: locations.length, grad: BRAND_GRADIENT, icon: <Warehouse /> },
+            { label: hasActiveFilters ? 'Filtered Results' : 'All Locations', value: filteredLocations.length, grad: STAT_GRADIENTS.filtered, icon: <Search /> },
+            { label: 'Warehouses', value: getSafeWarehouses().length, grad: STAT_GRADIENTS.warehouses, icon: <Business /> },
+            { label: 'Item Groups', value: totalItemGroups, grad: STAT_GRADIENTS.itemGroups, icon: <Category /> },
+          ].map((stat) => (
+            <Grid item xs={6} md={3} key={stat.label}>
+              <Card sx={{
+                borderRadius: '16px',
+                border: '1px solid rgba(12,44,72,0.06)',
+                boxShadow: '0 6px 24px 0 rgba(12,44,72,0.05)',
+                height: '100%',
+                transition: 'transform 0.25s ease, box-shadow 0.25s ease',
+                '&:hover': { transform: 'translateY(-3px)', boxShadow: '0 14px 32px 0 rgba(12,44,72,0.12)' }
+              }}>
+                <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 2 }}>
+                  <Avatar sx={{ background: stat.grad, width: 44, height: 44, color: '#fff' }}>
+                    {stat.icon}
+                  </Avatar>
+                  <Box>
+                    <Typography variant="h5" fontWeight={800} sx={{ color: theme.palette.primary.main, lineHeight: 1 }}>
+                      {stat.value.toLocaleString()}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">{stat.label}</Typography>
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
 
       {/* Filters and Search */}
-      <Paper sx={{ p: 3, mb: 3, borderRadius: 3 }}>
+      <Paper sx={{ p: 3, mb: 3, borderRadius: '16px', border: '1px solid rgba(12,44,72,0.06)', boxShadow: '0 6px 24px 0 rgba(12,44,72,0.05)' }}>
         <Grid container spacing={2} alignItems="center">
           <Grid item xs={12} md={6}>
             <TextField
               fullWidth
               variant="outlined"
               size="small"
-              placeholder="Search locations..."
+              placeholder="Search by count, warehouse, or ID..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               InputProps={{
@@ -547,31 +652,49 @@ const LocationManagement: React.FC = () => {
                     <Search color="action" />
                   </InputAdornment>
                 ),
+                endAdornment: searchTerm ? (
+                  <InputAdornment position="end">
+                    <IconButton
+                      size="small"
+                      onClick={() => setSearchTerm('')}
+                      edge="end"
+                      aria-label="Clear search"
+                    >
+                      <Clear fontSize="small" />
+                    </IconButton>
+                  </InputAdornment>
+                ) : undefined,
                 sx: {
                   borderRadius: 2,
-                  backgroundColor: alpha(theme.palette.action.hover, 0.1)
+                  backgroundColor: alpha(theme.palette.action.hover, 0.08),
+                  '& .MuiOutlinedInput-notchedOutline': {
+                    borderColor: alpha(theme.palette.primary.main, 0.2),
+                  },
+                  '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                    borderColor: theme.palette.primary.main,
+                  }
                 }
               }}
             />
           </Grid>
           <Grid item xs={6} md={2}>
             <FormControl fullWidth size="small">
-              <InputLabel>Filter by Branch</InputLabel>
+              <InputLabel>Filter by Warehouse</InputLabel>
               <Select
-                value={selectedBranch}
-                onChange={(e) => setSelectedBranch(e.target.value)}
-                label="Filter by Branch"
+                value={selectedWarehouseFilter}
+                onChange={(e) => setSelectedWarehouseFilter(e.target.value)}
+                label="Filter by Warehouse"
                 sx={{ borderRadius: 2 }}
                 startAdornment={
                   <InputAdornment position="start">
-                    <Business fontSize="small" />
+                    <Warehouse fontSize="small" />
                   </InputAdornment>
                 }
               >
-                <MenuItem value="">All Branches</MenuItem>
-                {getSafeBranches().map((branch, index) => (
-                  <MenuItem key={`branch-${branch.brh_brh}-${index}`} value={branch.brh_brh}>
-                    {branch.brh_brh}
+                <MenuItem value="">All Warehouses</MenuItem>
+                {getSafeWarehouses().map((warehouse, index) => (
+                  <MenuItem key={`warehouse-${warehouse}-${index}`} value={warehouse}>
+                    {warehouse}
                   </MenuItem>
                 ))}
               </Select>
@@ -587,15 +710,15 @@ const LocationManagement: React.FC = () => {
                 <IconButton 
                   onClick={() => {
                     setSearchTerm('');
-                    setSelectedBranch('');
+                    setSelectedWarehouseFilter('');
                   }}
-                  disabled={!searchTerm && !selectedBranch}
+                  disabled={!searchTerm && !selectedWarehouseFilter}
                   sx={{
                     backgroundColor: alpha(theme.palette.action.hover, 0.1),
                     borderRadius: 2
                   }}
                 >
-                  <CompareArrows fontSize="small" />
+                  <Clear fontSize="small" />
                 </IconButton>
               </Tooltip>
               <Tooltip title="Refresh">
@@ -615,7 +738,7 @@ const LocationManagement: React.FC = () => {
         </Grid>
         
         {/* Active Filters Display */}
-        {(searchTerm || selectedBranch) && (
+        {(searchTerm || selectedWarehouseFilter) && (
           <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
             <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center' }}>
               Active filters:
@@ -629,11 +752,11 @@ const LocationManagement: React.FC = () => {
                 variant="outlined"
               />
             )}
-            {selectedBranch && (
+            {selectedWarehouseFilter && (
               <Chip
-                label={`Branch: ${selectedBranch}`}
+                label={`Warehouse: ${selectedWarehouseFilter}`}
                 size="small"
-                onDelete={() => setSelectedBranch('')}
+                onDelete={() => setSelectedWarehouseFilter('')}
                 color="primary"
                 variant="outlined"
               />
@@ -643,9 +766,10 @@ const LocationManagement: React.FC = () => {
       </Paper>
 
       {/* Create Location Dialog */}
-      <Dialog 
-        open={openDialog} 
+      <Dialog
+        open={openDialog}
         onClose={() => {
+          if (createLoading) return;
           setOpenDialog(false);
           resetDialogState();
         }}
@@ -653,133 +777,217 @@ const LocationManagement: React.FC = () => {
         maxWidth="sm"
         PaperProps={{
           sx: {
-            borderRadius: 3,
-            overflow: 'hidden'
+            borderRadius: '20px',
+            overflow: 'hidden',
+            boxShadow: '0 24px 48px rgba(12,44,72,0.18)',
           }
         }}
       >
-        <DialogTitle sx={{ 
-          borderBottom: `1px solid ${theme.palette.divider}`, 
-          pb: 2,
-          backgroundColor: alpha(theme.palette.primary.main, 0.05)
-        }}>
-          <Box sx={{ 
-            display: 'flex', 
-            alignItems: 'center',
-            color: theme.palette.primary.main
-          }}>
-            <Add sx={{ mr: 1.5 }} />
-            <Typography variant="h6" fontWeight={600}>
-              Create New Location
-            </Typography>
+        <Box sx={{ position: 'relative', overflow: 'hidden', background: BRAND_GRADIENT, color: '#fff', px: 3, py: 2.5 }}>
+          <Box sx={{ position: 'absolute', top: -40, right: -20, width: 130, height: 130, borderRadius: '50%', background: 'rgba(255,255,255,0.07)' }} />
+          <Box sx={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 1.75 }}>
+            <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.16)', width: 46, height: 46 }}>
+              <Add sx={{ color: '#fff' }} />
+            </Avatar>
+            <Box>
+              <Typography variant="h6" fontWeight={800} sx={{ lineHeight: 1.15 }}>
+                Create New Location
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.75)' }}>
+                Add a physical inventory count location and link it to a warehouse
+              </Typography>
+            </Box>
           </Box>
-        </DialogTitle>
-        <DialogContent sx={{ pt: 3 }}>
+        </Box>
+        <DialogContent sx={{ px: 3, pt: 3, pb: 2 }}>
           {error && (
-            <Alert severity="error" sx={{ mb: 3 }}>
+            <Alert severity="error" sx={{ mb: 2.5, borderRadius: '12px' }} onClose={() => setError(null)}>
               {error}
             </Alert>
           )}
-          
-          <TextField
-            label="Location Description"
-            value={locationDesc}
-            onChange={(e) => setLocationDesc(e.target.value)}
-            fullWidth
-            margin="normal"
-            InputProps={{
-              startAdornment: (
-                <Description color="action" sx={{ mr: 1 }} />
-              ),
-              sx: {
-                borderRadius: 2
-              }
-            }}
-          />
 
-          <FormControl fullWidth margin="normal">
-            <InputLabel>Branch</InputLabel>
-            <Select 
-              value={dialogBranch} 
-              onChange={(e) => setDialogBranch(e.target.value)}
-              sx={{ borderRadius: 2 }}
-            >
-              {getSafeBranches().map((branch, index) => (
-                <MenuItem key={`branch-${branch.brh_brh}-${index}`} value={branch.brh_brh}>
-                  {branch.brh_brh}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <Stack spacing={2.5} sx={{ mt: 1 }}>
+            <TextField
+              label="Location Description"
+              value={locationDesc}
+              onChange={(e) => setLocationDesc(e.target.value)}
+              fullWidth
+              required
+              placeholder="e.g. SKY - 1"
+              helperText="A short name to identify this count location"
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Description color="action" fontSize="small" />
+                  </InputAdornment>
+                ),
+              }}
+              sx={{
+                '& .MuiOutlinedInput-root': { borderRadius: '12px' },
+              }}
+            />
 
-          <FormControl fullWidth margin="normal">
-            <InputLabel>Warehouse</InputLabel>
-            <Select 
-              value={dialogWarehouse} 
-              onChange={(e) => setDialogWarehouse(e.target.value)}
-              sx={{ borderRadius: 2 }}
-              disabled={!dialogBranch}
-            >
-              {!dialogBranch ? (
-                <MenuItem disabled>
-                  Please select a branch first
-                </MenuItem>
-              ) : warehousesLoading ? (
-                <MenuItem disabled>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <CircularProgress size={16} />
-                    Loading warehouses...
+            <Autocomplete
+              fullWidth
+              options={warehouses}
+              value={warehouses.find(w => w.whs_whs === dialogWarehouse) || null}
+              onChange={(_, newValue) => {
+                setDialogWarehouse(newValue ? newValue.whs_whs : '');
+              }}
+              getOptionLabel={(option) => {
+                if (typeof option === 'string') return option;
+                return `${option.whs_whs} | ${option.whs_whs_nm}`;
+              }}
+              isOptionEqualToValue={(option, value) => option.whs_whs === value.whs_whs}
+              loading={warehousesLoading}
+              filterOptions={(options, { inputValue }) => {
+                if (!inputValue) return options.slice(0, 50);
+                const searchTerm = inputValue.toLowerCase();
+                const filtered = options.filter(option =>
+                  option.whs_whs?.toLowerCase().includes(searchTerm) ||
+                  option.whs_whs_nm?.toLowerCase().includes(searchTerm)
+                );
+                return filtered.sort((a, b) => {
+                  const aCodeMatch = a.whs_whs?.toLowerCase().includes(searchTerm);
+                  const bCodeMatch = b.whs_whs?.toLowerCase().includes(searchTerm);
+                  if (aCodeMatch && !bCodeMatch) return -1;
+                  if (!aCodeMatch && bCodeMatch) return 1;
+                  return (a.whs_whs || '').localeCompare(b.whs_whs || '');
+                });
+              }}
+              renderOption={(props, option) => (
+                <li {...props} key={option.whs_whs}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%', py: 0.5 }}>
+                    <Chip
+                      label={option.whs_whs}
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                      sx={{ fontWeight: 600, minWidth: 72 }}
+                    />
+                    <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
+                      {option.whs_whs_nm}
+                    </Typography>
                   </Box>
-                </MenuItem>
-              ) : getSafeWarehouses().length === 0 ? (
-                <MenuItem disabled>
-                  No warehouses found
-                </MenuItem>
-              ) : (
-                getSafeWarehouses().map((warehouse, index) => (
-                  <MenuItem key={`warehouse-${warehouse}-${index}`} value={warehouse}>
-                    {warehouse}
-                  </MenuItem>
-                ))
+                </li>
               )}
-            </Select>
-            {dialogBranch && !warehousesLoading && getSafeWarehouses().length === 0 && (
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                No warehouses found for this branch
-              </Typography>
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Warehouse"
+                  required
+                  placeholder="Type to search warehouse..."
+                  helperText="Search by warehouse code or name"
+                  InputProps={{
+                    ...params.InputProps,
+                    startAdornment: (
+                      <>
+                        <InputAdornment position="start">
+                          <Warehouse color="action" fontSize="small" />
+                        </InputAdornment>
+                        {params.InputProps.startAdornment}
+                      </>
+                    ),
+                    endAdornment: (
+                      <>
+                        {warehousesLoading ? <CircularProgress color="inherit" size={20} /> : null}
+                        {params.InputProps.endAdornment}
+                      </>
+                    ),
+                  }}
+                  sx={{
+                    '& .MuiOutlinedInput-root': { borderRadius: '12px' },
+                  }}
+                />
+              )}
+            />
+
+            {(locationDesc.trim() || dialogWarehouse) && (
+              <Paper
+                variant="outlined"
+                sx={{
+                  p: 2,
+                  borderRadius: '12px',
+                  bgcolor: 'rgba(12,44,72,0.03)',
+                  borderColor: 'rgba(12,44,72,0.10)',
+                }}
+              >
+                <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Preview
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 1 }}>
+                  <Avatar
+                    sx={{
+                      width: 36,
+                      height: 36,
+                      background: BRAND_GRADIENT,
+                      color: '#fff',
+                    }}
+                  >
+                    <LocationOn fontSize="small" />
+                  </Avatar>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography variant="subtitle2" fontWeight={700} noWrap>
+                      {locationDesc.trim() || '—'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" noWrap>
+                      {dialogWarehouse
+                        ? warehouses.find(w => w.whs_whs === dialogWarehouse)?.whs_whs_nm
+                          ? `${dialogWarehouse} · ${warehouses.find(w => w.whs_whs === dialogWarehouse)?.whs_whs_nm}`
+                          : dialogWarehouse
+                        : 'Select a warehouse'}
+                    </Typography>
+                  </Box>
+                </Box>
+              </Paper>
             )}
-          </FormControl>
-
-
+          </Stack>
         </DialogContent>
-        <DialogActions sx={{ 
-          p: 3, 
-          borderTop: `1px solid ${theme.palette.divider}`,
-          backgroundColor: alpha(theme.palette.action.hover, 0.05)
-        }}>
-          <Button 
-            onClick={() => setOpenDialog(false)} 
-            variant="outlined"
-            sx={{ 
-              mr: 2,
-              borderRadius: 2,
-              px: 3
-            }}
-          >
-            Cancel
-          </Button>
-          <Button 
-            onClick={createLocation} 
-            color="primary" 
-            variant="contained"
-            disabled={!dialogBranch || !locationDesc || !dialogWarehouse || loading}
-            sx={{
-              borderRadius: 2,
-              px: 3
-            }}
-          >
-            {loading ? <CircularProgress size={24} /> : 'Create Location'}
-          </Button>
+        <DialogActions
+          sx={{
+            px: 3,
+            py: 2.5,
+            borderTop: `1px solid ${theme.palette.divider}`,
+            bgcolor: alpha(theme.palette.action.hover, 0.04),
+            justifyContent: 'space-between',
+          }}
+        >
+          <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' } }}>
+            {!locationDesc.trim() || !dialogWarehouse
+              ? 'Fill in all required fields to continue'
+              : 'Ready to create'}
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1.5, ml: 'auto' }}>
+            <Button
+              onClick={() => {
+                setOpenDialog(false);
+                resetDialogState();
+              }}
+              variant="outlined"
+              disabled={createLoading}
+              sx={{ borderRadius: '10px', px: 2.5, minWidth: 96, textTransform: 'none', fontWeight: 600 }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={createLocation}
+              variant="contained"
+              disabled={!locationDesc.trim() || !dialogWarehouse || createLoading}
+              startIcon={createLoading ? <CircularProgress size={18} color="inherit" /> : <Add />}
+              sx={{
+                borderRadius: '10px',
+                px: 2.5,
+                minWidth: 148,
+                textTransform: 'none',
+                fontWeight: 700,
+                background: BRAND_GRADIENT,
+                boxShadow: '0 4px 14px rgba(12,44,72,0.25)',
+                '&:hover': { background: BRAND_GRADIENT, opacity: 0.92 },
+              }}
+            >
+              {createLoading ? 'Creating…' : 'Create Location'}
+            </Button>
+          </Box>
         </DialogActions>
       </Dialog>
 
@@ -787,8 +995,10 @@ const LocationManagement: React.FC = () => {
       <Paper sx={{ 
         p: 3, 
         mb: 3, 
-        borderRadius: 3,
-        minHeight: 400
+        borderRadius: '16px',
+        minHeight: 400,
+        border: '1px solid rgba(12,44,72,0.06)',
+        boxShadow: '0 6px 24px 0 rgba(12,44,72,0.05)'
       }}>
         {/* {refreshing && <LinearProgress color="primary" sx={{ mb: 3 }} />} */}
         
@@ -819,6 +1029,15 @@ const LocationManagement: React.FC = () => {
               variant="contained" 
               onClick={() => setOpenDialog(true)}
               startIcon={<Add />}
+              sx={{
+                background: BRAND_GRADIENT,
+                borderRadius: '10px',
+                textTransform: 'none',
+                fontWeight: 700,
+                px: 2.5,
+                boxShadow: '0 4px 14px rgba(12,44,72,0.25)',
+                '&:hover': { background: BRAND_GRADIENT, opacity: 0.92 },
+              }}
             >
               Create Location
             </Button>
@@ -831,28 +1050,33 @@ const LocationManagement: React.FC = () => {
                   height: '100%', 
                   display: 'flex', 
                   flexDirection: 'column',
-                  borderLeft: `4px solid ${theme.palette.primary.main}`,
-                  borderRadius: 2,
+                  position: 'relative',
+                  overflow: 'hidden',
+                  border: '1px solid rgba(12,44,72,0.08)',
+                  borderRadius: '16px',
+                  boxShadow: '0 6px 22px rgba(12,44,72,0.06)',
                   transition: 'all 0.3s ease',
                   minHeight: location.total_amount_data && location.total_amount_data.length > 0 ? 320 : 280,
                   '&:hover': {
-                    transform: 'translateY(-4px)',
-                    boxShadow: theme.shadows[6]
+                    transform: 'translateY(-5px)',
+                    boxShadow: '0 16px 38px rgba(12,44,72,0.14)'
                   }
                 }}>
+                  <Box sx={{ height: 5, background: BRAND_GRADIENT }} />
                   <CardContent sx={{ flexGrow: 1 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                       <Avatar sx={{ 
-                        bgcolor: alpha(theme.palette.primary.main, 0.1),
-                        color: theme.palette.primary.main,
+                        background: BRAND_GRADIENT,
+                        color: '#fff',
                         mr: 2,
                         width: 48,
-                        height: 48
+                        height: 48,
+                        boxShadow: '0 4px 12px rgba(12,44,72,0.25)'
                       }}>
                         <LocationOn />
                       </Avatar>
-                      <Box sx={{ flexGrow: 1 }}>
-                        <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                      <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                        <Typography variant="h6" noWrap sx={{ fontWeight: 700, color: theme.palette.primary.main }}>
                           {location.location_desc}
                         </Typography>
                         <Typography variant="body2" color="text.secondary">
@@ -863,8 +1087,9 @@ const LocationManagement: React.FC = () => {
                         aria-label="more options"
                         onClick={(e) => handleMenuClick(e, location)}
                         sx={{
+                          backgroundColor: 'rgba(12,44,72,0.05)',
                           '&:hover': {
-                            backgroundColor: alpha(theme.palette.primary.main, 0.1)
+                            backgroundColor: alpha(theme.palette.primary.main, 0.14)
                           }
                         }}
                       >
@@ -1150,8 +1375,8 @@ const LocationManagement: React.FC = () => {
         }}
         PaperProps={{
           sx: {
-            borderRadius: 2,
-            boxShadow: theme.shadows[3],
+            borderRadius: '16px',
+            boxShadow: '0 8px 32px rgba(12,44,72,0.12)',
             minWidth: 200
           }
         }}
@@ -1167,7 +1392,7 @@ const LocationManagement: React.FC = () => {
             <ListItemIcon>
               <Visibility fontSize="small" color="info" />
             </ListItemIcon>
-            <ListItemText primary="View Sections" />
+            <ListItemText primary="Assign Team to sections" />
           </MenuItem>
           <MenuItem onClick={handleAssignItem}>
             <ListItemIcon>
@@ -1175,14 +1400,11 @@ const LocationManagement: React.FC = () => {
             </ListItemIcon>
             <ListItemText primary="Assign Item Group" />
           </MenuItem>
-          <MenuItem onClick={() => {
-            handleMenuClose();
-            navigate(`/reconciliation-records/${selectedLocation?.location_id}`);
-          }}>
+          <MenuItem onClick={handleDeletePhysicalInventory}>
             <ListItemIcon>
-              <CompareArrows fontSize="small" color="info" />
+              <Delete fontSize="small" color="error" />
             </ListItemIcon>
-            <ListItemText primary="View Reconciliation Records" />
+            <ListItemText primary="Remove Physical Inventory" />
           </MenuItem>
         </MenuList>
       </Menu>
@@ -1220,6 +1442,86 @@ const LocationManagement: React.FC = () => {
           onUpdate={fetchLocations} // Pass the fetchLocations function as the update callback
         />
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={handleCancelDelete}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: '20px',
+            overflow: 'hidden',
+            boxShadow: '0 24px 48px rgba(12,44,72,0.18)'
+          }
+        }}
+      >
+        <Box sx={{ background: 'linear-gradient(135deg, #c62828 0%, #e53935 100%)', color: '#fff', px: 3, py: 2.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.16)', width: 44, height: 44 }}>
+              <Warning sx={{ color: '#fff' }} />
+            </Avatar>
+            <Typography variant="h6" fontWeight={800}>
+              Delete Physical Inventory
+            </Typography>
+          </Box>
+        </Box>
+        <DialogContent sx={{ pt: 3 }}>
+          {deleteError ? (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {deleteError}
+            </Alert>
+          ) : (
+            <>
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                This action cannot be undone!
+              </Alert>
+              <Typography variant="body1" sx={{ mb: 2 }}>
+                Are you sure you want to delete the physical inventory for:
+              </Typography>
+              <Box sx={{ 
+                p: 2, 
+                bgcolor: alpha(theme.palette.error.main, 0.05), 
+                borderRadius: 2,
+                border: `1px solid ${alpha(theme.palette.error.main, 0.2)}`
+              }}>
+                <Typography variant="subtitle1" fontWeight="bold">
+                  {selectedLocation?.location_desc}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Branch: {selectedLocation?.branch} | Warehouse: {selectedLocation?.warehouse}
+                </Typography>
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                This will delete the location and all associated sections, but only if there are no transactions linked to this physical inventory.
+              </Typography>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3, pt: 1 }}>
+          <Button 
+            onClick={handleCancelDelete} 
+            variant="outlined"
+            disabled={isDeleting}
+            sx={{ borderRadius: '10px', textTransform: 'none', fontWeight: 600 }}
+          >
+            Cancel
+          </Button>
+          {!deleteError && (
+            <Button 
+              onClick={handleConfirmDelete}
+              variant="contained"
+              color="error"
+              disabled={isDeleting}
+              startIcon={isDeleting ? <CircularProgress size={20} /> : <Delete />}
+              sx={{ borderRadius: '10px', textTransform: 'none', fontWeight: 700 }}
+            >
+              {isDeleting ? 'Deleting...' : 'Delete'}
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
     </Box>
     );
   } catch (error) {

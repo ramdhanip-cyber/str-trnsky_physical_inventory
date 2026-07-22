@@ -1,5 +1,5 @@
 const pool = require("../database/db");
-const axios = require('axios');
+const { runErpSql } = require("../database/erpOdbc");
 const { getLocations } = require("../models/locationModel");
 const { getSubLocationsByLocation } = require("../models/subLocationModel");
 const dotenv = require("dotenv");
@@ -69,6 +69,29 @@ exports.fetchLocationsById = async (req, res) => {
   }
 };
 
+exports.checkLocationTransactions = async (req, res) => {
+  const { location_id } = req.params;
+  console.log('Checking transactions for location:', location_id);
+  
+  try {
+    const result = await pool.query(
+      'SELECT COUNT(*) as count FROM transactions WHERE location_id = $1',
+      [location_id]
+    );
+    
+    const transactionCount = parseInt(result.rows[0].count);
+    const hasTransactions = transactionCount > 0;
+    
+    res.json({ 
+      hasTransactions, 
+      transactionCount 
+    });
+  } catch (error) {
+    console.error("Error checking location transactions:", error);
+    res.status(500).json({ message: "Error checking transactions", error: error.message });
+  }
+};
+
 // Similar fixes for the other two functions
 exports.fetchSectionsById = async (req, res) => {
   const { section_id } = req.params;
@@ -123,17 +146,7 @@ exports.fetchItems = async (req, res) => {
     console.log('Fetching available forms for assign item to location');
     
     const sqlQuery = "SELECT DISTINCT prd_frm FROM intprd_rec WHERE prd_invt_sts = 'S' ORDER BY prd_frm";
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sqlQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE
-        }
-      }
-    );
+    const response = { data: await runErpSql(sqlQuery) };
 
     console.log('Items API Response:', response.data);
     
@@ -156,17 +169,7 @@ exports.fetchItems = async (req, res) => {
 exports.fetchForm = async (req, res) => {
   try {
     const sqlQuery = "select distinct(prd_frm) from intprd_rec where prd_invt_sts = 'S' order by 1";
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sqlQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE
-        }
-      }
-    );
+    const response = { data: await runErpSql(sqlQuery) };
 
     res.json(response.data);
   } catch (error) {
@@ -178,17 +181,7 @@ exports.fetchForm = async (req, res) => {
 exports.fetchBrh = async (req, res) => {
   try {
     const sqlQuery = "select brh_brh from scrbrh_rec";
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sqlQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE
-        }
-      }
-    );
+    const response = { data: await runErpSql(sqlQuery) };
 
     res.json(response.data);
   } catch (error) {
@@ -201,17 +194,7 @@ exports.fetchWhs = async (req, res) => {
   const { branch } = req.query;
   try {
     const sqlQuery = `SELECT whs_whs FROM scrwhs_rec WHERE whs_mng_brh = '${branch}'`;
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sqlQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE
-        }
-      }
-    );
+    const response = { data: await runErpSql(sqlQuery) };
 
     res.json(response.data);
   } catch (error) {
@@ -228,17 +211,7 @@ exports.fetchLocationsByWarehouse = async (req, res) => {
     const sqlQuery = `SELECT DISTINCT(prd_loc) FROM intprd_rec WHERE prd_whs = '${warehouse}' ORDER BY prd_loc`;
     console.log('SQL Query:', sqlQuery);
     
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sqlQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE
-        }
-      }
-    );
+    const response = { data: await runErpSql(sqlQuery) };
 
     console.log('API Response:', response.data);
     res.json(response.data);
@@ -363,17 +336,7 @@ exports.getAssignedItemsTotalAmount = async (req, res) => {
     
     console.log('SQL Query:', sqlQuery);
     
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sqlQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE,
-        },
-      }
-    );
+    const response = { data: await runErpSql(sqlQuery) };
 
     console.log('API Response:', response.data);
     
@@ -434,17 +397,7 @@ exports.getTotalFormValues = async (req, res) => {
     
     console.log('SQL Query for total form values:', sqlQuery);
     
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sqlQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE,
-        },
-      }
-    );
+    const response = { data: await runErpSql(sqlQuery) };
 
     console.log('Total form values API Response:', response.data);
     
@@ -504,17 +457,7 @@ exports.getOverallWeightAndAmount = async (req, res) => {
     
     console.log('SQL Query for overall weight and amount:', sqlQuery);
     
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sqlQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE,
-        },
-      }
-    );
+    const response = { data: await runErpSql(sqlQuery) };
 
     console.log('Overall weight and amount API Response:', response.data);
     
@@ -591,17 +534,7 @@ exports.getInventoryAnalysis = async (req, res) => {
       ORDER BY prd_frm
     `;
 
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sqlQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE,
-        },
-      }
-    );
+    const response = { data: await runErpSql(sqlQuery) };
 
     if (response.data.Data) {
       const data = response.data.Data;
@@ -671,17 +604,7 @@ exports.testInventoryData = async (req, res) => {
       LIMIT 3
     `;
 
-    const rawResponse = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: rawQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE,
-        },
-      }
-    );
+    const rawResponse = { data: await runErpSql(rawQuery) };
 
     // Test 2: Summed data
     const sumQuery = `
@@ -695,17 +618,7 @@ exports.testInventoryData = async (req, res) => {
       LIMIT 3
     `;
 
-    const sumResponse = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sumQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE,
-        },
-      }
-    );
+    const sumResponse = { data: await runErpSql(sumQuery) };
 
     console.log('Raw data response:', JSON.stringify(rawResponse.data, null, 2));
     console.log('Summed data response:', JSON.stringify(sumResponse.data, null, 2));
@@ -746,17 +659,7 @@ exports.getInventoryDetails = async (req, res) => {
         AND prd_frm = '${form}'
     `;
 
-    const totalFormResponse = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: totalFormQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE,
-        },
-      }
-    );
+    const totalFormResponse = { data: await runErpSql(totalFormQuery) };
 
     let totalFormPieces = 0;
     let totalFormValue = 0;
@@ -792,17 +695,7 @@ exports.getInventoryDetails = async (req, res) => {
       ORDER BY prd_whs, prd_invt_sts, prd_grd
     `;
 
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sqlQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE,
-        },
-      }
-    );
+    const response = { data: await runErpSql(sqlQuery) };
 
     if (response.data.Data) {
       const data = response.data.Data;
@@ -878,17 +771,7 @@ exports.getInventoryDetailsByTypeQuality = async (req, res) => {
         AND prd_frm = '${form}'
     `;
 
-    const totalFormResponse = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: totalFormQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE,
-        },
-      }
-    );
+    const totalFormResponse = { data: await runErpSql(totalFormQuery) };
 
     let totalFormPieces = 0;
     let totalFormValue = 0;
@@ -923,17 +806,7 @@ exports.getInventoryDetailsByTypeQuality = async (req, res) => {
       ORDER BY prd_invt_typ, prd_invt_qlty
     `;
 
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sqlQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE,
-        },
-      }
-    );
+    const response = { data: await runErpSql(sqlQuery) };
 
     if (response.data.Data) {
       const data = response.data.Data;
@@ -945,17 +818,7 @@ exports.getInventoryDetailsByTypeQuality = async (req, res) => {
         WHERE inq_invt_qlty IS NOT NULL
       `;
 
-      const qualityResponse = await axios.post(
-        process.env.OAUTH_API_URL,
-        { sql: qualityQuery },
-        {
-          headers: {
-            Authorization: `Bearer ${req.accessToken}`,
-            "Content-Type": "application/json",
-            Database: process.env.OAUTH_DATABASE,
-          },
-        }
-      );
+      const qualityResponse = { data: await runErpSql(qualityQuery) };
 
       // Create quality lookup map
       const qualityMap = new Map();
@@ -1036,17 +899,7 @@ exports.gradeForms = async (req, res) => {
 
   try {
     const sqlQuery = `SELECT distinct(prd_grd) FROM intprd_rec WHERE prd_frm = '${form}'`;
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sqlQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE,
-        },
-      }
-    );
+    const response = { data: await runErpSql(sqlQuery) };
 
     res.json(response.data);
   } catch (error) {
@@ -1066,17 +919,7 @@ exports.sizeForms = async (req, res) => {
 
   try {
     const sqlQuery = `SELECT distinct(prd_size) FROM intprd_rec WHERE prd_frm = '${form}' and prd_grd = '${grade}'`;
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sqlQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE,
-        },
-      }
-    );
+    const response = { data: await runErpSql(sqlQuery) };
 
     res.json(response.data);
   } catch (error) {
@@ -1096,17 +939,7 @@ exports.finishForms = async (req, res) => {
 
   try {
     const sqlQuery = `SELECT distinct(prd_fnsh) FROM intprd_rec WHERE prd_frm = '${form}' and prd_grd = '${grade}' and prd_size = '${size}'`;
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sqlQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE,
-        },
-      }
-    );
+    const response = { data: await runErpSql(sqlQuery) };
 
     res.json(response.data);
   } catch (error) {
@@ -1126,17 +959,7 @@ exports.extfinishForms = async (req, res) => {
 
   try {
     const sqlQuery = `SELECT distinct(prd_ef_svar) FROM intprd_rec WHERE prd_frm = '${form}' and prd_grd = '${grade}' and prd_size = '${size}' and prd_fnsh = '${finish}'`;
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sqlQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE,
-        },
-      }
-    );
+    const response = { data: await runErpSql(sqlQuery) };
 
     res.json(response.data);
   } catch (error) {
@@ -1156,17 +979,7 @@ exports.widthForms = async (req, res) => {
 
   try {
     const sqlQuery = `SELECT distinct(prd_wdth) FROM intprd_rec WHERE prd_frm = '${form}' and prd_grd = '${grade}' and prd_size = '${size}' and prd_fnsh = '${finish}' and prd_ef_svar = '${extfinish}'`;
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sqlQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE,
-        },
-      }
-    );
+    const response = { data: await runErpSql(sqlQuery) };
 
     res.json(response.data);
   } catch (error) {
@@ -1186,22 +999,31 @@ exports.lengthForms = async (req, res) => {
 
   try {
     const sqlQuery = `SELECT distinct(prd_lgth) FROM intprd_rec WHERE prd_frm = '${form}' and prd_grd = '${grade}' and prd_size = '${size}' and prd_fnsh = '${finish}' and prd_ef_svar = '${extfinish}' and prd_wdth = '${width}'`;
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sqlQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE,
-        },
-      }
-    );
+    const response = { data: await runErpSql(sqlQuery) };
 
     res.json(response.data);
   } catch (error) {
     console.error("Error fetching items:", error);
     res.status(500).json({ error: "Failed to fetch items" });
+  }
+};
+
+exports.sysTagForms = async (req, res) => {
+  const { form, grade, size, finish, extfinish, width, length } = req.query;
+  console.log("Fetching System Tag with - Form:", form, "Grade:", grade, "Size:", size);
+
+  if (!form) {
+    return res.status(400).json({ error: "Form parameter is required" });
+  }
+
+  try {
+    const sqlQuery = `SELECT distinct(prd_tag_no) FROM intprd_rec WHERE prd_frm = '${form}' and prd_grd = '${grade}' and prd_size = '${size}' and prd_fnsh = '${finish}' and prd_ef_svar = '${extfinish}' and prd_wdth = '${width}' and prd_lgth = '${length}'`;
+    const response = { data: await runErpSql(sqlQuery) };
+
+    res.json(response.data);
+  } catch (error) {
+    console.error("Error fetching system tag:", error);
+    res.status(500).json({ error: "Failed to fetch system tag" });
   }
 };
 
@@ -1216,18 +1038,7 @@ exports.lengthForms = async (req, res) => {
 
 //   try {
 //     const sqlQuery = `SELECT distinct(prd_mill) FROM intprd_rec WHERE prd_frm = '${form}' and prd_grd = '${grade}' and prd_size = '${size}' and prd_fnsh = '${finish}' and prd_ef_svar = '${extfinish}' and prd_wdth = '${width}' and prd_lgth = '${length}'`;
-//     const response = await axios.post(
-//       process.env.OAUTH_API_URL,
-//       { sql: sqlQuery },
-//       {
-//         headers: {
-//           Authorization: `Bearer ${req.accessToken}`,
-//           "Content-Type": "application/json",
-//           Database: process.env.OAUTH_DATABASE,
-//         },
-//       }
-//     );
-
+//     const response = { data: await runErpSql(sqlQuery) };
 //     res.json(response.data);
 //   } catch (error) {
 //     console.error("Error fetching items:", error);
@@ -1246,17 +1057,7 @@ exports.millForms = async (req, res) => {
 
   try {
     const sqlQuery = `SELECT distinct(prd_mill) FROM intprd_rec`;
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sqlQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE,
-        },
-      }
-    );
+    const response = { data: await runErpSql(sqlQuery) };
 
     res.json(response.data);
   } catch (error) {
@@ -1280,18 +1081,7 @@ exports.heatForms = async (req, res) => {
 
     console.log("Heat Query:", sqlQuery);
 
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sqlQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE,
-        },
-        timeout: 10000, // 10 second timeout
-      }
-    );
+    const response = { data: await runErpSql(sqlQuery, { timeoutSeconds: 10 }) };
 
     res.json(response.data);
   } catch (error) {
@@ -1320,17 +1110,7 @@ exports.getMillByHeatAndWarehouse = async (req, res) => {
     
     console.log("SQL Query:", sqlQuery);
     
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sqlQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE,
-        },
-      }
-    );
+    const response = { data: await runErpSql(sqlQuery) };
 
     console.log("API Response:", response.data);
     res.json(response.data);
@@ -1395,23 +1175,105 @@ exports.checkExistingChecker = async (req, res) => {
 exports.remarksForms = async (req, res) => {
 
   try {
-    const sqlQuery = `select inq_desc15 from inrinq_rec;`;
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sqlQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE,
-        },
-      }
-    );
+    const sqlQuery = `select inq_invt_qlty, inq_desc15 from inrinq_rec;`;
+    const response = { data: await runErpSql(sqlQuery) };
 
     res.json(response.data);
   } catch (error) {
     console.error("Error fetching items:", error);
     res.status(500).json({ error: "Failed to fetch items" });
+  }
+};
+
+/**
+ * Fetch product record(s) by System Tag No (prd_tag_no) from intprd_rec.
+ * If one row: returns { success, Data }.
+ * If multiple rows: returns { success, multiple: true, Records: [...] } so frontend can show a selection dialog.
+ */
+exports.getProductByTag = async (req, res) => {
+  const tagNumber = (req.query.tag_number || "").toString().trim();
+  if (!tagNumber) {
+    return res.status(400).json({ success: false, error: "tag_number is required" });
+  }
+  const escapedTag = tagNumber.replace(/'/g, "''");
+  const get = (obj, key) => {
+    const k = Object.keys(obj || {}).find(kk => kk.toLowerCase() === key.toLowerCase());
+    const v = k ? obj[k] : undefined;
+    return v != null ? String(v).trim() : "";
+  };
+  const typeMap = { M: "M - Master", D: "D - Drop", F: "F - Finished", R: "R - Reject", S: "S - Scrap", W: "W - Work in Process" };
+
+  const fetchQualityDesc = async (prdInvtQlty) => {
+    if (!prdInvtQlty) return prdInvtQlty;
+    try {
+      const qEsc = String(prdInvtQlty).replace(/'/g, "''");
+      const qualityQuery = `SELECT inq_desc15 FROM inrinq_rec WHERE inq_invt_qlty = '${qEsc}'`;
+      const qualityRes = { data: await runErpSql(qualityQuery) };
+      const qualityRows = Array.isArray(qualityRes.data) ? qualityRes.data : (qualityRes.data?.Data || qualityRes.data?.data || []);
+      const qRow = qualityRows[0];
+      if (qRow) {
+        const qK = Object.keys(qRow || {}).find(kk => kk.toLowerCase() === "inq_desc15");
+        const qV = qK ? qRow[qK] : undefined;
+        if (qV != null && String(qV).trim() !== "") return String(qV).trim();
+      }
+    } catch (e) {
+      console.warn("Quality lookup for inq_invt_qlty:", prdInvtQlty, e.message);
+    }
+    return prdInvtQlty;
+  };
+
+  const rowToRecord = (row, qualityDesc) => {
+    const prdInvtTypRaw = get(row, "prd_invt_typ");
+    const prdInvtTyp = prdInvtTypRaw ? String(prdInvtTypRaw).trim().toUpperCase() : "";
+    const locationVal = get(row, "prd_loc") || get(row, "prd_whs") || "";
+    return {
+      form: get(row, "prd_frm"),
+      grade: get(row, "prd_grd"),
+      size: get(row, "prd_size"),
+      finish: get(row, "prd_fnsh"),
+      ext_finish: get(row, "prd_ef_svar"),
+      width: get(row, "prd_wdth"),
+      length: get(row, "prd_lgth"),
+      mill: get(row, "prd_mill"),
+      heat: get(row, "prd_heat"),
+      location: locationVal,
+      inventory_type: prdInvtTyp,
+      type: prdInvtTyp,
+      type_display: typeMap[prdInvtTyp] || prdInvtTyp,
+      quality: qualityDesc,
+    };
+  };
+
+  try {
+    const sqlQuery = `SELECT prd_cmpy_id, prd_itm_ctl_no, prd_frm, prd_grd, prd_size, prd_fnsh, prd_ef_svar, prd_wdth, prd_lgth, prd_whs, prd_mill, prd_heat, prd_loc, prd_invt_typ, prd_invt_qlty FROM intprd_rec WHERE prd_tag_no = '${escapedTag}'`;
+    const response = { data: await runErpSql(sqlQuery) };
+    const rows = Array.isArray(response.data) ? response.data : (response.data?.Data || response.data?.data || []);
+    if (!rows || rows.length === 0) {
+      return res.json({ success: true, Data: null, message: "No record found for this tag number" });
+    }
+
+    if (rows.length === 1) {
+      const row = rows[0];
+      const prdInvtQlty = get(row, "prd_invt_qlty") ? String(get(row, "prd_invt_qlty")).trim() : "";
+      const qualityDesc = await fetchQualityDesc(prdInvtQlty);
+      const data = rowToRecord(row, qualityDesc);
+      return res.json({ success: true, Data: data });
+    }
+
+    const uniqueQlty = [...new Set(rows.map(r => (get(r, "prd_invt_qlty") || "").trim()).filter(Boolean))];
+    const qualityCache = {};
+    for (const q of uniqueQlty) {
+      qualityCache[q] = await fetchQualityDesc(q);
+    }
+    const Records = rows.map(row => {
+      const prdInvtQlty = (get(row, "prd_invt_qlty") || "").trim();
+      const qualityDesc = qualityCache[prdInvtQlty] != null ? qualityCache[prdInvtQlty] : prdInvtQlty;
+      return rowToRecord(row, qualityDesc);
+    });
+    return res.json({ success: true, multiple: true, Records });
+  } catch (error) {
+    console.error("Error fetching product by tag:", error);
+    res.status(500).json({ success: false, error: "Failed to fetch product by tag" });
   }
 };
 
@@ -1484,19 +1346,19 @@ exports.counterAssigned = async (req, res) => {
     g.section_desc,
     e.status
     FROM 
-        st_users a
+st_users a
     INNER JOIN 
-        team_members d ON a.user_id = d.user_id
+team_members d ON a.user_id = d.user_id
     INNER JOIN 
-        st_roles b ON b.role_id = d.role_id
+st_roles b ON b.role_id = d.role_id
     INNER JOIN 
-        teams c ON d.team_id = c.team_id
+teams c ON d.team_id = c.team_id
     INNER JOIN 
-        assigned_locations e ON e.team_id = c.team_id
+assigned_locations e ON e.team_id = c.team_id
     INNER JOIN 
-        st_locations f ON e.location_id = f.location_id
+st_locations f ON e.location_id = f.location_id
     INNER JOIN 
-        st_sections g ON e.sub_location_id = g.section_id
+st_sections g ON e.sub_location_id = g.section_id
     WHERE 
         d.user_id = $1
     AND
@@ -1536,19 +1398,19 @@ exports.checkerAssigned = async (req, res) => {
     g.section_desc,
     e.status
     FROM 
-        st_users a
+st_users a
     INNER JOIN 
-        team_members d ON a.user_id = d.user_id
+team_members d ON a.user_id = d.user_id
     INNER JOIN 
-        st_roles b ON b.role_id = d.role_id
+st_roles b ON b.role_id = d.role_id
     INNER JOIN 
-        teams c ON d.team_id = c.team_id
+teams c ON d.team_id = c.team_id
     INNER JOIN 
-        assigned_locations e ON e.team_id = c.team_id
+assigned_locations e ON e.team_id = c.team_id
     INNER JOIN 
-        st_locations f ON e.location_id = f.location_id
+st_locations f ON e.location_id = f.location_id
     INNER JOIN 
-        st_sections g ON e.sub_location_id = g.section_id
+st_sections g ON e.sub_location_id = g.section_id
     WHERE 
         d.user_id = $1
     AND
@@ -1623,16 +1485,19 @@ exports.GetTransactionsByTeam = async (req, res) => {
       SELECT 
         t.transaction_id as id,
         t.tag_id,
+        t.sys_tag_no,
         t.form,
         t.type,
         t.grade,
         t.size,
         t.finish,
-        t.ext_finish as extendedFinish,
+        t.ext_finish,
         t.width,
         t.length,
         t.remarks,
         t.ad_cmts,
+        t.page_number,
+        t.serial_number,
         t.count_type as "count_type",
         t.qty as qty,
         t.counted_by,
@@ -1660,7 +1525,7 @@ exports.GetTransactionsByTeam = async (req, res) => {
       GROUP BY t.transaction_id
       ORDER BY t.created_at DESC
     `;
-
+    /*bundle_id*/
     const result = await pool.query(query, [teamId, section_id]);
 
     // Convert numeric fields from string to number
@@ -1706,7 +1571,7 @@ exports.getTransactionWithBundles = async (req, res) => {
         t.grade,
         t.size,
         t.finish,
-        t.ext_finish as extendedFinish,
+        t.ext_finish,
         t.width,
         t.length,
         t.remarks,
@@ -1756,7 +1621,7 @@ exports.getTransactionWithBundles = async (req, res) => {
         bundleCount: parseInt(b.bundle_count)
       }))
     };
-
+    /*bundle_id*/
     res.json(response);
 
   } catch (error) {
@@ -1789,15 +1654,15 @@ exports.getAssignedLocations = async (req, res) => {
         t.tag_to,
         t.current_tag
       FROM 
-        st_locations a
+st_locations a
       JOIN 
-        assigned_locations b ON a.location_id = b.location_id
+assigned_locations b ON a.location_id = b.location_id
       JOIN 
-        teams t ON b.team_id = t.team_id
+teams t ON b.team_id = t.team_id
       LEFT JOIN 
-        team_members tm ON t.team_id = tm.team_id
+team_members tm ON t.team_id = tm.team_id
       LEFT JOIN 
-        st_users su ON tm.user_id = su.user_id
+st_users su ON tm.user_id = su.user_id
     `;
     
     const queryParams = [];
@@ -1921,13 +1786,13 @@ exports.getSectionsByLocation = async (req, res) => {
         t.tag_to,
         t.current_tag
       FROM 
-        st_sections ss
+st_sections ss
       JOIN 
-        st_locations sl ON ss.location_id = sl.location_id
+st_locations sl ON ss.location_id = sl.location_id
       LEFT JOIN 
-        assigned_locations al ON ss.section_id = al.sub_location_id AND al.location_id = ss.location_id
+assigned_locations al ON ss.section_id = al.sub_location_id AND al.location_id = ss.location_id
       LEFT JOIN
-        teams t ON t.team_id = al.team_id
+teams t ON t.team_id = al.team_id
       WHERE 
         ss.location_id = $1
       ORDER BY ss.section_id
@@ -1964,9 +1829,9 @@ exports.getSectionByLocation = async (req, res) => {
         sl.branch, 
         sl.location_desc
       FROM 
-        st_sections ss
+st_sections ss
       JOIN 
-        st_locations sl ON ss.location_id = sl.location_id
+st_locations sl ON ss.location_id = sl.location_id
       WHERE 
         ss.location_id = $1
     `;
@@ -2012,6 +1877,7 @@ exports.getTransactionsByLocationAndSection = async (req, res) => {
       SELECT 
       t.transaction_id,
       t.tag_id,
+      t.sys_tag_no,
       t.form,
       t.type,
       t.grade,
@@ -2024,6 +1890,9 @@ exports.getTransactionsByLocationAndSection = async (req, res) => {
       t.heat,
       t.location,
       t.remarks,
+      t.ad_cmts,
+      t.page_number,
+      t.serial_number,
       t.qty,
       t.checker_count,
       t.count_type,
@@ -2052,15 +1921,10 @@ exports.getTransactionsByLocationAndSection = async (req, res) => {
   AND ss.section_id = $2
   AND t.role = 'Checker'
   GROUP BY 
-      t.transaction_id, t.tag_id, t.form, t.type, t.grade, t.size, t.finish, t.ext_finish, 
-      t.width, t.length, t.mill, t.heat, t.location, t.remarks, t.qty, t.checker_count, t.count_type, t.role,
+      t.transaction_id, t.tag_id, t.sys_tag_no, t.form, t.type, t.grade, t.size, t.finish, t.ext_finish, 
+      t.width, t.length, t.mill, t.heat, t.location, t.remarks, t.ad_cmts, t.page_number, t.serial_number, t.qty, t.checker_count, t.count_type, t.role,
       t.location_id, t.section_id, su.full_name, t.created_at, t2.team_name
-  ORDER BY t.form ASC, 
-  CASE 
-    WHEN t.size ~ '^[0-9]+\.?[0-9]*$' THEN CAST(t.size AS NUMERIC)
-    ELSE 999999999
-  END ASC,
-  t.size ASC, t.created_at DESC;
+  ORDER BY t.form ASC, t.size ASC, t.created_at DESC;
     `;
 
     const { rows } = await pool.query(query, [location_id, section_id]);
@@ -2116,7 +1980,9 @@ exports.getTransactionsByLocationAndSection = async (req, res) => {
       
       const query = `
       SELECT 
+      t.transaction_id,
       t.tag_id,
+      t.sys_tag_no,
       t.form,
       t.type,
       t.grade,
@@ -2129,6 +1995,9 @@ exports.getTransactionsByLocationAndSection = async (req, res) => {
       t.heat,
       t.location,
       t.remarks,
+      t.ad_cmts,
+      t.page_number,
+      t.serial_number,
       t.qty,
       t.checker_count,
       t.count_type,
@@ -2155,15 +2024,10 @@ exports.getTransactionsByLocationAndSection = async (req, res) => {
   AND ss.section_id = $2
   AND t.role = 'Counter'
   GROUP BY 
-      t.tag_id, t.form, t.type, t.grade, t.size, t.finish, t.ext_finish, 
-      t.width, t.length, t.mill, t.heat, t.location, t.remarks, t.qty, t.checker_count, t.count_type, t.role,
-      su.full_name, t.created_at, t2.team_name
-  ORDER BY t.form ASC, 
-  CASE 
-    WHEN t.size ~ '^[0-9]+\.?[0-9]*$' THEN CAST(t.size AS NUMERIC)
-    ELSE 999999999
-  END ASC,
-  t.size ASC, t.created_at DESC;
+      t.transaction_id, t.tag_id, t.sys_tag_no, t.form, t.type, t.grade, t.size, t.finish, t.ext_finish, 
+      t.width, t.length, t.mill, t.heat, t.location, t.remarks, t.ad_cmts, t.page_number, t.serial_number, t.qty, t.checker_count, t.count_type, t.role,
+      t.location_id, t.section_id, su.full_name, t.created_at, t2.team_name
+  ORDER BY t.form ASC, t.size ASC, t.created_at DESC;
     `;
 
     console.log('Executing full counter query with parameters:', [location_id, section_id]);
@@ -2275,6 +2139,102 @@ exports.BundlesForChecker = async (req, res) =>{
     
     res.json(result.rows);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Get marked items for checking from checker_sku_item table
+exports.getMarkedItemsForChecker = async (req, res) => {
+  const { location_id, section_id, verified_only } = req.query;
+  
+  if (!location_id || !section_id) {
+    return res.status(400).json({ 
+      error: "Location ID and Section ID are required" 
+    });
+  }
+  
+  try {
+    // If verified_only is true, fetch only verified items, otherwise fetch all items
+    let query = '';
+    let params = [location_id, section_id];
+    
+    if (verified_only === 'true') {
+      query = `
+        SELECT 
+          csi.id,
+          csi.location_id,
+          csi.form,
+          csi.grade,
+          csi.size,
+          csi.finish,
+          csi.ext_finish,
+          csi.width,
+          csi.length,
+          csi.mill,
+          csi.heat,
+          csi.system_qty,
+          csi.counted_qty,
+          csi.variance,
+          csi.status,
+          csi.transaction_id,
+          csi.section_id,
+          csi.location,
+          csi.type,
+          csi.quality,
+          csi.verified,
+          csi.checker_count,
+          csi.created_at,
+          csi.verified_at,
+          t.sys_tag_no
+        FROM checker_sku_item csi
+        LEFT JOIN transactions t ON csi.transaction_id = t.transaction_id
+        WHERE csi.location_id = $1 
+          AND csi.section_id = $2
+          AND csi.verified = true
+        ORDER BY csi.verified_at DESC
+      `;
+    } else {
+      // Fetch all items (both verified and unverified)
+      query = `
+        SELECT 
+          csi.id,
+          csi.location_id,
+          csi.form,
+          csi.grade,
+          csi.size,
+          csi.finish,
+          csi.ext_finish,
+          csi.width,
+          csi.length,
+          csi.mill,
+          csi.heat,
+          csi.system_qty,
+          csi.counted_qty,
+          csi.variance,
+          csi.status,
+          csi.transaction_id,
+          csi.section_id,
+          csi.location,
+          csi.type,
+          csi.quality,
+          csi.verified,
+          csi.checker_count,
+          csi.created_at,
+          csi.verified_at,
+          t.sys_tag_no
+        FROM checker_sku_item csi
+        LEFT JOIN transactions t ON csi.transaction_id = t.transaction_id
+        WHERE csi.location_id = $1 
+          AND csi.section_id = $2
+        ORDER BY csi.verified DESC, csi.created_at DESC
+      `;
+    }
+    
+    const result = await pool.query(query, params);
+    
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching marked items for checker:', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -2407,13 +2367,26 @@ exports.TransactionForCheck = async (req, res) =>{
 
 exports.getInventoryReconciliation = async (req, res) => {
   const { location_id } = req.params;
-  const { branch } = req.query;
+  let { branch, warehouse } = req.query;
 
   if (!location_id || !branch) {
     return res.status(400).json({ error: "Location ID and branch are required" });
   }
 
   try {
+    if (!warehouse) {
+      const locRes = await pool.query(
+        "SELECT warehouse FROM st_locations WHERE location_id = $1",
+        [location_id]
+      );
+      warehouse = locRes.rows[0]?.warehouse;
+    }
+    if (!warehouse) {
+      return res.status(400).json({
+        error: "Warehouse is required (pass ?warehouse=... or configure warehouse on the location)",
+      });
+    }
+
     // 1. Get system inventory from intprd_rec
     const systemInventoryQuery = `
       SELECT 
@@ -2436,17 +2409,7 @@ exports.getInventoryReconciliation = async (req, res) => {
       WHERE prd_brh = '${branch}' AND prd_whs = '${warehouse}' AND prd_invt_sts = 'S'
     `;
 
-    const systemInventoryResponse = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: systemInventoryQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE
-        }
-      }
-    );
+    const systemInventoryResponse = { data: await runErpSql(systemInventoryQuery) };
 
     console.log('System Inventory API Response:', JSON.stringify(systemInventoryResponse.data, null, 2));
 
@@ -2807,17 +2770,17 @@ exports.checkerSkyAssigned = async (req, res) => {
       f.location_desc,
       e.status
     FROM 
-      st_users a
+st_users a
     INNER JOIN 
-      team_members d ON a.user_id = d.user_id
+team_members d ON a.user_id = d.user_id
     INNER JOIN 
-      st_roles b ON b.role_id = d.role_id
+st_roles b ON b.role_id = d.role_id
     INNER JOIN 
-      teams c ON d.team_id = c.team_id
+teams c ON d.team_id = c.team_id
     INNER JOIN 
-      assigned_locations e ON e.team_id = c.team_id
+assigned_locations e ON e.team_id = c.team_id
     INNER JOIN 
-      st_locations f ON e.location_id = f.location_id
+st_locations f ON e.location_id = f.location_id
     WHERE 
       d.user_id = $1
     AND
@@ -2846,36 +2809,22 @@ exports.checkerSkyAssigned = async (req, res) => {
 exports.getAvailableWarehouses = async (req, res) => {
   try {
     const sqlQuery = `
-      SELECT DISTINCT prd_whs as warehouse
-      FROM intprd_rec 
-      WHERE prd_invt_sts = 'S'
-        AND prd_whs IS NOT NULL
-        AND prd_whs != ''
-      ORDER BY prd_whs
+      SELECT whs_whs, whs_whs_nm
+      FROM scrwhs_rec
+      ORDER BY whs_whs
     `;
 
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sqlQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE,
-        },
-      }
-    );
+    const response = { data: await runErpSql(sqlQuery) };
 
     if (response.data.Data) {
-      const warehouses = response.data.Data.map(item => item.warehouse);
       res.json({
         success: true,
-        data: warehouses
+        Data: response.data.Data
       });
     } else {
       res.json({
         success: true,
-        data: []
+        Data: []
       });
     }
   } catch (error) {
@@ -2888,7 +2837,7 @@ exports.getAvailableWarehouses = async (req, res) => {
   }
 };
 
-// Get checker activity logs (Controller only)
+// Get checker activity logs (Reconciler only)
 exports.debugUsers = async (req, res) => {
   try {
     const result = await pool.query('SELECT user_id, user_name, full_name FROM st_users ORDER BY user_id');
@@ -2907,9 +2856,9 @@ exports.getCheckerActivityLogs = async (req, res) => {
   try {
     const { location_id, section_id, team_id, activity_type, start_date, end_date, limit = 100, offset = 0 } = req.query;
     
-    // Check if user has controller role
+    // Check if user has reconciler role
     const userRole = req.headers['x-selected-role'];
-    if (userRole !== 'Controller') {
+    if (userRole !== 'Reconciler') {
       return res.status(403).json({
         success: false,
         message: 'Access denied. Only controllers can view checker activity logs.'
@@ -3023,6 +2972,143 @@ exports.getCheckerActivityLogs = async (req, res) => {
   }
 };
 
+// Dashboard analytics (used by UI /services/dashboard-analytics)
+exports.getDashboardAnalytics = async (req, res) => {
+  try {
+    // Overall statistics
+    const statsQuery = `
+      SELECT 
+        COUNT(DISTINCT t.transaction_id) as total_transactions,
+        COUNT(DISTINCT t.counted_by) as total_counters,
+        COUNT(DISTINCT t.team_id) as total_teams,
+        COUNT(DISTINCT t.location_id) as total_locations,
+        SUM(CASE WHEN t.count_type = 'bundle' THEN 
+          COALESCE((SELECT SUM(b.num_of_bundle * b.bundle_count) FROM bundles b WHERE b.transaction_id = t.transaction_id), 0)
+        ELSE t.qty END) as total_items_counted,
+        COUNT(CASE WHEN t.role = 'Checker' THEN 1 END) as total_checker_transactions,
+        COUNT(CASE WHEN t.role = 'Counter' THEN 1 END) as total_counter_transactions
+      FROM transactions t
+    `;
+
+    const statsResult = await pool.query(statsQuery);
+    const stats = statsResult.rows[0];
+
+    // Daily trends (last 30 days)
+    const trendsQuery = `
+      SELECT 
+        DATE(t.created_at) as date,
+        COUNT(DISTINCT t.transaction_id) as transactions,
+        SUM(CASE WHEN t.count_type = 'bundle' THEN 
+          COALESCE((SELECT SUM(b.num_of_bundle * b.bundle_count) FROM bundles b WHERE b.transaction_id = t.transaction_id), 0)
+        ELSE t.qty END) as items_counted
+      FROM transactions t
+      WHERE t.created_at >= CURRENT_DATE - INTERVAL '30 days'
+      GROUP BY DATE(t.created_at)
+      ORDER BY date
+    `;
+
+    const trendsResult = await pool.query(trendsQuery);
+    const trends = trendsResult.rows;
+
+    // Team performance (last 7 days)
+    const teamPerformanceQuery = `
+      SELECT 
+        t2.team_name,
+        COUNT(DISTINCT t.transaction_id) as transactions,
+        SUM(CASE WHEN t.count_type = 'bundle' THEN 
+          COALESCE((SELECT SUM(b.num_of_bundle * b.bundle_count) FROM bundles b WHERE b.transaction_id = t.transaction_id), 0)
+        ELSE t.qty END) as items_counted,
+        COUNT(DISTINCT t.counted_by) as team_members,
+        AVG(EXTRACT(EPOCH FROM (t.created_at - t.created_at))) as avg_time_per_transaction
+      FROM transactions t
+      JOIN teams t2 ON t.team_id = t2.team_id
+      WHERE t.created_at >= CURRENT_DATE - INTERVAL '7 days'
+      GROUP BY t2.team_id, t2.team_name
+      ORDER BY items_counted DESC
+      LIMIT 10
+    `;
+
+    const teamPerformanceResult = await pool.query(teamPerformanceQuery);
+    const teamPerformance = teamPerformanceResult.rows;
+
+    // Count type distribution
+    const countTypeQuery = `
+      SELECT 
+        t.count_type,
+        COUNT(*) as count,
+        SUM(CASE WHEN t.count_type = 'bundle' THEN 
+          COALESCE((SELECT SUM(b.num_of_bundle * b.bundle_count) FROM bundles b WHERE b.transaction_id = t.transaction_id), 0)
+        ELSE t.qty END) as total_items
+      FROM transactions t
+      GROUP BY t.count_type
+    `;
+
+    const countTypeResult = await pool.query(countTypeQuery);
+    const countTypeDistribution = countTypeResult.rows;
+
+    // Recent activity
+    const recentActivityQuery = `
+      SELECT 
+        t.transaction_id,
+        t.tag_id,
+        t.count_type,
+        t.qty,
+        t.created_at,
+        su.full_name as counter_name,
+        t2.team_name,
+        sl.location_desc,
+        ss.section_desc
+      FROM transactions t
+      JOIN st_users su ON t.counted_by = su.user_id
+      JOIN teams t2 ON t.team_id = t2.team_id
+      JOIN st_locations sl ON t.location_id = sl.location_id
+      JOIN st_sections ss ON t.section_id = ss.section_id
+      ORDER BY t.created_at DESC
+      LIMIT 20
+    `;
+
+    const recentActivityResult = await pool.query(recentActivityQuery);
+    const recentActivity = recentActivityResult.rows;
+
+    // Location stats
+    const locationStatsQuery = `
+      SELECT 
+        sl.location_desc,
+        COUNT(DISTINCT t.transaction_id) as transactions,
+        SUM(CASE WHEN t.count_type = 'bundle' THEN 
+          COALESCE((SELECT SUM(b.num_of_bundle * b.bundle_count) FROM bundles b WHERE b.transaction_id = t.transaction_id), 0)
+        ELSE t.qty END) as items_counted,
+        COUNT(DISTINCT t.team_id) as teams_working
+      FROM transactions t
+      JOIN st_locations sl ON t.location_id = sl.location_id
+      GROUP BY sl.location_id, sl.location_desc
+      ORDER BY items_counted DESC
+    `;
+
+    const locationStatsResult = await pool.query(locationStatsQuery);
+    const locationStats = locationStatsResult.rows;
+
+    res.json({
+      success: true,
+      data: {
+        stats,
+        trends,
+        teamPerformance,
+        countTypeDistribution,
+        recentActivity,
+        locationStats
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching dashboard analytics:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};
+
 // Check dimension segment for form, grade, size, finish combination
 exports.checkDimensionSegment = async (req, res) => {
   try {
@@ -3047,21 +3133,9 @@ exports.checkDimensionSegment = async (req, res) => {
         AND prm_fnsh = '${prm_fnsh}'
     `;
 
-    const response = await axios.post(
-      process.env.OAUTH_API_URL,
-      { sql: sqlQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${req.accessToken}`,
-          "Content-Type": "application/json",
-          Database: process.env.OAUTH_DATABASE,
-        },
-      }
-    );
+    const response = { data: await runErpSql(sqlQuery) };
 
-    console.log('Full API Response:', {
-      status: response.status,
-      statusText: response.statusText,
+    console.log('ERP ODBC Response:', {
       data: response.data,
       dataType: typeof response.data,
       isArray: Array.isArray(response.data),
@@ -3140,6 +3214,75 @@ exports.checkDimensionSegment = async (req, res) => {
       message: 'Failed to check dimension segment',
       error: error.message
     });
+  }
+};
+
+exports.getStockAvailable = async (req, res) => {
+  try {
+    const sqlQuery = `
+      SELECT 
+        prd_cmpy_id,
+        prd_brh,
+        prd_frm,
+        prd_grd,
+        prd_size,
+        prd_fnsh,
+        prd_ef_svar,
+        prd_wdth,
+        prd_lgth,
+        prd_whs,
+        prd_loc,
+        prd_tag_no,
+        prd_mill,
+        prd_heat,
+        prd_invt_typ,
+        prd_invt_qlty,
+        prd_invt_sts,
+        prd_ohd_qty,
+        prd_ohd_mat_cst,
+        prd_ohd_mat_val
+      FROM intprd_rec
+      ORDER BY prd_whs, prd_frm, prd_grd
+    `;
+
+    const response = { data: await runErpSql(sqlQuery) };
+
+    if (response.data.Data) {
+      res.json({
+        success: true,
+        data: response.data.Data
+      });
+    } else {
+      res.json({
+        success: true,
+        data: []
+      });
+    }
+  } catch (error) {
+    console.error('Error fetching stock available data:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch stock available data',
+      error: error.message
+    });
+  }
+};
+
+exports.getPreloadSections = async (req, res) => {
+  const { warehouse } = req.query;
+
+  if (!warehouse) {
+    return res.status(400).json({ error: 'Warehouse is required' });
+  }
+
+  try {
+    const sqlQuery = `SELECT loc_loc FROM inrloc_rec WHERE loc_whs = '${warehouse}'`;
+    const response = { data: await runErpSql(sqlQuery) };
+
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error fetching preload sections:', error);
+    res.status(500).json({ error: 'Failed to fetch preload sections' });
   }
 };
 

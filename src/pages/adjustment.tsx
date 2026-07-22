@@ -2,10 +2,9 @@ import React, { useState, useEffect } from 'react';
 import {
   Box, Typography, Paper, Table, TableHead, TableRow, TableCell, TableBody, TableContainer,
   Button, CircularProgress, Breadcrumbs, Link, useTheme, alpha, Radio, RadioGroup, FormControlLabel, FormControl,
-  Chip, Avatar, Tooltip, IconButton, Card, CardContent, Divider
+  Chip, Avatar, Card, CardContent
 } from '@mui/material';
 import {
-  ChevronLeft,
   Home,
   LocationOn,
   Refresh,
@@ -18,8 +17,7 @@ import {
   Factory,
   LocalShipping,
   CheckCircle,
-  Cancel,
-  Warning
+  Cancel
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useSnackbar } from 'notistack';
@@ -110,8 +108,8 @@ const AdjustmentPage: React.FC = () => {
       // Pass only the selected item to backend for query building
       const requestData = {
         selectedItems: [selectedItemForFetch],
-        branch,
-        warehouse
+        branch: branch || '',
+        warehouse: warehouse || ''
       };
       
       console.log('Request data being sent:', requestData);
@@ -351,7 +349,7 @@ const AdjustmentPage: React.FC = () => {
                     </Avatar>
                     <Box>
                       <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                        {adjustmentResults.reduce((sum, item) => sum + parseFloat(item.prd_ohd_pcs || 0), 0).toLocaleString()}
+                        {adjustmentResults.reduce((sum, item) => sum + parseFloat(String(item.prd_ohd_pcs || '0')), 0).toLocaleString()}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
                         Total Pieces
@@ -369,7 +367,7 @@ const AdjustmentPage: React.FC = () => {
                     </Avatar>
                     <Box>
                       <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                        {adjustmentResults.reduce((sum, item) => sum + parseFloat(item.prd_ohd_wgt || 0), 0).toLocaleString()} kg
+                        {adjustmentResults.reduce((sum, item) => sum + parseFloat(String(item.prd_ohd_wgt || '0')), 0).toLocaleString()} kg
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
                         Total Weight
@@ -443,7 +441,7 @@ const AdjustmentPage: React.FC = () => {
                 <TableBody>
                   {adjustmentResults.map((result, index) => {
                     const isActive = result.prd_invt_sts === 'S';
-                    const hasStock = parseFloat(result.prd_ohd_pcs || 0) > 0;
+                    const hasStock = parseFloat(String(result.prd_ohd_pcs || '0')) > 0;
                     
                     return (
                       <TableRow 
@@ -556,17 +554,17 @@ const AdjustmentPage: React.FC = () => {
                               color: hasStock ? theme.palette.success.main : theme.palette.text.secondary
                             }}
                           >
-                            {parseFloat(result.prd_ohd_pcs || 0).toLocaleString()}
+                            {parseFloat(String(result.prd_ohd_pcs || '0')).toLocaleString()}
                           </Typography>
                         </TableCell>
                         <TableCell align="right">
                           <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                            {parseFloat(result.prd_ohd_wgt || 0).toLocaleString()} kg
+                            {parseFloat(String(result.prd_ohd_wgt || '0')).toLocaleString()} kg
                           </Typography>
                         </TableCell>
                         <TableCell align="right">
                           <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                            {parseFloat(result.prd_ohd_qty || 0).toLocaleString()}
+                            {parseFloat(String(result.prd_ohd_qty || '0')).toLocaleString()}
                           </Typography>
                         </TableCell>
                       </TableRow>

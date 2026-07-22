@@ -44,16 +44,26 @@ import {
   CheckCircle as CheckCircleIcon,
   Info as InfoIcon,
   Sort as SortIcon,
-  Group as GroupIcon
+  Group as GroupIcon,
+  Download as DownloadIcon
 } from "@mui/icons-material";
 import { format } from "date-fns";
 import { visuallyHidden } from '@mui/utils';
+import * as XLSX from "xlsx";
 
 interface Section {
   section_id: string;
   section_desc: string;
   location_id: string;
   created_at?: string;
+}
+
+interface TeamMember {
+  id?: string;
+  user_id: string;
+  full_name: string;
+  role_id: string;
+  role_desc: string;
 }
 
 interface Team {
@@ -64,6 +74,7 @@ interface Team {
   tag_from?: string;
   tag_to?: string;
   current_tag?: string;
+  members?: TeamMember[];
 }
 
 interface AssignedLocation {
@@ -155,7 +166,8 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
   // Fetch teams from the server
   const fetchTeams = useCallback(async () => {
     try {
-      const { data } = await servicesAPI.getTeams();
+      const { data } = await servicesAPI.getTeamsWithMembers();
+      console.log('Teams with members:', data);
       setTeams(data);
     } catch (error) {
       console.error("Error fetching teams:", error);
@@ -447,6 +459,75 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
     setSortConfig({ key, direction });
   };
 
+  const getTeamMembersWithRolesText = (assignment: AssignedLocation | null): string => {
+    if (!assignment) return "-";
+
+    const sourceMembers =
+      assignment.team_details?.members ??
+      teams.find((team) => team.team_id.toString() === assignment.team_id.toString())?.members ??
+      [];
+
+    if (!sourceMembers || sourceMembers.length === 0) return "-";
+
+    const groupedMembers = sourceMembers.reduce<Record<string, Set<string>>>((acc, member) => {
+      const name = member.full_name?.trim();
+      if (!name) return acc;
+      if (!acc[name]) acc[name] = new Set<string>();
+      if (member.role_desc?.trim()) {
+        acc[name].add(member.role_desc.trim());
+      }
+      return acc;
+    }, {});
+
+    const memberText = Object.entries(groupedMembers).map(([name, roleSet]) => {
+      const roles = Array.from(roleSet);
+      return roles.length > 0 ? `${name} (${roles.join(", ")})` : name;
+    });
+
+    return memberText.length > 0 ? memberText.join("; ") : "-";
+  };
+
+  const handleExportSections = () => {
+    try {
+      const exportRows = sortedSections.map((section, index) => {
+        const assignment = getAssignedTeamInfo(section.section_id);
+        return {
+          "No.": index + 1,
+          "Section Name": section.section_desc || "-",
+          "Assigned Team": assignment?.team_name || "Not Assigned",
+          "Team Members & Roles": getTeamMembersWithRolesText(assignment),
+          "Assignment Status": assignment?.status || "Not Assigned",
+          "Assigned At": assignment?.assigned_at ? format(new Date(assignment.assigned_at), "MMM dd, yyyy HH:mm") : "-"
+        };
+      });
+      const worksheet = XLSX.utils.json_to_sheet([]);
+      XLSX.utils.sheet_add_aoa(worksheet, [
+        ["Sections Management Export"],
+        [`Location: ${location_desc} | Branch: ${branch} | Warehouse: ${warehouse}`],
+        [`Generated: ${format(new Date(), "MMM dd, yyyy HH:mm")}`],
+        []
+      ], { origin: "A1" });
+      XLSX.utils.sheet_add_json(worksheet, exportRows, { origin: "A5", skipHeader: false });
+      worksheet["!cols"] = [
+        { wch: 6 },
+        { wch: 24 },
+        { wch: 24 },
+        { wch: 70 },
+        { wch: 20 },
+        { wch: 22 }
+      ];
+      worksheet["!autofilter"] = { ref: "A5:F5" };
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Sections Export");
+      const fileName = `Sections_Management_${location_id}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+      setSuccess("Sections exported successfully.");
+    } catch (error) {
+      console.error("Error exporting sections:", error);
+      setError("Failed to export sections. Please try again.");
+    }
+  };
+
   const getAssignedTeamInfo = (sectionId: string): AssignedLocation | null => {
     console.log('Looking for sectionId:', sectionId, 'type:', typeof sectionId, 'location_id:', location_id, 'type:', typeof location_id);
     console.log('Available assigned locations:', assignedLocations);
@@ -504,6 +585,9 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
             >
               <MenuItem onClick={() => { handleRefresh(); handleMenuClose(); }}>
                 <RefreshIcon sx={{ mr: 1 }} /> Refresh Data
+              </MenuItem>
+              <MenuItem onClick={() => { handleExportSections(); handleMenuClose(); }}>
+                <DownloadIcon sx={{ mr: 1 }} /> Export Sections
               </MenuItem>
               <MenuItem onClick={handleMenuClose}>
                 Filter Sections
@@ -828,6 +912,14 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
           )}
         </Box>
         <Box display="flex" gap={1}>
+          <Button
+            onClick={handleExportSections}
+            variant="contained"
+            color="success"
+            startIcon={<DownloadIcon />}
+          >
+            Export
+          </Button>
           <Button 
             onClick={handleRefresh} 
             variant="outlined" 
@@ -873,7 +965,6 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
               <Autocomplete
                 options={teams}
                 getOptionLabel={(team) => `${team.team_name} (${team.team_id})`}
-                groupBy={(team) => team.current_tag || 'No Tag'}
                 value={teams.find(team => team.team_id === selectedTeam) || null}
                 onChange={(_event, newValue) => setSelectedTeam(newValue ? newValue.team_id : "")}
                 renderInput={(params) => (
@@ -885,51 +976,105 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
                     helperText="Select a team to assign to this section"
                   />
                 )}
-                renderOption={(props, team) => (
-                  <li {...props}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <GroupIcon color="action" />
-                      <Box>
-                        <Typography>{team.team_name}</Typography>
-                        <Typography variant="caption" color="textSecondary">
-                          {team.created_by && `Created by: ${team.created_by}`}
-                        </Typography>
+                renderOption={(props, team) => {
+                  // Count unique users
+                  const uniqueUserCount = team.members 
+                    ? new Set(team.members.map(m => m.user_id)).size 
+                    : 0;
+                  
+                  return (
+                    <li {...props}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <GroupIcon color="action" />
+                        <Box sx={{ flex: 1 }}>
+                          <Typography>{team.team_name}</Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            {uniqueUserCount > 0 
+                              ? `${uniqueUserCount} member${uniqueUserCount > 1 ? 's' : ''}`
+                              : 'No members'
+                            }
+                          </Typography>
+                        </Box>
                       </Box>
-                    </Box>
-                  </li>
-                )}
+                    </li>
+                  );
+                }}
               />
             </Grid>
             {selectedTeam && (
               <Grid item xs={12}>
                 <Paper elevation={0} sx={{ p: 2, backgroundColor: 'grey.50', borderRadius: 1 }}>
                   <Typography variant="subtitle2" gutterBottom>
-                    Team Details:
+                    Team Members:
                   </Typography>
                   {(() => {
                     const team = teams.find(t => t.team_id === selectedTeam);
                     if (!team) return null;
                     
-                    return (
-                      <Box>
-                        <Typography variant="body2">
-                          <strong>Name:</strong> {team.team_name}
+                    if (!team.members || team.members.length === 0) {
+                      return (
+                        <Typography variant="body2" color="textSecondary">
+                          No members assigned to this team
                         </Typography>
-                        {team.created_by && (
-                          <Typography variant="body2">
-                            <strong>Created by:</strong> {team.created_by}
-                          </Typography>
-                        )}
-                        {team.tag_from && team.tag_to && (
-                          <Typography variant="body2">
-                            <strong>Tags:</strong> {team.tag_from} → {team.tag_to}
-                          </Typography>
-                        )}
-                        {team.current_tag && (
-                          <Typography variant="body2">
-                            <strong>Current Tag:</strong> {team.current_tag}
-                          </Typography>
-                        )}
+                      );
+                    }
+                    
+                    // Group members by user_id to combine roles
+                    console.log('Team members before grouping:', team.members);
+                    const groupedMembers = team.members.reduce((acc, member) => {
+                      if (!acc[member.user_id]) {
+                        acc[member.user_id] = {
+                          user_id: member.user_id,
+                          full_name: member.full_name,
+                          roles: []
+                        };
+                      }
+                      if (member.role_desc) {
+                        acc[member.user_id].roles.push(member.role_desc);
+                      }
+                      return acc;
+                    }, {} as Record<string, { user_id: string; full_name: string; roles: string[] }>);
+                    
+                    const uniqueMembers = Object.values(groupedMembers);
+                    console.log('Grouped members:', uniqueMembers);
+                    
+                    return (
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 1 }}>
+                        {uniqueMembers.map((member) => (
+                          <Box 
+                            key={member.user_id} 
+                            sx={{ 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              gap: 1,
+                              p: 1,
+                              backgroundColor: 'white',
+                              borderRadius: 1,
+                              border: '1px solid',
+                              borderColor: 'divider'
+                            }}
+                          >
+                            <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>
+                              {member.full_name?.charAt(0) || '?'}
+                            </Avatar>
+                            <Box sx={{ flex: 1 }}>
+                              <Typography variant="body2" fontWeight={500}>
+                                {member.full_name || 'Unknown User'}
+                              </Typography>
+                              <Box sx={{ display: 'flex', gap: 0.5, mt: 0.5, flexWrap: 'wrap' }}>
+                                {member.roles.map((role, idx) => (
+                                  <Chip 
+                                    key={idx}
+                                    label={role} 
+                                    size="small" 
+                                    variant="outlined"
+                                    sx={{ height: 20, fontSize: '0.7rem' }}
+                                  />
+                                ))}
+                              </Box>
+                            </Box>
+                          </Box>
+                        ))}
                       </Box>
                     );
                   })()}

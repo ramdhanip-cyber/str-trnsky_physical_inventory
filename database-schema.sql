@@ -1,5 +1,21 @@
 -- =================================================================
 -- Users and Roles
+-- Order to create Tables:
+-- 1. st_roles
+-- 2. st_users
+-- 3. st_sessions
+-- 4. st_locations
+-- 5. st_sections
+-- 6. teams
+-- 7. team_members
+-- 8. assigned_locations
+-- 9. assigned_items
+-- 10. transactions
+-- 11. bundles
+-- 12. checker_sku_items
+-- 13. recheck_items
+-- 14. checker_activity_logs
+-- 15. reconciliation_records
 -- =================================================================
 
 -- Roles for users (e.g., Controller, Counter, Checker)
@@ -7,6 +23,10 @@ CREATE TABLE st_roles (
     role_id SERIAL PRIMARY KEY,
     role_desc VARCHAR(255) UNIQUE NOT NULL
 );
+
+INSERT INTO st_roles
+(role_id, role_desc)
+VALUES(1, 'Reconciler'), (2, 'Counter'), (3, 'Checker'), (4, 'Gatekeeper');
 
 -- User accounts
 CREATE TABLE st_users (
@@ -16,6 +36,10 @@ CREATE TABLE st_users (
     password VARCHAR(255) NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+INSERT INTO st_users
+(user_name, full_name, "password")
+VALUES('ramdp', 'Ramdhani Pandey', '$2a$16$smCpOfEBtXG7fAVhbQUlju5nsq9pv5qHLThAZx4VXWeSIU3bYn8Ga');
 
 -- User sessions
 CREATE TABLE st_sessions (
@@ -35,7 +59,7 @@ CREATE TABLE st_locations (
     location_id SERIAL PRIMARY KEY,
     location_desc VARCHAR(255) NOT NULL,
     warehouse VARCHAR(255) NOT NULL,
-    branch VARCHAR(255) NOT NULL,
+    branch VARCHAR(255),
     created_by INT REFERENCES st_users(user_id),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -57,12 +81,18 @@ CREATE TABLE st_sections (
 CREATE TABLE teams (
     team_id SERIAL PRIMARY KEY,
     team_name VARCHAR(255) NOT NULL,
+    location_id INT REFERENCES st_locations(location_id),
+    status VARCHAR(20) DEFAULT 'active',
     time_created TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by INT REFERENCES st_users(user_id),
     tag_from VARCHAR(255),
     tag_to VARCHAR(255),
     current_tag INT
 );
+
+INSERT INTO teams
+(team_id, team_name, tag_from, tag_to, current_tag, status, location_id)
+VALUES(1, 'Team Reconciler', '0', '0', 0, 'active', NULL);
 
 -- Members of a team
 CREATE TABLE team_members (
@@ -71,6 +101,10 @@ CREATE TABLE team_members (
     user_id INT NOT NULL REFERENCES st_users(user_id) ON DELETE CASCADE,
     role_id INT NOT NULL REFERENCES st_roles(role_id) ON DELETE CASCADE
 );
+
+INSERT INTO team_members
+(team_id, user_id, role_id)
+VALUES(1, 1, 1);
 
 -- Assigns teams to specific locations and sections
 CREATE TABLE assigned_locations (
@@ -107,6 +141,7 @@ CREATE INDEX idx_assigned_items_item_name ON assigned_items(item_name);
 CREATE TABLE transactions (
     transaction_id SERIAL PRIMARY KEY,
     tag_id VARCHAR(50) NULL,
+    sys_tag_no VARCHAR(255) NULL,
     form VARCHAR(50) NULL,
     grade VARCHAR(50) NULL,
     size VARCHAR(50) NULL,
@@ -117,6 +152,7 @@ CREATE TABLE transactions (
     count_type VARCHAR(50) NULL,
     qty INT NOT NULL,
     location_id INT NULL REFERENCES st_locations(location_id),
+    location VARCHAR(20) NULL,
     section_id INT NULL REFERENCES st_sections(section_id),
     counted_by INT NULL REFERENCES st_users(user_id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -129,7 +165,9 @@ CREATE TABLE transactions (
     ad_cmts VARCHAR(225) NULL,
     role VARCHAR(225) NULL,
     verified BOOLEAN NULL,
-    type VARCHAR(255) NULL
+    type VARCHAR(255) NULL,
+    page_number VARCHAR(255) NULL,
+    serial_number VARCHAR(255) NULL
 );
 
 -- For bundle counts within a transaction
@@ -146,6 +184,8 @@ CREATE TABLE bundles (
 CREATE TABLE checker_sku_items (
     id SERIAL PRIMARY KEY,
     location_id INT NOT NULL REFERENCES st_locations(location_id),
+    section_id INT NULL REFERENCES st_sections(section_id),
+    transaction_id INT NULL REFERENCES transactions(transaction_id),
     form VARCHAR(255),
     grade VARCHAR(255),
     size VARCHAR(255),
@@ -155,10 +195,16 @@ CREATE TABLE checker_sku_items (
     length VARCHAR(255),
     mill VARCHAR(255),
     heat VARCHAR(255),
+    location VARCHAR(255) NULL,
+    type VARCHAR(100) NULL,
+    quality VARCHAR(100) NULL,
     system_qty INT,
     counted_qty INT,
     variance INT,
     status VARCHAR(100),
+    checker_count INT NULL,
+    verified BOOLEAN NULL,
+    verified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -188,7 +234,8 @@ CREATE TABLE recheck_items (
     rechecked_at TIMESTAMPTZ,
     recheck_count INT DEFAULT 0,
     tag_id VARCHAR(255),
-    transaction_id INT REFERENCES transactions(transaction_id)
+    transaction_id INT REFERENCES transactions(transaction_id),
+    original_transaction_ids TEXT
 );
 
 -- =================================================================
@@ -232,7 +279,7 @@ CREATE TABLE reconciliation_records (
     status VARCHAR(50) DEFAULT 'active',
     summary_data JSONB NOT NULL,
     items_data JSONB NOT NULL,
-
+    comparison_data JSONB NOT NULL,
     notes TEXT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ NULL

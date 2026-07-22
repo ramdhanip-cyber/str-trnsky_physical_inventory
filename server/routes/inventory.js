@@ -11,9 +11,14 @@ router.get('/reconcile/check-existing', authMiddleware, reconciliationController
 router.get('/reconcile/load/:record_id', authMiddleware, reconciliationController.loadReconciliationData);
 router.delete('/reconciliation-records/:record_id', authMiddleware, reconciliationController.deleteReconciliationRecord);
 
+//getReport
+router.post('/reconcile/getreport', authMiddleware, reconciliationController.getReconciliationReport);
+
+
 // Recheck routes
 router.post('/recheck/mark-items', reconciliationController.markItemsForRecheck);
 router.get('/recheck/items/:location_id', reconciliationController.getRecheckItems);
+router.get('/recheck/marked-items/:location_id', reconciliationController.getMarkedItemsForChecking);
   router.put('/recheck/items/:item_id', reconciliationController.updateRecheckItem);
   router.post('/recheck/complete/:item_id', reconciliationController.completeRecheckItem);
   router.delete('/recheck/items/:item_id', reconciliationController.removeFromRecheck);

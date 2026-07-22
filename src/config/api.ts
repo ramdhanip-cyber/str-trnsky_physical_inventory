@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getLoginPath } from './appPath';
 
 // Automatically detect the API base URL from the current window location
 const getAPIBaseURL = () => {
@@ -10,15 +11,17 @@ const getAPIBaseURL = () => {
   // For production, use the same hostname with port 5310
   const protocol = window.location.protocol;
   const hostname = window.location.hostname;
+  console.log('Hostname:', hostname);
+  console.log('Protocol:', protocol);
   
   // Use the same hostname with port 5310 for the API server
   // Extract the base path from the current URL (same logic as App.tsx)
-  const baseUrl = window.location.pathname.split('/star-inventory/')[0] || '';
-  const basePath = baseUrl + '/star-inventory';
+  // const baseUrl = window.location.pathname.split('/star-inventory/')[0] || '';
+  // const basePath = baseUrl + '/star-inventory';
   
   // Use the same hostname without specifying port
-  // const apiBaseURL = `${protocol}//${hostname}:5310`; // For development
-  const apiBaseURL = `${protocol}//${hostname}${basePath}`; // For production
+  const apiBaseURL = `${protocol}//${hostname}:5310`; // For development
+  // const apiBaseURL = `${protocol}//${hostname}:5310/${basePath}`; // For production
   // Debug logging
   console.log('API Base URL Debug:', {
     protocol,
@@ -83,7 +86,7 @@ api.interceptors.response.use(
       localStorage.removeItem('emailToken');
       localStorage.removeItem('mode');
       localStorage.removeItem('name');
-      window.location.href = `/login`;
+      window.location.href = getLoginPath();
     }
     return Promise.reject(error);
   }
@@ -102,10 +105,13 @@ export const servicesAPI = {
   getLocations: () => api.get('/services/locations'),
   getLocation: (id: string) => api.get(`/services/locations/${id}`),
   createLocation: (data: unknown) => api.post('/services/locations', data),
+  deleteLocation: (id: string) => api.delete(`/services/locations/${id}`),
+  checkLocationTransactions: (id: string) => api.get(`/services/locations/${id}/check-transactions`),
   getItemGroups: (locationId: string) => api.get(`/services/locations/${locationId}/item-groups`),
   
   // Sections
   getSections: (locationId: string) => api.get(`/services/sections?location_id=${locationId}`),
+  getSection: (sectionId: string) => api.get(`/services/sections/${sectionId}`),
   getSectionCount: (locationId: string) => api.get(`/services/locations/${locationId}/sections`),
   createSection: (data: unknown) => api.post('/services/sections', data),
   deleteSection: (id: string) => api.delete(`/services/sections/${id}`),
@@ -160,6 +166,8 @@ export const servicesAPI = {
   // Transactions
   getTransactions: (params: unknown) => api.get('/services/transactions', { params }),
   createTransaction: (data: unknown) => api.post('/services/transactions', data),
+  updateTransactionTagId: (transactionId: number, tagId: number) => 
+    api.put(`/services/transactions/${transactionId}/tag-id`, { tag_id: tagId }),
   
   // Options and Lookups
   getGrade: (params: unknown) => api.get('/services/grade', { params }),
@@ -168,10 +176,12 @@ export const servicesAPI = {
   getExtFinish: (params: unknown) => api.get('/services/extfinish', { params }),
   getWidth: (params: unknown) => api.get('/services/width', { params }),
   getLength: (params: unknown) => api.get('/services/length', { params }),
+  getSysTag: (params: unknown) => api.get('/services/sys-tag', { params }),
   getMill: (params: unknown) => api.get('/services/mill', { params }),
   getMillByHeat: (params: unknown) => api.get('/services/mill-by-heat', { params }),
   getHeat: (params: unknown) => api.get('/services/heat', { params }),
   getRemarks: () => api.get('/services/remarks'),
+  getProductByTag: (tagNumber: string) => api.get('/services/product-by-tag', { params: { tag_number: tagNumber } }),
   checkDimensionSegment: (params: unknown) => api.get('/services/check-dimension-segment', { params }),
   
   // Dashboard
@@ -199,14 +209,22 @@ export const servicesAPI = {
   createReconciliationRecord: (data: unknown) => api.post('/services/reconciliation-records', data),
   updateReconciliationRecord: (recordId: string, data: unknown) => api.put(`/services/reconciliation-records/${recordId}`, data),
   deleteReconciliationRecord: (recordId: string) => api.delete(`/services/reconciliation-records/${recordId}`),
+  getReconciliationReport: (data: unknown) => api.post('/services/reconcile/getreport', data),
+
+  
+  // Transaction update API
+  updateTransaction: (transactionId: string, data: unknown) => api.put(`/services/transactions/${transactionId}`, data),
+  updateCounterReviewTransaction: (transactionId: string, data: unknown) => api.put(`/services/counter-review/update-transaction/${transactionId}`, data),
   reconcileInventory: (data: unknown) => api.post('/services/reconcile', data),
   saveReconciliationWithComparison: (data: unknown) => api.post('/services/reconcile/save', data),
   checkExistingReconciliation: (params: unknown) => api.get('/services/reconcile/check-existing', { params }),
   loadReconciliationData: (recordId: string) => api.get(`/services/reconcile/load/${recordId}`),
+
   
   // Recheck API methods
   markItemsForRecheck: (data: unknown) => api.post('/services/recheck/mark-items', data),
   getRecheckItems: (locationId: string) => api.get(`/services/recheck/items/${locationId}`),
+  getMarkedItemsForChecking: (locationId: string) => api.get(`/services/recheck/marked-items/${locationId}`),
       updateRecheckItem: (itemId: string, data: unknown) => api.put(`/services/recheck/items/${itemId}`, data),
     completeRecheckItem: (itemId: string, data: unknown) => api.post(`/services/recheck/complete/${itemId}`, data),
   removeFromRecheck: (itemId: string) => api.delete(`/services/recheck/items/${itemId}`),
@@ -216,14 +234,19 @@ export const servicesAPI = {
   getCheckerTransactions: (params: unknown) => api.get('/services/checker/get-transactions', { params }),
   getCheckerTransactionForChecker: (params: unknown) => api.get('/services/checker/TransactionForChecker', { params }),
   getCheckerBundles: (params: unknown) => api.get('/services/checker/bundles', { params }),
+  getMarkedItemsForChecker: (params: unknown) => api.get('/services/checker/marked-items', { params }),
+  quickVerifyMarkedItem: (data: unknown) => api.post('/services/checker/quick-verify-marked-item', data),
+  editAndVerifyMarkedItem: (data: unknown) => api.post('/services/checker/edit-verify-marked-item', data),
+  unverifyMarkedItem: (data: unknown) => api.post('/services/checker/unverify-marked-item', data),
   verifyTransaction: (data: unknown) => api.post('/services/checker/verify-transaction', data),
   unverifyTransaction: (data: unknown) => api.post('/services/checker/unverify-transaction', data),
-  updateTransaction: (data: unknown) => api.post('/services/checker/update-transaction', data),
+  updateCheckerTransaction: (data: unknown) => api.post('/services/checker/update-transaction', data),
   updateTransactionById: (transactionId: string, data: unknown) => api.put(`/services/transactions/${transactionId}`, data),
   getTransactionIdByTagAndLocation: (tagId: string, locationId: string) => api.get(`/services/transactions/by-tag-location?tag_id=${tagId}&location_id=${locationId}`),
   updateCounterTransaction: (data: unknown) => api.post('/services/counter/update-transaction', data),
   updateCheckerStatus: (locationId: string, sectionId: string) => api.post(`/services/assigned-locations/checker/${locationId}/${sectionId}`),
   addLineItem: (data: unknown) => api.post('/services/checker/add-line-item', data),
+  completeCheckerVerification: (data: { location_id: string; section_id: string }) => api.post('/services/checker/complete-verification', data),
   getAssignedLocationsForChecker: (locationId: string, sectionId: string) => api.get(`/services/assigned-locations/checker/${locationId}/${sectionId}`),
   getCheckerActivityLogs: (headers?: Record<string, string>) => api.get('/services/checker-activity-logs', { headers }),
   
@@ -231,8 +254,17 @@ export const servicesAPI = {
   signup: (data: unknown) => api.post('/auth/signup', data),
   
   // Get adjustment data
-  getAdjustmentData: (data: { selectedItems: any[], branch: string, warehouse: string }) => 
+  getAdjustmentData: (data: { selectedItems: unknown[], branch: string, warehouse: string }) => 
     api.post('/services/adjustment-data', data),
+  
+  // Stock Available
+  getStockAvailable: () => api.get('/services/stock-available'),
+  
+  // Bulk sections creation
+  createBulkSections: (data: unknown) => api.post('/services/sections/bulk', data),
+  
+  // Preload sections
+  getPreloadSections: (warehouse: string) => api.get(`/services/preload-sections?warehouse=${warehouse}`),
 };
 
 export default api; 

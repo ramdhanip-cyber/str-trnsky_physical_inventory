@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { servicesAPI } from '../config/api';
 import {
   Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, FormControl, InputLabel, 
@@ -8,26 +8,12 @@ import {
 import AddIcon from '@mui/icons-material/Add';
 import RemoveIcon from '@mui/icons-material/Remove';
 import GroupAddIcon from '@mui/icons-material/GroupAdd';
-import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { User, Role } from './teams';
 
 interface UserRole {
   userId: string;
   roleId: string;
-}
-
-interface TagRange {
-  from: string;
-  to: string;
-}
-
-interface Team {
-  team_id: number;
-  team_name: string;
-  tag_from: string;
-  tag_to: string;
-  current_tag?: string;
 }
 
 interface AddTeamDialogProps {
@@ -40,54 +26,9 @@ interface AddTeamDialogProps {
 
 const AddTeamDialog: React.FC<AddTeamDialogProps> = ({ open, onClose, onTeamCreated, users, roles }) => {
   const [teamName, setTeamName] = useState('');
-  const [tagRange, setTagRange] = useState<TagRange>({ from: '', to: '' });
   const [userRoles, setUserRoles] = useState<UserRole[]>([{ userId: '', roleId: '' }]);
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [tagRangeWarning, setTagRangeWarning] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-
-  // Fetch the last used tag when dialog opens
-  useEffect(() => {
-    if (open) {
-      const fetchLastTag = async () => {
-        try {
-          const response = await servicesAPI.getTeams();
-          const teams = response.data;
-          setTeams(teams);
-          
-          if (teams && teams.length > 0) {
-            const highestTag = Math.max(...teams.map((team: Team) => parseInt(team.tag_to) || 0));
-            setTagRange(prev => ({ ...prev, from: (highestTag + 1).toString() }));
-          } else {
-            setTagRange(prev => ({ ...prev, from: '1' }));
-          }
-        } catch (error) {
-          console.error('Error fetching last tag:', error);
-        }
-      };
-
-      fetchLastTag();
-    }
-  }, [open]);
-
-  // Validate tag range whenever it changes
-  useEffect(() => {
-    if (tagRange.from) {
-      const fromTag = parseInt(tagRange.from);
-      const overlappingTeam = teams.find(team => {
-        const teamFromTag = parseInt(team.tag_from);
-        const teamToTag = parseInt(team.tag_to);
-        return fromTag >= teamFromTag && fromTag <= teamToTag;
-      });
-
-      if (overlappingTeam) {
-        setTagRangeWarning(`Warning: Tag ${fromTag} falls within team "${overlappingTeam.team_name}" range (${overlappingTeam.tag_from}-${overlappingTeam.tag_to})`);
-      } else {
-        setTagRangeWarning('');
-      }
-    }
-  }, [tagRange.from, teams]);
 
   const handleAddUserRole = () => {
     setUserRoles([...userRoles, { userId: '', roleId: '' }]);
@@ -111,17 +52,6 @@ const AddTeamDialog: React.FC<AddTeamDialogProps> = ({ open, onClose, onTeamCrea
     // Check if team name is empty
     if (!teamName.trim()) {
       setError('Team name is required');
-      return false;
-    }
-
-    // Check if tag range is valid
-    if (!tagRange.from || !tagRange.to) {
-      setError('Tag range is required');
-      return false;
-    }
-
-    if (parseInt(tagRange.from) > parseInt(tagRange.to)) {
-      setError('Tag "From" cannot be greater than tag "To"');
       return false;
     }
 
@@ -150,15 +80,9 @@ const AddTeamDialog: React.FC<AddTeamDialogProps> = ({ open, onClose, onTeamCrea
       return;
     }
 
-    if (tagRangeWarning) {
-      if (!window.confirm('There is a tag range overlap warning. Do you want to proceed anyway?')) {
-        return;
-      }
-    }
-
     const teamData = {
       teamName,
-      tagRange,
+      tagRange: { from: 0, to: 0 }, // Default value set to 0 since Tag Range is removed from UI
       userRoles: userRoles.filter(ur => ur.userId && ur.roleId), // Only send complete user-role pairs
     };
 
@@ -169,16 +93,19 @@ const AddTeamDialog: React.FC<AddTeamDialogProps> = ({ open, onClose, onTeamCrea
         await onTeamCreated();
         onClose();
         setTeamName('');
-        setTagRange({ from: '', to: '' });
         setUserRoles([{ userId: '', roleId: '' }]);
-        setTagRangeWarning('');
         setError(null);
       } else {
         setError("Error creating team");
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error submitting team:", error);
-      setError(error.response?.data?.message || 'Failed to create team. Please try again.');
+      const errorMessage = error && typeof error === 'object' && 'response' in error && 
+        error.response && typeof error.response === 'object' && 'data' in error.response &&
+        error.response.data && typeof error.response.data === 'object' && 'message' in error.response.data
+        ? String(error.response.data.message)
+        : 'Failed to create team. Please try again.';
+      setError(errorMessage);
     }
   };
 
@@ -233,48 +160,6 @@ const AddTeamDialog: React.FC<AddTeamDialogProps> = ({ open, onClose, onTeamCrea
                 sx={{ mt: 2 }}
                 placeholder="Enter team name"
               />
-            </Paper>
-
-            <Paper elevation={0} sx={{ p: 2, mb: 3, border: '1px solid', borderColor: 'divider' }}>
-              <Typography variant="subtitle1" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'primary.main' }}>
-                <LocalOfferIcon fontSize="small" />
-                Tag Range Assignment
-                <Tooltip title="Specify the range of tags this team will be responsible for">
-                  <InfoOutlinedIcon fontSize="small" sx={{ color: 'text.secondary', cursor: 'help' }} />
-                </Tooltip>
-              </Typography>
-              
-              <Box display="flex" gap={2} mt={2}>
-                <TextField
-                  label="Tag From"
-                  fullWidth
-                  value={tagRange.from}
-                  onChange={(e) => setTagRange({ ...tagRange, from: e.target.value })}
-                  required
-                  error={!!tagRangeWarning}
-                  type="number"
-                  InputProps={{
-                    inputProps: { min: 1 }
-                  }}
-                />
-                <TextField
-                  label="Tag To"
-                  fullWidth
-                  value={tagRange.to}
-                  onChange={(e) => setTagRange({ ...tagRange, to: e.target.value })}
-                  required
-                  type="number"
-                  InputProps={{
-                    inputProps: { min: parseInt(tagRange.from) || 1 }
-                  }}
-                />
-              </Box>
-
-              {tagRangeWarning && (
-                <Alert severity="warning" sx={{ mt: 2 }}>
-                  {tagRangeWarning}
-                </Alert>
-              )}
             </Paper>
 
             <Paper elevation={0} sx={{ p: 2, mb: 3, border: '1px solid', borderColor: 'divider' }}>

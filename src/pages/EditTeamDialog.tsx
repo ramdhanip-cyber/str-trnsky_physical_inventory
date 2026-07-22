@@ -63,7 +63,6 @@ const EditTeamDialog: React.FC<EditTeamDialogProps> = ({
   roles 
 }) => {
   const [teamName, setTeamName] = useState('');
-  const [tagRange, setTagRange] = useState({ from: '', to: '' });
   const [userRoles, setUserRoles] = useState<{userId: string, roleId: string}[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -72,7 +71,6 @@ const EditTeamDialog: React.FC<EditTeamDialogProps> = ({
   useEffect(() => {
     if (team) {
       setTeamName(team.team_name);
-      setTagRange({ from: team.tag_from, to: team.tag_to });
       
       // Map team members to userRoles format
       const initialUserRoles = team.members.map(member => ({
@@ -103,8 +101,8 @@ const EditTeamDialog: React.FC<EditTeamDialogProps> = ({
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
-    if (!teamName || !tagRange.from || !tagRange.to) {
-      setError('Please fill all required fields');
+    if (!teamName) {
+      setError('Team name is required');
       return;
     }
 
@@ -122,8 +120,8 @@ const EditTeamDialog: React.FC<EditTeamDialogProps> = ({
 
       const teamData = {
         team_name: teamName,
-        tag_from: tagRange.from,
-        tag_to: tagRange.to,
+        tag_from: team?.tag_from || '0', // Keep existing tag_from or default to 0
+        tag_to: team?.tag_to || '0', // Keep existing tag_to or default to 0
         members: validUserRoles.map(ur => ({
           user_id: parseInt(ur.userId),
           role_id: parseInt(ur.roleId)
@@ -242,23 +240,6 @@ const EditTeamDialog: React.FC<EditTeamDialogProps> = ({
             <IconButton onClick={handleAddUserRole} color="primary">
               <AddIcon />
             </IconButton>
-          </Box>
-
-          <Box display="flex" gap={2} mt={2}>
-            <TextField
-              label="Tag From"
-              fullWidth
-              value={tagRange.from}
-              onChange={(e) => setTagRange({ ...tagRange, from: e.target.value })}
-              required
-            />
-            <TextField
-              label="Tag To"
-              fullWidth
-              value={tagRange.to}
-              onChange={(e) => setTagRange({ ...tagRange, to: e.target.value })}
-              required
-            />
           </Box>
 
           <DialogActions sx={{ mt: 3 }}>

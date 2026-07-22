@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { servicesAPI } from "../config/api";
 import {
   Box,
@@ -25,7 +25,6 @@ import {
   Tooltip,
   Avatar,
   Skeleton,
-  Divider,
   useMediaQuery,
   useTheme,
   Alert,
@@ -43,22 +42,57 @@ import {
   Refresh as RefreshIcon,
   PersonAdd as PersonAddIcon,
   Visibility as VisibilityIcon,
-  VisibilityOff as VisibilityOffIcon
+  VisibilityOff as VisibilityOffIcon,
+  Badge as BadgeIcon
 } from "@mui/icons-material";
 import { styled } from '@mui/material/styles';
 
+// Brand + design tokens
+const BRAND_GRADIENT = 'linear-gradient(135deg, #0C2C48 0%, #1E5A8A 100%)';
+
+const AVATAR_GRADIENTS = [
+  'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+  'linear-gradient(135deg, #0C2C48 0%, #1E5A8A 100%)',
+  'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+  'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+  'linear-gradient(135deg, #fc4a1a 0%, #f7b733 100%)',
+  'linear-gradient(135deg, #4776E6 0%, #8E54E9 100%)',
+  'linear-gradient(135deg, #00b09b 0%, #96c93d 100%)',
+  'linear-gradient(135deg, #ff5f6d 0%, #ffc371 100%)',
+];
+
+const getAvatarGradient = (seed: number) =>
+  AVATAR_GRADIENTS[Math.abs(seed) % AVATAR_GRADIENTS.length];
+
 // Styled components for better customization
 const StyledCard = styled(Card)(() => ({
-  borderRadius: '12px',
-  boxShadow: '0 4px 20px 0 rgba(0,0,0,0.05)',
-  transition: 'box-shadow 0.3s ease-in-out',
+  borderRadius: '16px',
+  border: '1px solid rgba(12,44,72,0.06)',
+  boxShadow: '0 6px 24px 0 rgba(12,44,72,0.06)',
+  transition: 'box-shadow 0.3s ease-in-out, transform 0.3s ease-in-out',
   '&:hover': {
-    boxShadow: '0 8px 30px 0 rgba(0,0,0,0.1)'
+    boxShadow: '0 12px 34px 0 rgba(12,44,72,0.10)'
+  }
+}));
+
+const StatCard = styled(Card)(() => ({
+  borderRadius: '16px',
+  border: '1px solid rgba(12,44,72,0.06)',
+  boxShadow: '0 6px 24px 0 rgba(12,44,72,0.05)',
+  height: '100%',
+  transition: 'transform 0.25s ease, box-shadow 0.25s ease',
+  '&:hover': {
+    transform: 'translateY(-3px)',
+    boxShadow: '0 14px 32px 0 rgba(12,44,72,0.12)'
   }
 }));
 
 const StyledTableRow = styled(TableRow)(({ theme }) => ({
+  transition: 'background-color 0.2s ease',
   '&:nth-of-type(odd)': {
+    backgroundColor: 'rgba(12,44,72,0.02)',
+  },
+  '&:hover': {
     backgroundColor: theme.palette.action.hover,
   },
   '&:last-child td, &:last-child th': {
@@ -94,6 +128,13 @@ interface FormErrors {
   confirmPassword: string;
 }
 
+const emptyErrors: FormErrors = {
+  user_name: "",
+  full_name: "",
+  password: "",
+  confirmPassword: ""
+};
+
 const UserManagement: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -116,72 +157,79 @@ const UserManagement: React.FC = () => {
     password: "",
     confirmPassword: ""
   });
-  const [errors, setErrors] = useState<FormErrors>({
-    user_name: "",
-    full_name: "",
-    password: "",
-    confirmPassword: ""
-  });
+  const [errors, setErrors] = useState<FormErrors>(emptyErrors);
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: "",
     severity: "success" as "success" | "error" | "info" | "warning"
   });
 
+  const showSnackbar = useCallback((message: string, severity: "success" | "error" | "info" | "warning") => {
+    setSnackbar({ open: true, message, severity });
+  }, []);
+
+  const getApiErrorMessage = (error: unknown, fallback: string) => {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "response" in error &&
+      typeof (error as { response?: unknown }).response === "object"
+    ) {
+      const response = (error as { response?: { data?: { message?: string } } }).response;
+      return response?.data?.message || fallback;
+    }
+    return fallback;
+  };
+
+  const fetchUsers = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await servicesAPI.getUsers();
+      setUsers(res.data);
+      setFilteredUsers(res.data);
+    } catch {
+      showSnackbar("Failed to fetch users", "error");
+    } finally {
+      setLoading(false);
+    }
+  }, [showSnackbar]);
+
   useEffect(() => {
     fetchUsers();
-  }, []);
+  }, [fetchUsers]);
 
   // Apply filters and sorting
   useEffect(() => {
     let result = [...users];
-    
-    // Apply search filter
+
     if (searchTerm.trim() !== '') {
       result = result.filter(user =>
         user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         user.user_name.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
-    
-    // Apply sorting
+
     if (sortConfig !== null) {
       result.sort((a, b) => {
         const aValue = a[sortConfig.key];
         const bValue = b[sortConfig.key];
-        
+
         if (typeof aValue === 'string' && typeof bValue === 'string') {
           const comparison = aValue.localeCompare(bValue);
           return sortConfig.direction === 'asc' ? comparison : -comparison;
         }
-        
+
         if (typeof aValue === 'number' && typeof bValue === 'number') {
           return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
         }
-        
+
         return 0;
       });
     }
-    
-    setFilteredUsers(result);
-  }, [searchTerm, users, sortConfig]);
 
-  const fetchUsers = async () => {
-    try {
-      setLoading(true);
-      const res = await servicesAPI.getUsers();
-      setUsers(res.data);
-      setFilteredUsers(res.data);
-    } catch (error) {
-      setSnackbar({
-        open: true,
-        message: "Failed to fetch users",
-        severity: "error"
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+    setFilteredUsers(result);
+    setPage(0);
+  }, [searchTerm, users, sortConfig]);
 
   const handleChangePage = (_event: unknown, newPage: number) => {
     setPage(newPage);
@@ -199,40 +247,89 @@ const UserManagement: React.FC = () => {
       password: "",
       confirmPassword: ""
     });
-    setErrors({
-      user_name: "",
-      full_name: "",
-      password: "",
-      confirmPassword: ""
-    });
+    setErrors(emptyErrors);
+  };
+
+  const validateForm = () => {
+    let valid = true;
+    const newErrors: FormErrors = { ...emptyErrors };
+
+    if (!newUser.user_name.trim()) {
+      newErrors.user_name = "Username is required";
+      valid = false;
+    }
+
+    if (!newUser.full_name.trim()) {
+      newErrors.full_name = "Full name is required";
+      valid = false;
+    }
+
+    if (!newUser.password) {
+      newErrors.password = "Password is required";
+      valid = false;
+    } else if (newUser.password.length < 6) {
+      newErrors.password = "Password must be at least 6 characters";
+      valid = false;
+    }
+
+    if (newUser.password !== newUser.confirmPassword) {
+      newErrors.confirmPassword = "Passwords do not match";
+      valid = false;
+    }
+
+    setErrors(newErrors);
+    return valid;
+  };
+
+  const validateEditForm = () => {
+    if (!editUser) return false;
+    let valid = true;
+    const newErrors: FormErrors = { ...emptyErrors };
+
+    if (!editUser.user_name.trim()) {
+      newErrors.user_name = "Username is required";
+      valid = false;
+    }
+
+    if (!editUser.full_name.trim()) {
+      newErrors.full_name = "Full name is required";
+      valid = false;
+    }
+
+    if (editUser.password && editUser.password.length < 6) {
+      newErrors.password = "Password must be at least 6 characters";
+      valid = false;
+    }
+
+    if (editUser.password !== editUser.confirmPassword) {
+      newErrors.confirmPassword = "Passwords do not match";
+      valid = false;
+    }
+
+    setErrors(newErrors);
+    return valid;
   };
 
   const handleCreateUser = async () => {
+    if (!validateForm()) return;
+
     try {
       await servicesAPI.createUser({
         user_name: newUser.user_name,
         full_name: newUser.full_name,
         password: newUser.password
       });
-      setSnackbar({
-        open: true,
-        message: "User created successfully!",
-        severity: "success"
-      });
+      showSnackbar("User created successfully!", "success");
       fetchUsers();
       setOpenDialog(false);
       resetForm();
-    } catch (error: any) {
-      setSnackbar({
-        open: true,
-        message: error.response?.data?.message || "Failed to create user",
-        severity: "error"
-      });
+    } catch (error: unknown) {
+      showSnackbar(getApiErrorMessage(error, "An error occurred while creating the user."), "error");
     }
   };
 
   const handleEditUser = async () => {
-    if (!editUser) return;
+    if (!editUser || !validateEditForm()) return;
 
     try {
       await servicesAPI.updateUser(editUser.user_id.toString(), {
@@ -240,20 +337,13 @@ const UserManagement: React.FC = () => {
         full_name: editUser.full_name,
         ...(editUser.password ? { password: editUser.password } : {})
       });
-      setSnackbar({
-        open: true,
-        message: "User updated successfully!",
-        severity: "success"
-      });
+      showSnackbar("User updated successfully!", "success");
       fetchUsers();
       setEditDialogOpen(false);
       setEditUser(null);
-    } catch (error: any) {
-      setSnackbar({
-        open: true,
-        message: error.response?.data?.message || "Failed to update user",
-        severity: "error"
-      });
+      setErrors(emptyErrors);
+    } catch (error: unknown) {
+      showSnackbar(getApiErrorMessage(error, "Failed to update user"), "error");
     }
   };
 
@@ -262,127 +352,220 @@ const UserManagement: React.FC = () => {
 
     try {
       await servicesAPI.deleteUser(userToDelete.toString());
-      setSnackbar({
-        open: true,
-        message: "User deleted successfully!",
-        severity: "success"
-      });
+      showSnackbar("User deleted successfully!", "success");
       fetchUsers();
+    } catch (error: unknown) {
+      showSnackbar(getApiErrorMessage(error, "Failed to delete user"), "error");
+    } finally {
       setDeleteConfirmOpen(false);
       setUserToDelete(null);
-    } catch (error: any) {
-      setSnackbar({
-        open: true,
-        message: error.response?.data?.message || "Failed to delete user",
-        severity: "error"
-      });
     }
   };
 
   return (
     <Box sx={{ p: isMobile ? 2 : 3 }}>
-      {/* Header Section */}
-      <Box sx={{ 
-        display: "flex", 
-        justifyContent: "space-between", 
-        alignItems: "center", 
-        mb: 3,
-        flexDirection: isMobile ? 'column' : 'row',
-        gap: isMobile ? 2 : 0
-      }}>
-        <Typography variant="h4" component="h1" fontWeight="bold" sx={{ color: theme.palette.primary.main }}>
-          User Management
-        </Typography>
-        <Box sx={{ 
+      {/* Hero Header */}
+      <Box
+        sx={{
+          position: 'relative',
+          overflow: 'hidden',
+          borderRadius: '20px',
+          mb: 3,
+          px: isMobile ? 2.5 : 4,
+          py: isMobile ? 3 : 3.5,
+          background: BRAND_GRADIENT,
+          color: '#fff',
+          boxShadow: '0 14px 40px 0 rgba(12,44,72,0.30)'
+        }}
+      >
+        {/* Decorative circles */}
+        <Box sx={{ position: 'absolute', top: -60, right: -40, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.06)' }} />
+        <Box sx={{ position: 'absolute', bottom: -80, right: 120, width: 180, height: 180, borderRadius: '50%', background: 'rgba(255,255,255,0.04)' }} />
+
+        <Box sx={{
+          position: 'relative',
           display: 'flex',
-          gap: 2,
-          width: isMobile ? '100%' : 'auto'
+          justifyContent: 'space-between',
+          alignItems: isMobile ? 'flex-start' : 'center',
+          flexDirection: isMobile ? 'column' : 'row',
+          gap: isMobile ? 2.5 : 0
         }}>
-          <Button
-            variant="outlined"
-            startIcon={<RefreshIcon />}
-            onClick={fetchUsers}
-            sx={{ 
-              minWidth: isMobile ? 'auto' : 120,
-              flex: isMobile ? 1 : 0
-            }}
-          >
-            {isMobile ? <RefreshIcon /> : 'Refresh'}
-          </Button>
-          <Button
-            variant="contained"
-            color="primary"
-            startIcon={<PersonAddIcon />}
-            onClick={() => setOpenDialog(true)}
-            sx={{ 
-              minWidth: isMobile ? 'auto' : 140,
-              flex: isMobile ? 1 : 0
-            }}
-          >
-            {isMobile ? <PersonAddIcon /> : 'Add User'}
-          </Button>
+          <Box display="flex" alignItems="center" gap={2}>
+            <Avatar
+              sx={{
+                bgcolor: 'rgba(255,255,255,0.15)',
+                width: 56,
+                height: 56,
+                backdropFilter: 'blur(6px)'
+              }}
+            >
+              <PeopleIcon sx={{ fontSize: 30, color: '#fff' }} />
+            </Avatar>
+            <Box>
+              <Typography variant="h4" component="h1" fontWeight={800} sx={{ letterSpacing: '-0.5px', lineHeight: 1.15 }}>
+                User Management
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.75)', mt: 0.5 }}>
+                Manage user accounts with better visibility and faster actions
+              </Typography>
+            </Box>
+          </Box>
+
+          <Box sx={{
+            display: 'flex',
+            gap: 1.5,
+            width: isMobile ? '100%' : 'auto',
+            flexShrink: 0
+          }}>
+            <Button
+              variant="outlined"
+              startIcon={<RefreshIcon />}
+              onClick={fetchUsers}
+              sx={{
+                color: '#fff',
+                borderColor: 'rgba(255,255,255,0.5)',
+                borderRadius: '10px',
+                textTransform: 'none',
+                fontWeight: 600,
+                whiteSpace: 'nowrap',
+                flex: isMobile ? 1 : 'none',
+                flexShrink: 0,
+                px: 2,
+                '&:hover': { borderColor: '#fff', backgroundColor: 'rgba(255,255,255,0.12)' }
+              }}
+            >
+              Refresh
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<PersonAddIcon />}
+              onClick={() => setOpenDialog(true)}
+              sx={{
+                backgroundColor: '#fff',
+                color: theme.palette.primary.main,
+                borderRadius: '10px',
+                textTransform: 'none',
+                fontWeight: 700,
+                whiteSpace: 'nowrap',
+                boxShadow: '0 6px 18px rgba(0,0,0,0.18)',
+                flex: isMobile ? 1 : 'none',
+                flexShrink: 0,
+                px: 2.5,
+                '&:hover': { backgroundColor: 'rgba(255,255,255,0.9)' }
+              }}
+            >
+              Add User
+            </Button>
+          </Box>
         </Box>
       </Box>
 
-      {/* Filters Section */}
-      <StyledCard sx={{ mb: 3 }}>
-        <CardContent>
-          <Grid container spacing={2} alignItems="center">
-            <Grid item xs={12} md={8}>
-              <TextField
-                fullWidth
-                variant="outlined"
-                size="small"
-                placeholder="Search users..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon color="action" />
-                    </InputAdornment>
-                  ),
-                  sx: {
-                    backgroundColor: theme.palette.background.paper,
-                    borderRadius: '12px'
-                  }
-                }}
-              />
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <Box display="flex" gap={1} alignItems="center">
-                <PeopleIcon color="action" />
-                <Typography variant="body2" color="text.secondary">
-                  <strong>{users.length}</strong> users total
+      {/* Stats Strip */}
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        <Grid item xs={12} sm={4}>
+          <StatCard>
+            <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Avatar sx={{ background: BRAND_GRADIENT, width: 48, height: 48 }}>
+                <PeopleIcon />
+              </Avatar>
+              <Box>
+                <Typography variant="h5" fontWeight={800} sx={{ color: theme.palette.primary.main, lineHeight: 1 }}>
+                  {users.length.toLocaleString()}
                 </Typography>
-                <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
+                <Typography variant="body2" color="text.secondary">Total Users</Typography>
+              </Box>
+            </CardContent>
+          </StatCard>
+        </Grid>
+        <Grid item xs={12} sm={4}>
+          <StatCard>
+            <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Avatar sx={{ background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)', width: 48, height: 48 }}>
+                <SearchIcon />
+              </Avatar>
+              <Box>
+                <Typography variant="h5" fontWeight={800} sx={{ color: theme.palette.primary.main, lineHeight: 1 }}>
+                  {filteredUsers.length.toLocaleString()}
+                </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  <strong>{filteredUsers.length}</strong> filtered
+                  {searchTerm ? 'Matching Search' : 'Currently Showing'}
                 </Typography>
               </Box>
-            </Grid>
-          </Grid>
+            </CardContent>
+          </StatCard>
+        </Grid>
+        <Grid item xs={12} sm={4}>
+          <StatCard>
+            <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Avatar sx={{ background: 'linear-gradient(135deg, #4776E6 0%, #8E54E9 100%)', width: 48, height: 48 }}>
+                <BadgeIcon />
+              </Avatar>
+              <Box>
+                <Typography variant="h6" fontWeight={800} sx={{ color: theme.palette.primary.main, lineHeight: 1.1 }}>
+                  {searchTerm ? 'Filtered' : 'All Records'}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">Search Mode</Typography>
+              </Box>
+            </CardContent>
+          </StatCard>
+        </Grid>
+      </Grid>
+
+      {/* Search */}
+      <StyledCard sx={{ mb: 3 }}>
+        <CardContent sx={{ py: 2 }}>
+          <TextField
+            fullWidth
+            variant="outlined"
+            size="small"
+            placeholder="Search by name or username..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon color="action" />
+                </InputAdornment>
+              ),
+              endAdornment: searchTerm ? (
+                <InputAdornment position="end">
+                  <IconButton size="small" onClick={() => setSearchTerm('')}>
+                    <ClearIcon fontSize="small" />
+                  </IconButton>
+                </InputAdornment>
+              ) : null,
+              sx: {
+                backgroundColor: theme.palette.background.paper,
+                borderRadius: '12px'
+              }
+            }}
+          />
         </CardContent>
       </StyledCard>
 
       {/* Users Table */}
       <StyledCard>
         {loading && <LinearProgress />}
-        <TableContainer component={Paper} sx={{ borderRadius: '12px', overflow: 'hidden' }}>
+        <TableContainer component={Paper} sx={{ borderRadius: '16px', overflow: 'hidden', boxShadow: 'none' }}>
           <Table>
-            <TableHead sx={{ 
-              backgroundColor: theme.palette.mode === 'dark' ? 
-                theme.palette.grey[800] : theme.palette.grey[100] 
+            <TableHead sx={{
+              background: 'linear-gradient(180deg, rgba(12,44,72,0.06) 0%, rgba(12,44,72,0.03) 100%)'
             }}>
               <TableRow>
-                <TableCell width="60px"></TableCell>
-                <TableCell 
-                  onClick={() => setSortConfig({ 
-                    key: 'full_name', 
-                    direction: sortConfig?.key === 'full_name' && sortConfig.direction === 'asc' ? 'desc' : 'asc' 
+                <TableCell width="60px" sx={{ borderBottom: '2px solid rgba(12,44,72,0.10)' }}></TableCell>
+                <TableCell
+                  onClick={() => setSortConfig({
+                    key: 'full_name',
+                    direction: sortConfig?.key === 'full_name' && sortConfig.direction === 'asc' ? 'desc' : 'asc'
                   })}
-                  sx={{ 
+                  sx={{
                     cursor: 'pointer',
+                    fontWeight: 700,
+                    color: theme.palette.primary.main,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    fontSize: '0.75rem',
+                    borderBottom: '2px solid rgba(12,44,72,0.10)',
                     '&:hover': {
                       backgroundColor: theme.palette.action.hover
                     }
@@ -397,13 +580,19 @@ const UserManagement: React.FC = () => {
                     )}
                   </Box>
                 </TableCell>
-                <TableCell 
-                  onClick={() => setSortConfig({ 
-                    key: 'user_name', 
-                    direction: sortConfig?.key === 'user_name' && sortConfig.direction === 'asc' ? 'desc' : 'asc' 
+                <TableCell
+                  onClick={() => setSortConfig({
+                    key: 'user_name',
+                    direction: sortConfig?.key === 'user_name' && sortConfig.direction === 'asc' ? 'desc' : 'asc'
                   })}
-                  sx={{ 
+                  sx={{
                     cursor: 'pointer',
+                    fontWeight: 700,
+                    color: theme.palette.primary.main,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    fontSize: '0.75rem',
+                    borderBottom: '2px solid rgba(12,44,72,0.10)',
                     '&:hover': {
                       backgroundColor: theme.palette.action.hover
                     }
@@ -418,17 +607,44 @@ const UserManagement: React.FC = () => {
                     )}
                   </Box>
                 </TableCell>
-                <TableCell align="right">Actions</TableCell>
+                <TableCell
+                  onClick={() => setSortConfig({
+                    key: 'user_id',
+                    direction: sortConfig?.key === 'user_id' && sortConfig.direction === 'asc' ? 'desc' : 'asc'
+                  })}
+                  sx={{
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    color: theme.palette.primary.main,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    fontSize: '0.75rem',
+                    borderBottom: '2px solid rgba(12,44,72,0.10)',
+                    '&:hover': {
+                      backgroundColor: theme.palette.action.hover
+                    }
+                  }}
+                >
+                  <Box display="flex" alignItems="center">
+                    User ID
+                    {sortConfig?.key === 'user_id' && (
+                      <Typography variant="caption" sx={{ ml: 1 }}>
+                        {sortConfig.direction === 'asc' ? '↑' : '↓'}
+                      </Typography>
+                    )}
+                  </Box>
+                </TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700, color: theme.palette.primary.main, textTransform: 'uppercase', letterSpacing: '0.5px', fontSize: '0.75rem', borderBottom: '2px solid rgba(12,44,72,0.10)' }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {loading ? (
-                // Loading skeleton
                 Array.from({ length: 5 }).map((_, index) => (
                   <StyledTableRow key={index}>
                     <TableCell><Skeleton variant="circular" width={40} height={40} /></TableCell>
                     <TableCell><Skeleton variant="text" /></TableCell>
                     <TableCell><Skeleton variant="text" /></TableCell>
+                    <TableCell><Skeleton variant="text" width="50%" /></TableCell>
                     <TableCell><Skeleton variant="text" width="80%" /></TableCell>
                   </StyledTableRow>
                 ))
@@ -438,50 +654,76 @@ const UserManagement: React.FC = () => {
                   .map((user) => (
                     <StyledTableRow key={user.user_id} hover>
                       <TableCell>
-                        <Avatar 
-                          sx={{ 
-                            bgcolor: theme.palette.primary.main,
-                            width: 40, 
-                            height: 40,
-                            fontSize: '1rem'
+                        <Avatar
+                          sx={{
+                            background: getAvatarGradient(user.user_id),
+                            width: 42,
+                            height: 42,
+                            fontSize: '1rem',
+                            fontWeight: 700,
+                            color: '#fff',
+                            boxShadow: '0 3px 10px rgba(12,44,72,0.20)'
                           }}
                         >
                           {user.full_name.charAt(0).toUpperCase()}
                         </Avatar>
                       </TableCell>
                       <TableCell>
-                        <Typography fontWeight="medium">{user.full_name}</Typography>
+                        <Typography fontWeight={600} sx={{ color: theme.palette.primary.main }}>{user.full_name}</Typography>
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2" color="text.secondary">
+                        <Box
+                          component="span"
+                          sx={{
+                            display: 'inline-block',
+                            px: 1.25,
+                            py: 0.35,
+                            borderRadius: '8px',
+                            backgroundColor: 'rgba(12,44,72,0.06)',
+                            color: theme.palette.text.secondary,
+                            fontFamily: 'monospace',
+                            fontSize: '0.8rem',
+                            fontWeight: 600
+                          }}
+                        >
                           {user.user_name}
-                        </Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color="text.secondary">#{user.user_id}</Typography>
                       </TableCell>
                       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                         <Tooltip title="Edit">
-                          <IconButton 
-                            color="primary" 
-                            sx={{ mr: 1 }}
+                          <IconButton
+                            color="primary"
+                            size="small"
+                            sx={{
+                              mr: 1,
+                              backgroundColor: 'rgba(12,44,72,0.06)',
+                              '&:hover': { backgroundColor: 'rgba(12,44,72,0.14)' }
+                            }}
                             onClick={() => {
-                              const userToEdit = users.find(u => u.user_id === user.user_id);
-                              if (userToEdit) {
-                                setEditUser({
-                                  user_id: userToEdit.user_id,
-                                  user_name: userToEdit.user_name,
-                                  full_name: userToEdit.full_name,
-                                  password: "",
-                                  confirmPassword: ""
-                                });
-                                setEditDialogOpen(true);
-                              }
+                              setEditUser({
+                                user_id: user.user_id,
+                                user_name: user.user_name,
+                                full_name: user.full_name,
+                                password: "",
+                                confirmPassword: ""
+                              });
+                              setEditDialogOpen(true);
                             }}
                           >
                             <EditIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
                         <Tooltip title="Delete">
-                          <IconButton 
+                          <IconButton
                             color="error"
+                            size="small"
+                            sx={{
+                              backgroundColor: 'rgba(211,47,47,0.08)',
+                              '&:hover': { backgroundColor: 'rgba(211,47,47,0.18)' }
+                            }}
                             onClick={() => {
                               setUserToDelete(user.user_id);
                               setDeleteConfirmOpen(true);
@@ -495,15 +737,21 @@ const UserManagement: React.FC = () => {
                   ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={4} align="center" sx={{ py: 4 }}>
-                    <Box sx={{ 
-                      display: 'flex', 
-                      flexDirection: 'column', 
+                  <TableCell colSpan={5} align="center" sx={{ py: 6 }}>
+                    <Box sx={{
+                      display: 'flex',
+                      flexDirection: 'column',
                       alignItems: 'center',
-                      gap: 1
+                      gap: 1.5
                     }}>
-                      <Typography variant="body1" color="text.secondary">
-                        No users found matching your criteria
+                      <Avatar sx={{ bgcolor: 'rgba(12,44,72,0.06)', width: 64, height: 64 }}>
+                        <PeopleIcon sx={{ fontSize: 34, color: theme.palette.primary.main, opacity: 0.6 }} />
+                      </Avatar>
+                      <Typography variant="h6" fontWeight={700} sx={{ color: theme.palette.primary.main }}>
+                        No users found
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {searchTerm ? 'Try adjusting your search terms' : 'Add a user to get started'}
                       </Typography>
                       {searchTerm && (
                         <Button
@@ -541,10 +789,10 @@ const UserManagement: React.FC = () => {
       </StyledCard>
 
       {/* Add User Dialog */}
-      <Dialog 
-        open={openDialog} 
-        onClose={() => setOpenDialog(false)} 
-        maxWidth="sm" 
+      <Dialog
+        open={openDialog}
+        onClose={() => setOpenDialog(false)}
+        maxWidth="sm"
         fullWidth
         PaperProps={{
           sx: {
@@ -552,8 +800,8 @@ const UserManagement: React.FC = () => {
           }
         }}
       >
-        <DialogTitle sx={{ 
-          fontWeight: "bold", 
+        <DialogTitle sx={{
+          fontWeight: "bold",
           bgcolor: theme.palette.grey[100],
           borderBottom: `1px solid ${theme.palette.divider}`
         }}>
@@ -634,7 +882,7 @@ const UserManagement: React.FC = () => {
           </Grid>
         </DialogContent>
         <DialogActions sx={{ p: 2, borderTop: `1px solid ${theme.palette.divider}` }}>
-          <Button 
+          <Button
             onClick={() => {
               setOpenDialog(false);
               resetForm();
@@ -657,13 +905,14 @@ const UserManagement: React.FC = () => {
       </Dialog>
 
       {/* Edit User Dialog */}
-      <Dialog 
-        open={editDialogOpen} 
+      <Dialog
+        open={editDialogOpen}
         onClose={() => {
           setEditDialogOpen(false);
           setEditUser(null);
+          setErrors(emptyErrors);
         }}
-        maxWidth="sm" 
+        maxWidth="sm"
         fullWidth
         PaperProps={{
           sx: {
@@ -671,8 +920,8 @@ const UserManagement: React.FC = () => {
           }
         }}
       >
-        <DialogTitle sx={{ 
-          fontWeight: "bold", 
+        <DialogTitle sx={{
+          fontWeight: "bold",
           bgcolor: theme.palette.grey[100],
           borderBottom: `1px solid ${theme.palette.divider}`
         }}>
@@ -760,10 +1009,11 @@ const UserManagement: React.FC = () => {
           )}
         </DialogContent>
         <DialogActions sx={{ p: 2, borderTop: `1px solid ${theme.palette.divider}` }}>
-          <Button 
+          <Button
             onClick={() => {
               setEditDialogOpen(false);
               setEditUser(null);
+              setErrors(emptyErrors);
             }}
             color="inherit"
             sx={{ borderRadius: '8px' }}
@@ -783,8 +1033,8 @@ const UserManagement: React.FC = () => {
       </Dialog>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog 
-        open={deleteConfirmOpen} 
+      <Dialog
+        open={deleteConfirmOpen}
         onClose={() => setDeleteConfirmOpen(false)}
         PaperProps={{
           sx: {
@@ -800,8 +1050,8 @@ const UserManagement: React.FC = () => {
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button 
-            onClick={() => setDeleteConfirmOpen(false)} 
+          <Button
+            onClick={() => setDeleteConfirmOpen(false)}
             color="inherit"
             sx={{ borderRadius: '8px' }}
           >
@@ -829,7 +1079,7 @@ const UserManagement: React.FC = () => {
         <Alert
           onClose={() => setSnackbar({ ...snackbar, open: false })}
           severity={snackbar.severity}
-          sx={{ 
+          sx={{
             width: "100%",
             borderRadius: '8px',
             boxShadow: theme.shadows[3]
