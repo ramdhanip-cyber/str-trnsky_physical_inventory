@@ -36,12 +36,12 @@ import {
   Alert
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
-import { 
-  ChevronLeft, 
-  ListAlt, 
-  ExpandLess, 
+import {
+  ChevronLeft,
+  ListAlt,
+  ExpandLess,
   ExpandMore,
-  Info, 
+  Info,
   Search,
   Refresh,
   FilterList,
@@ -276,7 +276,7 @@ const TransactionRow = ({
   }, [isEditing, transaction]);
   const theme = useTheme();
 
-  const totalQuantity = transaction.count_type === 'bundle' 
+  const totalQuantity = transaction.count_type === 'bundle'
     ? transaction.bundles?.reduce((total, bundle) => total + (bundle.num_of_bundle * bundle.bundle_count), 0)
     : transaction.qty;
 
@@ -289,7 +289,7 @@ const TransactionRow = ({
 
   // Find the section for this transaction
   const section = sections.find(s => s.section_id === transaction.section_id);
-  
+
   // Debug logging
   if (!section) {
     console.log('Section not found for transaction:', {
@@ -388,7 +388,7 @@ const TransactionRow = ({
 
   return (
     <>
-      <TableRow hover sx={{ 
+      <TableRow hover sx={{
         '&:last-child td, &:last-child th': { border: 0 },
         '&:hover': {
           backgroundColor: alpha(theme.palette.primary.light, 0.05)
@@ -475,7 +475,7 @@ const CountReviewPage = () => {
   const [users] = useState<any[]>([]);
   const [selectedUser, setSelectedUser] = useState<string>('');
   const [existingCheckerDialogOpen, setExistingCheckerDialogOpen] = useState(false);
-  const [existingCheckerInfo, setExistingCheckerInfo] = useState<{userName: string, teamName: string} | null>(null);
+  const [existingCheckerInfo, setExistingCheckerInfo] = useState<{ userName: string, teamName: string } | null>(null);
   const [markedItems, setMarkedItems] = useState<Set<number>>(new Set());
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' | 'warning' }>({ open: false, message: '', severity: 'success' });
   const [columnsMenuAnchor, setColumnsMenuAnchor] = useState<null | HTMLElement>(null);
@@ -500,6 +500,7 @@ const CountReviewPage = () => {
   const [reconcileIncludeHeat, setReconcileIncludeHeat] = useState(true);
   const [reconcileIncludeType, setReconcileIncludeType] = useState(true);
   const [reconcileIncludeQuality, setReconcileIncludeQuality] = useState(true);
+  const [reconcileSaveToRecords, setReconcileSaveToRecords] = useState(false);
 
   const getReconcileCompareFields = (): string[] => {
     const parts: string[] = [];
@@ -516,7 +517,7 @@ const CountReviewPage = () => {
   // Fetch marked items for checking
   const fetchMarkedItems = async () => {
     if (!location_id) return;
-    
+
     try {
       const response = await servicesAPI.getMarkedItemsForChecking(location_id);
       if (response.data.success) {
@@ -566,7 +567,7 @@ const CountReviewPage = () => {
 
     // Apply section filter
     if (sectionFilter !== 'all') {
-      filtered = filtered.filter(transaction => 
+      filtered = filtered.filter(transaction =>
         transaction.section_id === parseInt(sectionFilter)
       );
     }
@@ -601,7 +602,7 @@ const CountReviewPage = () => {
   const handleSaveEdit = async (transactionId: number, updatedData: any) => {
     console.log('Saving edit for transaction:', transactionId, 'with data:', updatedData);
     setSavingTransaction(transactionId);
-    
+
     try {
       // Find the original transaction to get all required fields
       const originalTransaction = allTransactions.find(t => t.transaction_id === transactionId);
@@ -616,17 +617,17 @@ const CountReviewPage = () => {
 
       // Call the API to update the transaction using the counter review endpoint
       const response = await servicesAPI.updateCounterReviewTransaction(transactionId.toString(), updatedData);
-      
+
       if (response.data.success) {
         // Update the local state with the new data
-        setAllTransactions(prev => 
-          prev.map(t => 
-            t.transaction_id === transactionId 
+        setAllTransactions(prev =>
+          prev.map(t =>
+            t.transaction_id === transactionId
               ? { ...t, ...updatedData }
               : t
           )
         );
-        
+
         setEditingTransaction(null);
         console.log('Transaction updated successfully');
         setSnackbar({ open: true, message: 'Transaction updated successfully!', severity: 'success' });
@@ -649,27 +650,27 @@ const CountReviewPage = () => {
 
   const loadAllTransactions = async () => {
     setLoading(prev => ({ ...prev, transactions: true }));
-    
+
     try {
       const allTransactionsData: Transaction[] = [];
-      
+
       console.log('Loading transactions for sections:', sections.map(s => ({ id: s.section_id, name: s.section_desc })));
-      
+
       for (const section of sections) {
         const response = await servicesAPI.getReviewTransactionsForCounter(
           location_id?.toString() || '',
           section.section_id.toString()
         );
-        
+
         // Add section_id to each transaction for proper matching
         const transactionsWithSection = response.data.map((transaction: any) => ({
           ...transaction,
           section_id: section.section_id
         }));
-        
+
         allTransactionsData.push(...transactionsWithSection);
       }
-      
+
       console.log('Loaded transactions:', allTransactionsData);
       setAllTransactions(allTransactionsData);
     } catch (error) {
@@ -710,23 +711,25 @@ const CountReviewPage = () => {
       const response = await servicesAPI.reconcileInventory(payload);
       const reconciliationResults = response.data;
 
-      // Attempt to auto-save the reconciliation data right away
-      try {
-        const saveData = {
-          location_id: location_id,
-          warehouse: warehouse,
-          branch: branch,
-          summary_data: reconciliationResults.summary,
-          items_data: reconciliationResults.items,
-          checker_data: reconciliationResults.checker_data || [],
-          orphaned_checker_data: reconciliationResults.orphaned_checker_data || [],
-          notes: 'Auto-saved during reconciliation from counter review page'
-        };
-        
-        await servicesAPI.saveReconciliationWithComparison(saveData);
-        console.log('Reconciliation data successfully auto-saved');
-      } catch (saveError) {
-        console.error('Auto-save failed:', saveError);
+      // Only save to reconciliation_records if the user explicitly checked the option
+      if (reconcileSaveToRecords) {
+        try {
+          const saveData = {
+            location_id: location_id,
+            warehouse: warehouse,
+            branch: branch,
+            summary_data: reconciliationResults.summary,
+            items_data: reconciliationResults.items,
+            checker_data: reconciliationResults.checker_data || [],
+            orphaned_checker_data: reconciliationResults.orphaned_checker_data || [],
+            notes: 'Saved during reconciliation from counter review page'
+          };
+
+          await servicesAPI.saveReconciliationWithComparison(saveData);
+          console.log('Reconciliation data successfully saved to records');
+        } catch (saveError) {
+          console.error('Save to records failed:', saveError);
+        }
       }
 
       const transformedData: ReconciliationData = {
@@ -757,11 +760,11 @@ const CountReviewPage = () => {
   const handleDownloadCount = async () => {
     handleMenuClose();
     setExporting(true);
-    
+
     try {
       const data = filteredTransactions.map(transaction => {
         const section = sections.find(s => s.section_id === transaction.section_id);
-  
+
         return {
           'Tag No': (transaction.sys_tag_no != null && String(transaction.sys_tag_no).trim() !== '') ? transaction.sys_tag_no : '–',
           'Form': transaction.form,
@@ -771,7 +774,7 @@ const CountReviewPage = () => {
           'Ext Finish': transaction.ext_finish || '',
           'Width': transaction.width || '',
           'Length': transaction.length || '',
-          'Total Qty': transaction.count_type === 'bundle' 
+          'Total Qty': transaction.count_type === 'bundle'
             ? transaction.bundles?.reduce((total, bundle) => total + (bundle.num_of_bundle * bundle.bundle_count), 0)
             : transaction.qty,
           'Location Description': section?.location_desc || '',
@@ -783,7 +786,7 @@ const CountReviewPage = () => {
           'Counted At': transaction.created_at ? formatDateMMDDYYYY(transaction.created_at) : 'N/A'
         };
       });
-  
+
       const ws = XLSX.utils.json_to_sheet(data, {
         header: [
           'Tag ID',
@@ -799,11 +802,11 @@ const CountReviewPage = () => {
           'Section Description'
         ]
       });
-  
+
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Inventory Count");
-  
-      const fileName = `Inventory_Count_Location_${location_id}_${new Date().toISOString().slice(0,10)}.xlsx`;
+
+      const fileName = `Inventory_Count_Location_${location_id}_${new Date().toISOString().slice(0, 10)}.xlsx`;
       XLSX.writeFile(wb, fileName);
     } catch (error) {
       console.error('Error exporting data:', error);
@@ -823,7 +826,7 @@ const CountReviewPage = () => {
 
     filteredTransactions.forEach(transaction => {
       const key = `${transaction.form}-${transaction.grade}-${transaction.size}-${transaction.finish}-${transaction.ext_finish}-${transaction.width}-${transaction.length}`;
-      
+
       if (!consolidated[key]) {
         consolidated[key] = {
           form: transaction.form,
@@ -833,8 +836,8 @@ const CountReviewPage = () => {
           ext_finish: transaction.ext_finish,
           width: transaction.width,
           length: transaction.length,
-          total_qty: transaction.count_type === 'bundle' 
-            ? (transaction.bundles?.reduce((total, bundle) => total + (bundle.num_of_bundle * bundle.bundle_count), 0) || 0 ): (transaction.qty || 0),
+          total_qty: transaction.count_type === 'bundle'
+            ? (transaction.bundles?.reduce((total, bundle) => total + (bundle.num_of_bundle * bundle.bundle_count), 0) || 0) : (transaction.qty || 0),
           count_type: transaction.count_type,
           items: [transaction]
         };
@@ -1147,9 +1150,9 @@ const CountReviewPage = () => {
 
       {/* Loading State */}
       {loading.sections ? (
-        <Box sx={{ 
-          display: 'flex', 
-          justifyContent: 'center', 
+        <Box sx={{
+          display: 'flex',
+          justifyContent: 'center',
           p: 4,
           minHeight: 300,
           alignItems: 'center',
@@ -1196,7 +1199,7 @@ const CountReviewPage = () => {
                     const isCurrentlyEditing = editingTransaction === transaction.transaction_id;
                     const isCurrentlySaving = savingTransaction === transaction.transaction_id;
                     const isMarked = transaction.transaction_id ? markedItems.has(transaction.transaction_id) : false;
-                    
+
                     return (
                       <TransactionRow
                         key={transaction.transaction_id || `transaction-${index}`}
@@ -1269,10 +1272,10 @@ const CountReviewPage = () => {
           <Button
             onClick={async () => {
               if (!selectedSection || !selectedUser) return;
-              
+
               // Check if user is already assigned as checker
               const existingChecker = await checkExistingChecker(selectedUser, location_id || '', selectedSection.section_id);
-              
+
               if (existingChecker && existingChecker.isAssigned) {
                 // Show confirmation dialog for existing checker
                 setExistingCheckerInfo({
@@ -1362,6 +1365,46 @@ const CountReviewPage = () => {
             Choose whether to include <strong>Tag</strong>, <strong>Location</strong>, <strong>Mill</strong>, <strong>Heat</strong>, <strong>Type</strong> and <strong>Quality</strong> when matching rows. Other fields are always used.
           </Typography>
 
+          {/* Save to records option at the top */}
+          <Box
+            sx={{
+              mb: 2.5,
+              p: 1.5,
+              borderRadius: 2,
+              bgcolor: reconcileSaveToRecords
+                ? alpha(theme.palette.success.main, 0.08)
+                : alpha(theme.palette.grey[500], 0.06),
+              border: `1px solid ${
+                reconcileSaveToRecords
+                  ? alpha(theme.palette.success.main, 0.3)
+                  : alpha(theme.palette.divider, 0.4)
+              }`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease-in-out',
+            }}
+            onClick={() => setReconcileSaveToRecords(v => !v)}
+          >
+            <Box>
+              <Typography variant="body2" fontWeight={600} color={reconcileSaveToRecords ? 'success.main' : 'text.primary'}>
+                Save to reconciliation records
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {reconcileSaveToRecords
+                  ? 'Result will be saved to the database upon running reconciliation'
+                  : 'Reconciliation will run in preview mode without saving to database'}
+              </Typography>
+            </Box>
+            <Checkbox
+              checked={reconcileSaveToRecords}
+              onChange={() => setReconcileSaveToRecords(v => !v)}
+              color="success"
+              onClick={e => e.stopPropagation()}
+            />
+          </Box>
+
           <Paper
             variant="outlined"
             sx={{
@@ -1401,14 +1444,14 @@ const CountReviewPage = () => {
                         f.id === 'sys_tag_no'
                           ? reconcileIncludeTag
                           : f.id === 'location'
-                          ? reconcileIncludeLocation
-                          : f.id === 'mill'
-                          ? reconcileIncludeMill
-                          : f.id === 'heat'
-                          ? reconcileIncludeHeat
-                          : f.id === 'type'
-                          ? reconcileIncludeType
-                          : reconcileIncludeQuality
+                            ? reconcileIncludeLocation
+                            : f.id === 'mill'
+                              ? reconcileIncludeMill
+                              : f.id === 'heat'
+                                ? reconcileIncludeHeat
+                                : f.id === 'type'
+                                  ? reconcileIncludeType
+                                  : reconcileIncludeQuality
                       }
                       onChange={() => {
                         if (f.id === 'sys_tag_no') return setReconcileIncludeTag(v => !v);
