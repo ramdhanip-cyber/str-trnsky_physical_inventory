@@ -41,6 +41,8 @@ router.post('/checker/unverify-transaction', post.unverifyTransactions);
 router.post('/checker/quick-verify-marked-item', post.quickVerifyMarkedItem);
 router.post('/checker/edit-verify-marked-item', post.editAndVerifyMarkedItem);
 router.post('/checker/unverify-marked-item', post.unverifyMarkedItem);
+router.post('/checker/approve-marked-item', post.approveMarkedItem);
+router.post('/checker/approve-all-marked-items', post.approveAllMarkedItems);
 router.post('/checker/add-line-item', post.addLineItem);
 router.post('/checker/complete-verification', post.completeCheckerVerification);
 router.post('/sections/:location_id/enable-checker-sku', post.enableCheckerSKU);

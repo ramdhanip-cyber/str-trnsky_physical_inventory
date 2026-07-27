@@ -2379,30 +2379,7 @@ exports.quickVerifyMarkedItem = async (req, res) => {
       originalTransaction.serial_number || null
     ]);
 
-    await syncCounterTransactionFromChecker({
-      originalTransactionId: txIdToUse,
-      tagId: originalTransaction.tag_id,
-      form: originalTransaction.form,
-      type: originalTransaction.type,
-      grade: originalTransaction.grade,
-      size: originalTransaction.size,
-      width: originalTransaction.width,
-      finish: originalTransaction.finish,
-      ext_finish: originalTransaction.ext_finish,
-      length: originalTransaction.length,
-      count_type: originalTransaction.count_type || 'piece',
-      qty: originalTransaction.qty,
-      checker_count: checkerCount,
-      location_id: originalTransaction.location_id,
-      section_id: originalTransaction.section_id,
-      location: originalTransaction.location,
-      bundles: [],
-      remarks: originalTransaction.remarks,
-      mill: originalTransaction.mill,
-      heat: originalTransaction.heat,
-      ad_cmts: originalTransaction.ad_cmts,
-      now: new Date().toISOString()
-    });
+    // Do not overwrite Counter qty on verify — reconciler Approve on Counter Review does that.
 
     await pool.query('COMMIT');
 
@@ -2705,30 +2682,14 @@ exports.editAndVerifyMarkedItem = async (req, res) => {
       await pool.query(bundleInsertQuery, bundleValues);
     }
 
-    await syncCounterTransactionFromChecker({
-      originalTransactionId: txIdToUse,
-      tagId: originalTransaction.tag_id,
-      form: form || originalTransaction.form,
-      type: type || originalTransaction.type,
-      grade: grade || originalTransaction.grade,
-      size: size || originalTransaction.size,
-      width: width || originalTransaction.width,
-      finish: finish || originalTransaction.finish,
-      ext_finish: ext_finish || originalTransaction.ext_finish,
-      length: length || originalTransaction.length,
-      count_type: originalTransaction.count_type || 'piece',
-      qty: totalQty,
-      checker_count: finalCheckerCount,
-      location_id: originalTransaction.location_id,
-      section_id: originalTransaction.section_id,
-      location: location || originalTransaction.location,
-      bundles: bundles || [],
-      remarks: remarks || originalTransaction.remarks,
-      mill: mill || originalTransaction.mill,
-      heat: heat || originalTransaction.heat,
-      ad_cmts: originalTransaction.ad_cmts,
-      now: new Date().toISOString()
-    });
+    // Do not overwrite Counter qty on verify — reconciler Approve on Counter Review does that.
+    // Persist final checker qty on the marked row for Counter Review display.
+    if (totalQty !== finalCheckerCount) {
+      await pool.query(
+        `UPDATE checker_sku_item SET checker_count = $1 WHERE id = $2`,
+        [totalQty, checker_sku_item_id]
+      );
+    }
 
     await pool.query('COMMIT');
 
@@ -2837,7 +2798,10 @@ exports.unverifyMarkedItem = async (req, res) => {
       UPDATE checker_sku_item
       SET verified = false,
           verified_at = NULL,
-          checker_count = NULL
+          checker_count = NULL,
+          reconciler_approved = false,
+          reconciler_approved_at = NULL,
+          reconciler_approved_by = NULL
       WHERE id = $1
       RETURNING *
     `;
@@ -2898,6 +2862,216 @@ exports.unverifyMarkedItem = async (req, res) => {
     res.status(500).json({ 
       error: 'Failed to unverify item',
       details: error.message 
+    });
+  }
+};
+
+/**
+ * Approve a checker-verified marked item: overwrite Counter transaction with checker values.
+ * Body: { checker_sku_item_id }
+ */
+async function approveOneMarkedItem(checkerSkuItemId, approvedBy) {
+  const checkerSkuResult = await pool.query(
+    `SELECT * FROM checker_sku_item WHERE id = $1`,
+    [checkerSkuItemId]
+  );
+
+  if (checkerSkuResult.rows.length === 0) {
+    const err = new Error('Checker SKU item not found');
+    err.status = 404;
+    throw err;
+  }
+
+  const checkerSkuItem = checkerSkuResult.rows[0];
+
+  if (!checkerSkuItem.verified) {
+    const err = new Error('Item has not been verified by checker yet');
+    err.status = 400;
+    throw err;
+  }
+
+  if (checkerSkuItem.reconciler_approved) {
+    return { skipped: true, reason: 'already_approved', checker_sku_item_id: checkerSkuItemId };
+  }
+
+  const counterTxId = checkerSkuItem.transaction_id;
+  if (!counterTxId) {
+    const err = new Error('Original counter transaction ID missing on marked item');
+    err.status = 400;
+    throw err;
+  }
+
+  const originalTxResult = await pool.query(
+    `SELECT * FROM transactions WHERE transaction_id = $1 AND role = 'Counter'`,
+    [counterTxId]
+  );
+  if (originalTxResult.rows.length === 0) {
+    const err = new Error('Original counter transaction not found');
+    err.status = 404;
+    throw err;
+  }
+  const originalTransaction = originalTxResult.rows[0];
+
+  const checkerTxResult = await pool.query(
+    `SELECT * FROM transactions
+     WHERE tag_id = $1 AND role = 'Checker' AND location_id = $2
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [originalTransaction.tag_id, originalTransaction.location_id]
+  );
+
+  const checkerTx = checkerTxResult.rows[0] || null;
+  const qtyToApply = checkerTx
+    ? Number(checkerTx.qty)
+    : Number(checkerSkuItem.checker_count ?? checkerSkuItem.counted_qty ?? originalTransaction.qty);
+  const checkerCountToApply = checkerTx
+    ? Number(checkerTx.checker_count ?? checkerTx.qty)
+    : Number(checkerSkuItem.checker_count ?? qtyToApply);
+
+  let bundles = [];
+  if (checkerTx) {
+    const bundlesResult = await pool.query(
+      `SELECT tag_id, num_of_bundle, bundle_count FROM bundles WHERE transaction_id = $1`,
+      [checkerTx.transaction_id]
+    );
+    bundles = bundlesResult.rows || [];
+  }
+
+  const source = checkerTx || {
+    form: checkerSkuItem.form,
+    type: checkerSkuItem.type,
+    grade: checkerSkuItem.grade,
+    size: checkerSkuItem.size,
+    width: checkerSkuItem.width,
+    finish: checkerSkuItem.finish,
+    ext_finish: checkerSkuItem.ext_finish,
+    length: checkerSkuItem.length,
+    count_type: originalTransaction.count_type || 'piece',
+    location: checkerSkuItem.location,
+    remarks: originalTransaction.remarks,
+    mill: checkerSkuItem.mill,
+    heat: checkerSkuItem.heat,
+    ad_cmts: originalTransaction.ad_cmts,
+  };
+
+  await syncCounterTransactionFromChecker({
+    originalTransactionId: counterTxId,
+    tagId: originalTransaction.tag_id,
+    form: source.form ?? originalTransaction.form,
+    type: source.type ?? originalTransaction.type,
+    grade: source.grade ?? originalTransaction.grade,
+    size: source.size ?? originalTransaction.size,
+    width: source.width ?? originalTransaction.width,
+    finish: source.finish ?? originalTransaction.finish,
+    ext_finish: source.ext_finish ?? originalTransaction.ext_finish,
+    length: source.length ?? originalTransaction.length,
+    count_type: source.count_type || originalTransaction.count_type || 'piece',
+    qty: qtyToApply,
+    checker_count: checkerCountToApply,
+    location_id: originalTransaction.location_id,
+    section_id: originalTransaction.section_id,
+    location: source.location ?? originalTransaction.location,
+    bundles,
+    remarks: source.remarks ?? originalTransaction.remarks,
+    mill: source.mill ?? originalTransaction.mill,
+    heat: source.heat ?? originalTransaction.heat,
+    ad_cmts: source.ad_cmts ?? originalTransaction.ad_cmts,
+    now: new Date().toISOString()
+  });
+
+  await pool.query(
+    `UPDATE checker_sku_item
+     SET reconciler_approved = true,
+         reconciler_approved_at = CURRENT_TIMESTAMP,
+         reconciler_approved_by = $1
+     WHERE id = $2`,
+    [approvedBy || null, checkerSkuItemId]
+  );
+
+  return {
+    skipped: false,
+    checker_sku_item_id: checkerSkuItemId,
+    counter_transaction_id: counterTxId,
+    qty_applied: qtyToApply
+  };
+}
+
+exports.approveMarkedItem = async (req, res) => {
+  const { checker_sku_item_id } = req.body;
+  const approvedBy = req.headers['x-selected-user'] || req.body.approved_by || req.user?.user_id;
+
+  if (!checker_sku_item_id) {
+    return res.status(400).json({ error: 'checker_sku_item_id is required' });
+  }
+
+  try {
+    await pool.query('BEGIN');
+    const result = await approveOneMarkedItem(checker_sku_item_id, approvedBy);
+    await pool.query('COMMIT');
+    res.json({
+      success: true,
+      message: result.skipped ? 'Item was already approved' : 'Checker result approved; Counter updated',
+      data: result
+    });
+  } catch (error) {
+    await pool.query('ROLLBACK');
+    console.error('Error approving marked item:', error);
+    res.status(error.status || 500).json({
+      error: error.message || 'Failed to approve marked item',
+      details: error.message
+    });
+  }
+};
+
+exports.approveAllMarkedItems = async (req, res) => {
+  const { location_id, section_id } = req.body;
+  const approvedBy = req.headers['x-selected-user'] || req.body.approved_by || req.user?.user_id;
+
+  if (!location_id) {
+    return res.status(400).json({ error: 'location_id is required' });
+  }
+
+  try {
+    await pool.query('BEGIN');
+
+    const params = [location_id];
+    let sectionClause = '';
+    if (section_id) {
+      sectionClause = ' AND section_id = $2';
+      params.push(section_id);
+    }
+
+    const pendingResult = await pool.query(
+      `SELECT id FROM checker_sku_item
+       WHERE location_id = $1
+         AND verified = true
+         AND COALESCE(reconciler_approved, false) = false
+         ${sectionClause}
+       ORDER BY id`,
+      params
+    );
+
+    const results = [];
+    for (const row of pendingResult.rows) {
+      const one = await approveOneMarkedItem(row.id, approvedBy);
+      results.push(one);
+    }
+
+    await pool.query('COMMIT');
+
+    const approvedCount = results.filter((r) => !r.skipped).length;
+    res.json({
+      success: true,
+      message: `Approved ${approvedCount} checker result(s)`,
+      approved_count: approvedCount,
+      data: results
+    });
+  } catch (error) {
+    await pool.query('ROLLBACK');
+    console.error('Error approving all marked items:', error);
+    res.status(error.status || 500).json({
+      error: error.message || 'Failed to approve marked items',
+      details: error.message
     });
   }
 };

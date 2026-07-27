@@ -1158,32 +1158,68 @@ exports.getMarkedItemsForChecking = async (req, res) => {
 
     const query = `
       SELECT 
-        id,
-        location_id,
-        form,
-        grade,
-        size,
-        finish,
-        ext_finish,
-        width,
-        length,
-        mill,
-        heat,
-        system_qty,
-        counted_qty,
-        variance,
-        status,
-        transaction_id,
-        section_id,
-        location,
-        type,
-        quality,
-        verified,
-        created_at
-      FROM checker_sku_item
-      WHERE location_id = $1 
-        AND verified = false
-      ORDER BY created_at DESC
+        csi.id,
+        csi.location_id,
+        csi.form,
+        csi.grade,
+        csi.size,
+        csi.finish,
+        csi.ext_finish,
+        csi.width,
+        csi.length,
+        csi.mill,
+        csi.heat,
+        csi.system_qty,
+        csi.counted_qty,
+        csi.variance,
+        csi.status,
+        csi.transaction_id,
+        csi.section_id,
+        csi.location,
+        csi.type,
+        csi.quality,
+        csi.checker_count,
+        csi.verified,
+        csi.verified_at,
+        COALESCE(csi.reconciler_approved, false) AS reconciler_approved,
+        csi.reconciler_approved_at,
+        csi.reconciler_approved_by,
+        csi.created_at,
+        ct.transaction_id AS checker_transaction_id,
+        ct.qty AS checker_qty,
+        ct.checker_count AS checker_tx_checker_count,
+        ct.form AS checker_form,
+        ct.grade AS checker_grade,
+        ct.size AS checker_size,
+        ct.finish AS checker_finish,
+        ct.ext_finish AS checker_ext_finish,
+        ct.width AS checker_width,
+        ct.length AS checker_length,
+        ct.mill AS checker_mill,
+        ct.heat AS checker_heat,
+        ct.type AS checker_type,
+        ct.location AS checker_location,
+        ct.remarks AS checker_remarks
+      FROM checker_sku_item csi
+      LEFT JOIN transactions counter_tx
+        ON counter_tx.transaction_id = csi.transaction_id
+       AND counter_tx.role = 'Counter'
+      LEFT JOIN LATERAL (
+        SELECT t.*
+        FROM transactions t
+        WHERE t.role = 'Checker'
+          AND t.location_id = csi.location_id
+          AND (
+            (counter_tx.tag_id IS NOT NULL AND t.tag_id = counter_tx.tag_id)
+            OR (csi.transaction_id IS NOT NULL AND t.tag_id IN (
+              SELECT tag_id FROM transactions WHERE transaction_id = csi.transaction_id
+            ))
+          )
+        ORDER BY t.created_at DESC
+        LIMIT 1
+      ) ct ON true
+      WHERE csi.location_id = $1
+      ORDER BY csi.created_at DESC
     `;
 
     const result = await pool.query(query, [location_id]);

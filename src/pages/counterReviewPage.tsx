@@ -55,7 +55,9 @@ import {
   Edit,
   Save,
   Cancel,
-  ViewColumn
+  ViewColumn,
+  CheckCircle,
+  DoneAll
 } from '@mui/icons-material';
 import Checkbox from '@mui/material/Checkbox';
 import FormControlLabel from '@mui/material/FormControlLabel';
@@ -204,6 +206,39 @@ const StyledTableContainer = styled(TableContainer)(({ theme }) => ({
   },
 }));
 
+interface MarkedItemInfo {
+  id: number;
+  transaction_id: number;
+  verified: boolean;
+  reconciler_approved: boolean;
+  counted_qty?: number | null;
+  checker_count?: number | null;
+  checker_qty?: number | null;
+  form?: string | null;
+  grade?: string | null;
+  size?: string | null;
+  finish?: string | null;
+  ext_finish?: string | null;
+  width?: string | null;
+  length?: string | null;
+  mill?: string | null;
+  heat?: string | null;
+  type?: string | null;
+  location?: string | null;
+  checker_form?: string | null;
+  checker_grade?: string | null;
+  checker_size?: string | null;
+  checker_finish?: string | null;
+  checker_ext_finish?: string | null;
+  checker_width?: string | null;
+  checker_length?: string | null;
+  checker_mill?: string | null;
+  checker_heat?: string | null;
+  checker_type?: string | null;
+  checker_location?: string | null;
+  section_id?: number | null;
+}
+
 interface TransactionRowProps {
   transaction: Transaction;
   sections: Section[];
@@ -213,6 +248,9 @@ interface TransactionRowProps {
   onSave: (transactionId: number, updatedData: Record<string, unknown>) => void;
   onCancel: () => void;
   isMarked?: boolean;
+  markedInfo?: MarkedItemInfo | null;
+  onApprove?: (checkerSkuItemId: number) => void;
+  approving?: boolean;
   visibleColumnList: { id: CounterReviewColumnId; label: string }[];
 }
 
@@ -225,6 +263,9 @@ const TransactionRow = ({
   onSave,
   onCancel,
   isMarked,
+  markedInfo,
+  onApprove,
+  approving,
   visibleColumnList,
 }: TransactionRowProps) => {
   const [expanded, setExpanded] = useState(false);
@@ -299,12 +340,31 @@ const TransactionRow = ({
     });
   }
 
+  const isAwaitingChecker = Boolean(isMarked && markedInfo && !markedInfo.verified);
+  const isVerifiedPending = Boolean(markedInfo?.verified && !markedInfo.reconciler_approved);
+  const isApproved = Boolean(markedInfo?.reconciler_approved);
+  const checkerDisplayQty = markedInfo
+    ? Number(markedInfo.checker_qty ?? markedInfo.checker_count ?? markedInfo.counted_qty ?? 0)
+    : 0;
+  const counterQty = Number(totalQuantity ?? transaction.qty ?? 0);
+  const qtyChanged = isVerifiedPending && checkerDisplayQty !== counterQty;
+
+  const checkerField = (key: keyof MarkedItemInfo, fallback: string | number | null | undefined) => {
+    if (!markedInfo) return fallback;
+    const checkerKey = `checker_${key}` as keyof MarkedItemInfo;
+    const fromCheckerTx = markedInfo[checkerKey];
+    if (fromCheckerTx != null && String(fromCheckerTx).trim() !== '') return fromCheckerTx;
+    const fromMarked = markedInfo[key];
+    if (fromMarked != null && String(fromMarked).trim() !== '') return fromMarked;
+    return fallback;
+  };
+
   const renderCell = (colId: CounterReviewColumnId) => {
     const cell = (content: React.ReactNode, sx?: object) => <TableCell key={colId} sx={sx}>{content}</TableCell>;
     switch (colId) {
       case 'tag':
         return cell(
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
             {isEditing ? (
               <TextField size="small" value={editFormData.sys_tag_no ?? ''} onChange={(e) => handleFormChange('sys_tag_no', e.target.value)} placeholder="System Tag No" sx={{ minWidth: 120 }} />
             ) : (transaction.sys_tag_no != null && String(transaction.sys_tag_no).trim() !== '') ? (
@@ -312,7 +372,9 @@ const TransactionRow = ({
             ) : (
               <Typography component="span" variant="body2" color="text.secondary">–</Typography>
             )}
-            {isMarked && <Chip label="Marked" size="small" color="info" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 600 }} />}
+            {isAwaitingChecker && <Chip label="Awaiting checker" size="small" color="info" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 600 }} />}
+            {isVerifiedPending && <Chip label="Checker verified" size="small" color="warning" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 600 }} />}
+            {isApproved && <Chip label="Approved (Checker)" size="small" color="success" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 600 }} />}
           </Box>
         );
       case 'section':
@@ -386,6 +448,26 @@ const TransactionRow = ({
     }
   };
 
+  const highlightSx = isApproved
+    ? {
+        borderLeft: '4px solid #2e7d32',
+        backgroundColor: 'rgba(46, 125, 50, 0.05)',
+        '&:hover': { backgroundColor: 'rgba(46, 125, 50, 0.08)' }
+      }
+    : isVerifiedPending
+    ? {
+        borderLeft: '4px solid #ed6c02',
+        backgroundColor: 'rgba(237, 108, 2, 0.05)',
+        '&:hover': { backgroundColor: 'rgba(237, 108, 2, 0.08)' }
+      }
+    : isMarked
+    ? {
+        borderLeft: '4px solid #1976d2',
+        backgroundColor: 'rgba(25, 118, 210, 0.05)',
+        '&:hover': { backgroundColor: 'rgba(25, 118, 210, 0.08)' }
+      }
+    : {};
+
   return (
     <>
       <TableRow hover sx={{
@@ -393,14 +475,7 @@ const TransactionRow = ({
         '&:hover': {
           backgroundColor: alpha(theme.palette.primary.light, 0.05)
         },
-        // Add border and background for marked items
-        ...(isMarked && {
-          borderLeft: '4px solid #1976d2',
-          backgroundColor: 'rgba(25, 118, 210, 0.05)',
-          '&:hover': {
-            backgroundColor: 'rgba(25, 118, 210, 0.08)'
-          }
-        })
+        ...highlightSx
       }}>
         {visibleColumnList.map(col => renderCell(col.id))}
       </TableRow>
@@ -444,6 +519,86 @@ const TransactionRow = ({
           </TableCell>
         </TableRow>
       )}
+      {(isVerifiedPending || isApproved) && markedInfo && (
+        <TableRow>
+          <TableCell
+            colSpan={visibleColumnList.length}
+            sx={{
+              p: 0,
+              borderBottom: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+              backgroundColor: isApproved
+                ? alpha(theme.palette.success.main, 0.04)
+                : alpha(theme.palette.warning.main, 0.06)
+            }}
+          >
+            <Box sx={{
+              p: 2,
+              mx: 2,
+              my: 1.5,
+              borderRadius: 2,
+              border: `1px solid ${alpha(isApproved ? theme.palette.success.main : theme.palette.warning.main, 0.35)}`,
+              backgroundColor: 'background.paper'
+            }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2, flexWrap: 'wrap' }}>
+                <Box>
+                  <Typography variant="subtitle2" fontWeight={700} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                    <CheckCircle fontSize="small" color={isApproved ? 'success' : 'warning'} />
+                    {isApproved ? 'Approved checker result' : 'Checker verification result'}
+                  </Typography>
+                  <Grid container spacing={1.5}>
+                    <Grid item xs={12} sm={4}>
+                      <Typography variant="caption" color="text.secondary">Counter qty</Typography>
+                      <Typography variant="body2" fontWeight={600}>{counterQty}</Typography>
+                    </Grid>
+                    <Grid item xs={12} sm={4}>
+                      <Typography variant="caption" color="text.secondary">Checker qty</Typography>
+                      <Typography
+                        variant="body2"
+                        fontWeight={700}
+                        color={qtyChanged ? 'warning.main' : 'text.primary'}
+                      >
+                        {checkerDisplayQty}
+                        {qtyChanged ? ' (changed)' : ''}
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={12} sm={4}>
+                      <Typography variant="caption" color="text.secondary">Form / Grade / Size</Typography>
+                      <Typography variant="body2">
+                        {String(checkerField('form', transaction.form) ?? '-')} / {String(checkerField('grade', transaction.grade) ?? '-')} / {String(checkerField('size', transaction.size) ?? '-')}
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <Typography variant="caption" color="text.secondary">Finish / Ext / Width / Length</Typography>
+                      <Typography variant="body2">
+                        {String(checkerField('finish', transaction.finish) ?? '-')} / {String(checkerField('ext_finish', transaction.ext_finish) ?? '-')} / {String(checkerField('width', transaction.width) ?? '-')} / {String(checkerField('length', transaction.length) ?? '-')}
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <Typography variant="caption" color="text.secondary">Mill / Heat / Type / Location</Typography>
+                      <Typography variant="body2">
+                        {String(checkerField('mill', transaction.mill) ?? '-')} / {String(checkerField('heat', transaction.heat) ?? '-')} / {String(checkerField('type', transaction.type) ?? '-')} / {String(checkerField('location', transaction.location) ?? '-')}
+                      </Typography>
+                    </Grid>
+                  </Grid>
+                </Box>
+                {isVerifiedPending && onApprove && (
+                  <Button
+                    variant="contained"
+                    color="success"
+                    size="small"
+                    disabled={approving}
+                    startIcon={approving ? <CircularProgress size={16} color="inherit" /> : <CheckCircle />}
+                    onClick={() => onApprove(markedInfo.id)}
+                    sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700, whiteSpace: 'nowrap' }}
+                  >
+                    {approving ? 'Approving…' : 'Approve'}
+                  </Button>
+                )}
+              </Box>
+            </Box>
+          </TableCell>
+        </TableRow>
+      )}
     </>
   );
 };
@@ -476,7 +631,10 @@ const CountReviewPage = () => {
   const [selectedUser, setSelectedUser] = useState<string>('');
   const [existingCheckerDialogOpen, setExistingCheckerDialogOpen] = useState(false);
   const [existingCheckerInfo, setExistingCheckerInfo] = useState<{ userName: string, teamName: string } | null>(null);
-  const [markedItems, setMarkedItems] = useState<Set<number>>(new Set());
+  const [markedItemsByTx, setMarkedItemsByTx] = useState<Map<number, MarkedItemInfo>>(new Map());
+  const [approvingItemId, setApprovingItemId] = useState<number | null>(null);
+  const [approvingAll, setApprovingAll] = useState(false);
+  const [approveAllDialogOpen, setApproveAllDialogOpen] = useState(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' | 'warning' }>({ open: false, message: '', severity: 'success' });
   const [columnsMenuAnchor, setColumnsMenuAnchor] = useState<null | HTMLElement>(null);
   const [columnsMenuPosition, setColumnsMenuPosition] = useState<{ top: number; left: number } | null>(null);
@@ -514,23 +672,76 @@ const CountReviewPage = () => {
     return parts;
   };
 
-  // Fetch marked items for checking
+  // Fetch marked items for checking (includes verified / approved states)
   const fetchMarkedItems = async () => {
     if (!location_id) return;
 
     try {
       const response = await servicesAPI.getMarkedItemsForChecking(location_id);
       if (response.data.success) {
-        const markedSet = new Set<number>();
-        response.data.items.forEach((item: any) => {
+        const map = new Map<number, MarkedItemInfo>();
+        (response.data.items || []).forEach((item: MarkedItemInfo) => {
           if (item.transaction_id) {
-            markedSet.add(item.transaction_id);
+            map.set(Number(item.transaction_id), {
+              ...item,
+              verified: Boolean(item.verified),
+              reconciler_approved: Boolean(item.reconciler_approved),
+            });
           }
         });
-        setMarkedItems(markedSet);
+        setMarkedItemsByTx(map);
       }
     } catch (error) {
       console.error('Error fetching marked items:', error);
+    }
+  };
+
+  const handleApproveMarkedItem = async (checkerSkuItemId: number) => {
+    try {
+      setApprovingItemId(checkerSkuItemId);
+      await servicesAPI.approveMarkedItem({ checker_sku_item_id: checkerSkuItemId });
+      setSnackbar({ open: true, message: 'Checker result approved; Counter qty updated', severity: 'success' });
+      await Promise.all([fetchMarkedItems(), loadAllTransactions()]);
+    } catch (error: unknown) {
+      console.error('Error approving marked item:', error);
+      const message =
+        error && typeof error === 'object' && 'response' in error &&
+        (error as { response?: { data?: { error?: string } } }).response?.data?.error
+          ? String((error as { response?: { data?: { error?: string } } }).response?.data?.error)
+          : 'Failed to approve checker result';
+      setSnackbar({ open: true, message, severity: 'error' });
+    } finally {
+      setApprovingItemId(null);
+    }
+  };
+
+  const handleApproveAllMarkedItems = async () => {
+    if (!location_id) return;
+    try {
+      setApprovingAll(true);
+      const payload: { location_id: string | number; section_id?: string | number } = { location_id };
+      if (sectionFilter !== 'all') {
+        payload.section_id = sectionFilter;
+      }
+      const response = await servicesAPI.approveAllMarkedItems(payload);
+      const count = response.data?.approved_count ?? 0;
+      setApproveAllDialogOpen(false);
+      setSnackbar({
+        open: true,
+        message: `Approved ${count} checker result(s)`,
+        severity: 'success'
+      });
+      await Promise.all([fetchMarkedItems(), loadAllTransactions()]);
+    } catch (error: unknown) {
+      console.error('Error approving all marked items:', error);
+      const message =
+        error && typeof error === 'object' && 'response' in error &&
+        (error as { response?: { data?: { error?: string } } }).response?.data?.error
+          ? String((error as { response?: { data?: { error?: string } } }).response?.data?.error)
+          : 'Failed to approve all checker results';
+      setSnackbar({ open: true, message, severity: 'error' });
+    } finally {
+      setApprovingAll(false);
     }
   };
 
@@ -871,6 +1082,7 @@ const CountReviewPage = () => {
 
   const handleRefresh = () => {
     fetchSections();
+    fetchMarkedItems();
     setAllTransactions([]);
     setFilteredTransactions([]);
     setSearchTerm('');
@@ -913,7 +1125,12 @@ const CountReviewPage = () => {
       ? (t.bundles?.reduce((s, b) => s + (b.num_of_bundle * b.bundle_count), 0) || 0)
       : (t.qty || 0));
   }, 0);
-  const markedCount = filteredTransactions.filter(t => t.transaction_id && markedItems.has(t.transaction_id)).length;
+  const markedCount = filteredTransactions.filter(t => t.transaction_id && markedItemsByTx.has(t.transaction_id)).length;
+  const pendingApproveCount = filteredTransactions.filter((t) => {
+    if (!t.transaction_id) return false;
+    const info = markedItemsByTx.get(t.transaction_id);
+    return Boolean(info?.verified && !info.reconciler_approved);
+  }).length;
 
   const SearchAndFilterSection = () => (
     <SearchFilterCard sx={{ mb: 3 }}>
@@ -956,6 +1173,16 @@ const CountReviewPage = () => {
         </Grid>
         <Grid item xs={12} md={5}>
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+            <Button
+              variant="contained"
+              color="success"
+              onClick={() => setApproveAllDialogOpen(true)}
+              disabled={pendingApproveCount === 0 || approvingAll}
+              startIcon={approvingAll ? <CircularProgress size={20} color="inherit" /> : <DoneAll />}
+              sx={{ borderRadius: 2, fontWeight: 600, textTransform: 'none', px: 2 }}
+            >
+              {approvingAll ? 'Approving…' : `Approve All (${pendingApproveCount})`}
+            </Button>
             <Button
               variant="contained"
               color="primary"
@@ -1198,7 +1425,10 @@ const CountReviewPage = () => {
                   {filteredTransactions.map((transaction, index) => {
                     const isCurrentlyEditing = editingTransaction === transaction.transaction_id;
                     const isCurrentlySaving = savingTransaction === transaction.transaction_id;
-                    const isMarked = transaction.transaction_id ? markedItems.has(transaction.transaction_id) : false;
+                    const markedInfo = transaction.transaction_id
+                      ? markedItemsByTx.get(transaction.transaction_id) || null
+                      : null;
+                    const isMarked = Boolean(markedInfo);
 
                     return (
                       <TransactionRow
@@ -1211,6 +1441,9 @@ const CountReviewPage = () => {
                         onSave={handleSaveEdit}
                         onCancel={handleCancelEdit}
                         isMarked={isMarked}
+                        markedInfo={markedInfo}
+                        onApprove={handleApproveMarkedItem}
+                        approving={approvingItemId === markedInfo?.id}
                         visibleColumnList={visibleColumnList}
                       />
                     );
@@ -1318,6 +1551,32 @@ const CountReviewPage = () => {
             color="warning"
           >
             Yes, Proceed
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={approveAllDialogOpen} onClose={() => !approvingAll && setApproveAllDialogOpen(false)}>
+        <DialogTitle>Approve all checker results?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body1" sx={{ mb: 1 }}>
+            This will overwrite Counter qty with the checker result for{' '}
+            <strong>{pendingApproveCount}</strong> verified item{pendingApproveCount === 1 ? '' : 's'}
+            {sectionFilter !== 'all' ? ' in the selected section' : ' in this location'}.
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Unverified (awaiting checker) items are not included. Items already approved are skipped.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setApproveAllDialogOpen(false)} disabled={approvingAll}>Cancel</Button>
+          <Button
+            onClick={handleApproveAllMarkedItems}
+            variant="contained"
+            color="success"
+            disabled={approvingAll || pendingApproveCount === 0}
+            startIcon={approvingAll ? <CircularProgress size={16} color="inherit" /> : <DoneAll />}
+          >
+            {approvingAll ? 'Approving…' : 'Approve All'}
           </Button>
         </DialogActions>
       </Dialog>

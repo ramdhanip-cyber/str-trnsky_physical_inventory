@@ -238,6 +238,10 @@ export const servicesAPI = {
   quickVerifyMarkedItem: (data: unknown) => api.post('/services/checker/quick-verify-marked-item', data),
   editAndVerifyMarkedItem: (data: unknown) => api.post('/services/checker/edit-verify-marked-item', data),
   unverifyMarkedItem: (data: unknown) => api.post('/services/checker/unverify-marked-item', data),
+  approveMarkedItem: (data: { checker_sku_item_id: number | string }) =>
+    api.post('/services/checker/approve-marked-item', data),
+  approveAllMarkedItems: (data: { location_id: string | number; section_id?: string | number }) =>
+    api.post('/services/checker/approve-all-marked-items', data),
   verifyTransaction: (data: unknown) => api.post('/services/checker/verify-transaction', data),
   unverifyTransaction: (data: unknown) => api.post('/services/checker/unverify-transaction', data),
   updateCheckerTransaction: (data: unknown) => api.post('/services/checker/update-transaction', data),

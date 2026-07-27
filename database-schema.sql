@@ -205,6 +205,9 @@ CREATE TABLE checker_sku_items (
     checker_count INT NULL,
     verified BOOLEAN NULL,
     verified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    reconciler_approved BOOLEAN DEFAULT false,
+    reconciler_approved_at TIMESTAMPTZ,
+    reconciler_approved_by INT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
