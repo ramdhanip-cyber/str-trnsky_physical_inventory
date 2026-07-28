@@ -1262,20 +1262,15 @@ const ReconciliationCounterPage: React.FC = () => {
     }
 
     try {
-      // Collect selected items data
-      const itemsToMark = Array.from(selectedItems).map(itemKey => {
+      // Collect selected items — one checker_sku_item per Counter transaction so Counter Review can highlight each line
+      const itemsToMark: Array<Record<string, unknown>> = [];
+
+      Array.from(selectedItems).forEach((itemKey) => {
         const comparison = comparisonMap.get(itemKey);
-        if (!comparison) return null;
+        if (!comparison) return;
 
         const systemItem = comparison.systemItem;
-        // Get first section and transaction_id if available
-        const firstSection = comparison.sections && comparison.sections.length > 0 ? comparison.sections[0] : null;
-        const transactionId = firstSection?.transaction_ids && firstSection.transaction_ids.length > 0 
-          ? firstSection.transaction_ids[0] 
-          : null;
-        const sectionId = firstSection?.section_id || null;
-        
-        return {
+        const base = {
           form: systemItem.form || '',
           grade: systemItem.grade || '',
           size: systemItem.size || '',
@@ -1293,10 +1288,54 @@ const ReconciliationCounterPage: React.FC = () => {
           type: systemItem.inv_type || '',
           quality: systemItem.inv_quality || '',
           tag_id: systemItem.prd_tag_no || systemItem.tag_no || null,
-          transaction_id: transactionId,
-          section_id: sectionId
         };
-      }).filter(item => item !== null);
+
+        const txEntries: Array<{ transaction_id: number; section_id: number | null; counted_qty: number }> = [];
+        const seenTx = new Set<number>();
+
+        (comparison.combinedItems || []).forEach((ci) => {
+          const txId = ci.transactionId != null ? Number(ci.transactionId) : null;
+          if (!txId || seenTx.has(txId)) return;
+          seenTx.add(txId);
+          txEntries.push({
+            transaction_id: txId,
+            section_id: ci.sectionId != null ? Number(ci.sectionId) : null,
+            counted_qty: Number(ci.quantity) || 0,
+          });
+        });
+
+        (comparison.sections || []).forEach((section) => {
+          (section.transaction_ids || []).forEach((txIdRaw) => {
+            const txId = Number(txIdRaw);
+            if (!txId || seenTx.has(txId)) return;
+            seenTx.add(txId);
+            txEntries.push({
+              transaction_id: txId,
+              section_id: section.section_id != null ? Number(section.section_id) : null,
+              counted_qty: Number(section.quantity) || Number(comparison.countedQuantity) || 0,
+            });
+          });
+        });
+
+        if (txEntries.length === 0) {
+          const firstSection = comparison.sections && comparison.sections.length > 0 ? comparison.sections[0] : null;
+          itemsToMark.push({
+            ...base,
+            transaction_id: null,
+            section_id: firstSection?.section_id || null,
+          });
+          return;
+        }
+
+        txEntries.forEach((entry) => {
+          itemsToMark.push({
+            ...base,
+            transaction_id: entry.transaction_id,
+            section_id: entry.section_id,
+            counted_qty: entry.counted_qty || base.counted_qty,
+          });
+        });
+      });
 
       if (itemsToMark.length === 0) {
         enqueueSnackbar('No valid items to mark', { variant: 'warning' });

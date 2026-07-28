@@ -106,11 +106,9 @@ const CheckerReviewPageImproved: React.FC = () => {
   // State management
   const [sections, setSections] = useState<Section[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [recheckItems, setRecheckItems] = useState<any[]>([]);
   const [loading, setLoading] = useState({
     sections: false,
     transactions: false,
-    recheckItems: false
   });
   const [selectedTransaction] = useState<Transaction | null>(null);
   const [changeDetailsOpen, setChangeDetailsOpen] = useState(false);
@@ -167,24 +165,12 @@ const CheckerReviewPageImproved: React.FC = () => {
     }
   };
 
-  // Fetch recheck items
-  const fetchRecheckItems = async () => {
-    if (!location_id) return;
-    
-    try {
-      setLoading(prev => ({ ...prev, recheckItems: true }));
-      const response = await servicesAPI.getRecheckItems(location_id);
-      if (response.data.success) {
-        setRecheckItems(response.data.items);
-      }
-    } catch (error) {
-      console.error('Error fetching recheck items:', error);
-    } finally {
-      setLoading(prev => ({ ...prev, recheckItems: false }));
+  // Load data on mount
+  useEffect(() => {
+    if (location_id) {
+      fetchSections();
     }
-  };
-
-  // Helper function to detect changes between checker and counter transactions
+  }, [location_id]);
   const detectChanges = (checker: any, counter: any): Array<{
     field: string;
     oldValue: any;
@@ -335,7 +321,6 @@ const CheckerReviewPageImproved: React.FC = () => {
   useEffect(() => {
     if (location_id) {
       fetchSections();
-      fetchRecheckItems();
     }
   }, [location_id]);
 
@@ -345,47 +330,9 @@ const CheckerReviewPageImproved: React.FC = () => {
     }
   }, [sections]);
 
-  // Combined transactions and recheck items
-  const allItems = useMemo(() => {
-    console.log('allItems useMemo running with:', {
-      transactionsCount: transactions.length,
-      recheckItemsCount: recheckItems.length,
-      location_id
-    });
-    
-    // Mark existing transactions as recheck items if they're in the recheck queue
-    const transactionsWithRecheckStatus = transactions.map(transaction => {
-      console.log('Processing transaction:', {
-        transaction_id: transaction.transaction_id,
-        tag_id: transaction.tag_id,
-        role: transaction.role
-      });
-      
-      // Check if this transaction is marked for recheck using tag_id and location_id
-      const isRecheckItem = recheckItems.some(recheckItem => 
-        recheckItem.tag_id === transaction.tag_id && 
-        recheckItem.location_id === parseInt(location_id || '0')
-      );
-      
-      return {
-        ...transaction,
-        isRecheckItem,
-        role: isRecheckItem ? 'Recheck' : transaction.role
-      };
-    });
-
-    console.log('allItems result:', transactionsWithRecheckStatus.length, 'items');
-    return transactionsWithRecheckStatus;
-  }, [transactions, recheckItems, location_id]);
-
   // Filtered transactions
   const filteredTransactions = useMemo(() => {
-    console.log('filteredTransactions useMemo running with:', {
-      allItemsCount: allItems.length,
-      filters: filters
-    });
-    
-    const filtered = allItems.filter(transaction => {
+    const filtered = transactions.filter(transaction => {
       const matchesSearch = !filters.searchTerm || 
         transaction.tag_id.toString().includes(filters.searchTerm) ||
         (transaction.form && transaction.form.toLowerCase().includes(filters.searchTerm.toLowerCase())) ||
@@ -418,70 +365,48 @@ const CheckerReviewPageImproved: React.FC = () => {
     // Order by tag_id (numeric)
     const sorted = [...filtered].sort((a, b) => (Number(a.tag_id) || 0) - (Number(b.tag_id) || 0));
     
-    console.log('filteredTransactions result:', sorted.length, 'items');
     return sorted;
-  }, [allItems, filters]);
+  }, [transactions, filters]);
 
-  // Summary calculations
-  const summary = useMemo(() => {
-    const total = filteredTransactions.length;
-    
-    const withChanges = filteredTransactions.filter(t => t.changes && t.changes.length > 0).length;
-    
-    const bundleCount = filteredTransactions.filter(t => t.count_type === 'bundle').length;
-    const pieceCount = filteredTransactions.filter(t => t.count_type === 'piece').length;
-    
-    console.log('Summary calculation:', {
-      total,
-      withChanges,
-      bundleCount,
-      pieceCount,
-      transactionsWithChanges: filteredTransactions.filter(t => t.changes && t.changes.length > 0).map(t => ({
-        tag_id: t.tag_id,
-        role: t.role,
-        changes: t.changes
-      }))
-    });
-    
-    return { total, withChanges, bundleCount, pieceCount };
-  }, [filteredTransactions]);
-
-
-
-  // Group transactions by tag_id
-  const getGroupedTransactions = () => {
+  // Group transactions by tag_id for checker vs counter comparison
+  const groupedTransactions = useMemo(() => {
     const grouped = new Map<string, { checker: Transaction | null; counter: Transaction | null }>();
-    
-    filteredTransactions.forEach(transaction => {
+
+    filteredTransactions.forEach((transaction) => {
       const tagId = transaction.tag_id;
       if (!grouped.has(tagId)) {
         grouped.set(tagId, { checker: null, counter: null });
       }
-      
+
       const group = grouped.get(tagId)!;
-      if (transaction.role === 'Checker' || transaction.role === 'Recheck') {
+      if (transaction.role === 'Checker') {
         group.checker = transaction;
-        // Debug logging for tag_id 504
-        if (tagId === '504') {
-          console.log('Setting checker for tag_id 504:', {
-            transaction_id: transaction.transaction_id,
-            tag_id: transaction.tag_id,
-            role: transaction.role
-          });
-        }
       } else if (transaction.role === 'Counter') {
         group.counter = transaction;
       }
     });
-    
-    const entries = Array.from(grouped.entries()).map(([tagId, group]) => ({
-      tagId,
-      checker: group.checker,
-      counter: group.counter
-    }));
-    // Order by tag_id (numeric)
-    return entries.sort((a, b) => Number(a.tagId) - Number(b.tagId));
-  };
+
+    return Array.from(grouped.entries())
+      .map(([tagId, group]) => ({
+        tagId,
+        checker: group.checker,
+        counter: group.counter,
+      }))
+      .sort((a, b) => Number(a.tagId) - Number(b.tagId));
+  }, [filteredTransactions]);
+
+  // Summary calculations
+  const summary = useMemo(() => {
+    const total = filteredTransactions.length;
+    const withChanges = filteredTransactions.filter((t) => t.changes && t.changes.length > 0).length;
+    const qtyMismatches = groupedTransactions.filter(
+      ({ checker, counter }) => checker && counter && (checker.qty || 0) !== (counter.qty || 0)
+    ).length;
+    const bundleCount = filteredTransactions.filter((t) => t.count_type === 'bundle').length;
+    const pieceCount = filteredTransactions.filter((t) => t.count_type === 'piece').length;
+
+    return { total, withChanges, qtyMismatches, bundleCount, pieceCount };
+  }, [filteredTransactions, groupedTransactions]);
 
   // Handle row expansion
   const handleRowToggle = (tagId: string) => {
@@ -530,7 +455,7 @@ const CheckerReviewPageImproved: React.FC = () => {
   };
 
   const checkerCountTransactions = useMemo(
-    () => filteredTransactions.filter((t) => t.role === 'Checker' || t.role === 'Recheck'),
+    () => filteredTransactions.filter((t) => t.role === 'Checker'),
     [filteredTransactions]
   );
 
@@ -585,7 +510,7 @@ const CheckerReviewPageImproved: React.FC = () => {
     handleExportMenuClose();
     try {
       // Prepare data for export
-      const exportData = getGroupedTransactions().map(({ tagId, checker, counter }) => {
+      const exportData = groupedTransactions.map(({ tagId, checker, counter }) => {
         const baseData = {
           tag_id: tagId,
           section_desc: checker?.section_desc || '',
@@ -641,7 +566,7 @@ const CheckerReviewPageImproved: React.FC = () => {
 
       // Add summary sheet
       const summaryData = [
-        { metric: 'Total Tags', value: getGroupedTransactions().length },
+        { metric: 'Total Tags', value: groupedTransactions.length },
         { metric: 'Tags with Changes', value: summary.withChanges },
         { metric: 'Bundle Counts', value: summary.bundleCount },
         { metric: 'Piece Counts', value: summary.pieceCount },
@@ -830,159 +755,52 @@ const CheckerReviewPageImproved: React.FC = () => {
   const handleSave = async () => {
     if (!editingTransaction) return;
 
-    console.log('handleSave called with editingTransaction:', editingTransaction);
-    console.log('Editing transaction ID:', editingTransaction.transaction_id);
-    console.log('Is recheck item:', editingTransaction.isRecheckItem);
-
     try {
-      // Check if this is a recheck item
-      const isRecheckItem = editingTransaction.isRecheckItem;
-      
-      if (isRecheckItem) {
-        // For recheck items, update the existing transaction and remove from recheck queue
-        // Map the frontend data to backend expected format
-        const updateData = {
-          transaction_id: editingTransaction.transaction_id,
-          tag_id: editingTransaction.tag_id,
-          form: editingTransaction.form,
-          type: editingTransaction.type,
-          grade: editingTransaction.grade,
-          size: editingTransaction.size,
-          width: editingTransaction.width,
-          finish: editingTransaction.finish,
-          ext_finish: editingTransaction.ext_finish,
-          length: editingTransaction.length,
-          count_type: editingTransaction.count_type,
-          qty: editingTransaction.qty, // Use qty directly for the new endpoint
-          location_id: editingTransaction.location_id,
-          section_id: editingTransaction.section_id,
-          location: editingTransaction.location,
-          mill: editingTransaction.mill,
-          heat: editingTransaction.heat,
-          remarks: editingTransaction.remarks,
-          ad_cmts: editingTransaction.ad_cmts || ''
-        };
-        
-        console.log('Sending update data for recheck item:', updateData);
-        console.log('Location ID being sent:', updateData.location_id);
-        console.log('Editing transaction ID:', editingTransaction.transaction_id);
-        console.log('Editing transaction location_id:', editingTransaction.location_id);
-        
-        if (!editingTransaction.transaction_id) {
-          throw new Error('Transaction ID is missing from editing transaction');
-        }
-        
-        const response = await servicesAPI.updateTransactionById(editingTransaction.transaction_id.toString(), updateData);
-        console.log('Update response:', response.data);
-        console.log('Response success:', response.data.success);
-        console.log('Response message:', response.data.message);
-        
-        if (response.data.success) {
-          // Find the recheck item to remove using tag_id and location_id
-          const recheckItem = recheckItems.find(item => 
-            item.tag_id === editingTransaction.tag_id && 
-            item.location_id === parseInt(location_id || '0')
-          );
-          
-          console.log('Recheck item found for removal:', recheckItem);
-          
-          if (recheckItem) {
-            // Remove from recheck queue
-            console.log('Removing recheck item with ID:', recheckItem.id);
-            await servicesAPI.removeFromRecheck(recheckItem.id.toString());
-            console.log('Recheck item removed successfully');
-          } else {
-            console.log('No recheck item found to remove for tag_id:', editingTransaction.tag_id);
-          }
-          
-          // Update the transaction in the local state and remove recheck status
-          console.log('Updating transaction in state:', editingTransaction.transaction_id);
-          setTransactions(prev => {
-            const updated = prev.map(transaction => 
-              transaction.transaction_id === editingTransaction.transaction_id
-                ? { 
-                    ...editingTransaction, 
-                    changes: detectChanges(editingTransaction, null),
-                    isRecheckItem: false,
-                    role: 'Checker' as const // Reset role back to Checker
-                  }
-                : transaction
-            );
-            console.log('Updated transactions count:', updated.length);
-            return updated;
-          });
-          
-          // Refresh recheck items
-          await fetchRecheckItems();
-          
-          enqueueSnackbar('Recheck item updated successfully and removed from recheck queue!', { variant: 'success' });
-        } else {
-          throw new Error(response.data.message || 'Failed to update recheck item');
-        }
+      const updateData = {
+        transaction_id: editingTransaction.transaction_id,
+        tag_id: editingTransaction.tag_id,
+        form: editingTransaction.form,
+        type: editingTransaction.type,
+        grade: editingTransaction.grade,
+        size: editingTransaction.size,
+        width: editingTransaction.width,
+        finish: editingTransaction.finish,
+        ext_finish: editingTransaction.ext_finish,
+        length: editingTransaction.length,
+        count_type: editingTransaction.count_type,
+        qty: editingTransaction.qty,
+        location_id: editingTransaction.location_id,
+        section_id: editingTransaction.section_id,
+        location: editingTransaction.location,
+        mill: editingTransaction.mill,
+        heat: editingTransaction.heat,
+        remarks: editingTransaction.remarks,
+        ad_cmts: editingTransaction.ad_cmts || ''
+      };
+
+      if (!editingTransaction.transaction_id) {
+        throw new Error('Transaction ID is missing from editing transaction');
+      }
+
+      const response = await servicesAPI.updateTransactionById(
+        editingTransaction.transaction_id.toString(),
+        updateData
+      );
+
+      if (response.data.success) {
+        setTransactions((prev) =>
+          prev.map((transaction) =>
+            transaction.transaction_id === editingTransaction.transaction_id
+              ? { ...editingTransaction, changes: detectChanges(editingTransaction, null) }
+              : transaction
+          )
+        );
+        enqueueSnackbar('Checker transaction updated successfully!', { variant: 'success' });
       } else {
-        // Regular transaction update
-        // Map the frontend data to backend expected format
-        const updateData = {
-          transaction_id: editingTransaction.transaction_id,
-          tag_id: editingTransaction.tag_id,
-          form: editingTransaction.form,
-          type: editingTransaction.type,
-          grade: editingTransaction.grade,
-          size: editingTransaction.size,
-          width: editingTransaction.width,
-          finish: editingTransaction.finish,
-          ext_finish: editingTransaction.ext_finish,
-          length: editingTransaction.length,
-          count_type: editingTransaction.count_type,
-          qty: editingTransaction.qty, // Use qty directly for the new endpoint
-          location_id: editingTransaction.location_id,
-          section_id: editingTransaction.section_id,
-          location: editingTransaction.location,
-          mill: editingTransaction.mill,
-          heat: editingTransaction.heat,
-          remarks: editingTransaction.remarks,
-          ad_cmts: editingTransaction.ad_cmts || ''
-        };
-        
-        console.log('Sending update data for regular transaction:', updateData);
-        console.log('Location ID being sent:', updateData.location_id);
-        console.log('Editing transaction ID:', editingTransaction.transaction_id);
-        console.log('Editing transaction location_id:', editingTransaction.location_id);
-        
-        if (!editingTransaction.transaction_id) {
-          throw new Error('Transaction ID is missing from editing transaction');
-        }
-        
-        const response = await servicesAPI.updateTransactionById(editingTransaction.transaction_id.toString(), updateData);
-        console.log('Update response:', response.data);
-        console.log('Response success:', response.data.success);
-        console.log('Response message:', response.data.message);
-        
-        if (response.data.success) {
-          // Update the transaction in the local state
-          console.log('Updating regular transaction in state:', editingTransaction.transaction_id);
-          setTransactions(prev => {
-            const updated = prev.map(transaction => 
-              transaction.transaction_id === editingTransaction.transaction_id 
-                ? { ...editingTransaction, changes: detectChanges(editingTransaction, null) }
-                : transaction
-            );
-            console.log('Updated transactions count:', updated.length);
-            return updated;
-          });
-          
-          enqueueSnackbar('Transaction updated successfully!', { variant: 'success' });
-        } else {
-          throw new Error(response.data.message || 'Failed to update transaction');
-        }
+        throw new Error(response.data.message || 'Failed to update transaction');
       }
     } catch (error) {
       console.error('Error updating transaction:', error);
-      console.error('Error details:', {
-        message: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
-        response: (error as any).response?.data || undefined
-      });
       enqueueSnackbar(
         `Failed to update transaction: ${error instanceof Error ? error.message : 'Unknown error'}`,
         { variant: 'error' }
@@ -1035,7 +853,7 @@ const CheckerReviewPageImproved: React.FC = () => {
               label="Section"
             >
               <MenuItem value="all">All Sections</MenuItem>
-              {Array.from(new Set(allItems.map(t => t.section_desc))).map(section => (
+              {Array.from(new Set(transactions.map(t => t.section_desc))).map(section => (
                 <MenuItem key={section} value={section}>{section}</MenuItem>
               ))}
             </Select>
@@ -1050,7 +868,7 @@ const CheckerReviewPageImproved: React.FC = () => {
               label="Team"
             >
               <MenuItem value="all">All Teams</MenuItem>
-              {Array.from(new Set(allItems.map(t => t.team_name))).map(team => (
+              {Array.from(new Set(transactions.map(t => t.team_name))).map(team => (
                 <MenuItem key={team} value={team}>{team}</MenuItem>
               ))}
             </Select>
@@ -1065,7 +883,7 @@ const CheckerReviewPageImproved: React.FC = () => {
               label="Form"
             >
               <MenuItem value="all">All Forms</MenuItem>
-              {Array.from(new Set(allItems.map(t => t.form))).map(form => (
+              {Array.from(new Set(transactions.map(t => t.form))).map(form => (
                 <MenuItem key={form} value={form}>{form}</MenuItem>
               ))}
             </Select>
@@ -1080,7 +898,7 @@ const CheckerReviewPageImproved: React.FC = () => {
               label="Grade"
             >
               <MenuItem value="all">All Grades</MenuItem>
-              {Array.from(new Set(allItems.map(t => t.grade))).map(grade => (
+              {Array.from(new Set(transactions.map(t => t.grade))).map(grade => (
                 <MenuItem key={grade} value={grade}>{grade}</MenuItem>
               ))}
             </Select>
@@ -1139,6 +957,21 @@ const CheckerReviewPageImproved: React.FC = () => {
       </Grid>
       <Grid item xs={12} sm={6} md={3}>
         <Card sx={{ 
+          background: `linear-gradient(135deg, ${alpha(theme.palette.error.main, 0.1)}, ${alpha(theme.palette.error.light, 0.1)})`,
+          border: `1px solid ${alpha(theme.palette.error.main, 0.2)}`
+        }}>
+          <CardContent>
+            <Typography variant="h4" sx={{ fontWeight: 700, color: theme.palette.error.main }}>
+              {summary.qtyMismatches}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Qty Mismatches
+            </Typography>
+          </CardContent>
+        </Card>
+      </Grid>
+      <Grid item xs={12} sm={6} md={3}>
+        <Card sx={{ 
           background: `linear-gradient(135deg, ${alpha(theme.palette.success.main, 0.1)}, ${alpha(theme.palette.success.light, 0.1)})`,
           border: `1px solid ${alpha(theme.palette.success.main, 0.2)}`
         }}>
@@ -1148,21 +981,6 @@ const CheckerReviewPageImproved: React.FC = () => {
             </Typography>
             <Typography variant="body2" color="text.secondary">
               Bundle Counts
-            </Typography>
-          </CardContent>
-        </Card>
-      </Grid>
-      <Grid item xs={12} sm={6} md={3}>
-        <Card sx={{ 
-          background: `linear-gradient(135deg, ${alpha(theme.palette.info.main, 0.1)}, ${alpha(theme.palette.info.light, 0.1)})`,
-          border: `1px solid ${alpha(theme.palette.info.main, 0.2)}`
-        }}>
-          <CardContent>
-            <Typography variant="h4" sx={{ fontWeight: 700, color: theme.palette.info.main }}>
-              {summary.pieceCount}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Piece Counts
             </Typography>
           </CardContent>
         </Card>
@@ -1180,7 +998,10 @@ const CheckerReviewPageImproved: React.FC = () => {
               <ChevronLeft />
             </IconButton>
             <Typography variant="h4" sx={{ fontWeight: 600 }}>
-              Checker Review - Location {location_id}
+              Checker vs Counter — Location {location_id}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ ml: 6 }}>
+              Compare checker and counter counts side by side
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', gap: 1 }}>
@@ -1238,7 +1059,7 @@ const CheckerReviewPageImproved: React.FC = () => {
                 </ListItemIcon>
                 <ListItemText primary="Download Count" secondary="Checker verified counts (Excel)" />
               </MenuItem>
-              <MenuItem onClick={handleExportComparison} disabled={exporting || getGroupedTransactions().length === 0}>
+              <MenuItem onClick={handleExportComparison} disabled={exporting || groupedTransactions.length === 0}>
                 <ListItemIcon><CompareArrows fontSize="small" /></ListItemIcon>
                 <ListItemText primary="Export Comparison" secondary="Checker vs counter with changes" />
               </MenuItem>
@@ -1275,7 +1096,7 @@ const CheckerReviewPageImproved: React.FC = () => {
             Checker vs Counter Comparison
           </Typography>
           <Chip 
-            label={`${getGroupedTransactions().length} Tags`} 
+            label={`${groupedTransactions.length} Tags`} 
             color="primary" 
             variant="filled"
             sx={{ ml: 'auto', fontWeight: 600 }}
@@ -1320,26 +1141,13 @@ const CheckerReviewPageImproved: React.FC = () => {
                   sx={{ 
                     width: 20, 
                     height: 20, 
-                    bgcolor: alpha(theme.palette.warning.main, 0.05),
+                    bgcolor: alpha(theme.palette.warning.main, 0.1),
                     border: '1px solid',
                     borderColor: theme.palette.warning.main,
                     borderRadius: 0.5
                   }} 
                 />
-                <Typography variant="body2">Counter Only (Not Verified)</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Box 
-                  sx={{ 
-                    width: 20, 
-                    height: 20, 
-                    bgcolor: alpha(theme.palette.error.main, 0.1),
-                    border: '1px solid',
-                    borderColor: theme.palette.error.main,
-                    borderRadius: 0.5
-                  }} 
-                />
-                <Typography variant="body2">Recheck Item</Typography>
+                <Typography variant="body2">Field Difference</Typography>
               </Box>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <Box 
@@ -1352,7 +1160,7 @@ const CheckerReviewPageImproved: React.FC = () => {
                     borderRadius: 0.5
                   }} 
                 />
-                <Typography variant="body2">Counter (Expanded View)</Typography>
+                <Typography variant="body2">Counter Row (Expanded)</Typography>
               </Box>
             </Box>
             
@@ -1385,7 +1193,7 @@ const CheckerReviewPageImproved: React.FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {getGroupedTransactions().map(({ tagId, checker, counter }) => {
+                {groupedTransactions.map(({ tagId, checker, counter }) => {
                   // Show all transactions: checker rows (with or without counter) and counter-only rows
                   const isExpanded = expandedRows.has(parseInt(tagId));
                   const hasCounter = !!counter;
@@ -1523,12 +1331,6 @@ const CheckerReviewPageImproved: React.FC = () => {
                       {/* Main Checker Row */}
                       <TableRow 
                         hover
-                        sx={{
-                          bgcolor: checker.role === 'Recheck' ? alpha(theme.palette.error.main, 0.1) : 'inherit',
-                          '&:hover': {
-                            bgcolor: checker.role === 'Recheck' ? alpha(theme.palette.error.main, 0.2) : undefined
-                          }
-                        }}
                       >
                         <TableCell>
                           {hasCounter && (
@@ -1550,22 +1352,6 @@ const CheckerReviewPageImproved: React.FC = () => {
                               variant="outlined"
                               sx={{ fontWeight: 600 }}
                             />
-                            {checker.role === 'Recheck' && (
-                              <Chip
-                                label="RE"
-                                size="small"
-                                sx={{ 
-                                  backgroundColor: theme.palette.error.main,
-                                  color: theme.palette.error.contrastText,
-                                  fontSize: '0.65rem',
-                                  height: '18px',
-                                  minWidth: '24px',
-                                  '&:hover': {
-                                    backgroundColor: theme.palette.error.dark
-                                  }
-                                }}
-                              />
-                            )}
                             {checker.changes && checker.changes.length > 0 && (
                               <Chip
                                 label={`${checker.changes.length} changes`}
@@ -1801,10 +1587,10 @@ const CheckerReviewPageImproved: React.FC = () => {
                         </TableCell>
                         <TableCell>
                           <Chip 
-                            label={checker.role === 'Recheck' ? 'Recheck Item' : (checker.role || '-')} 
+                            label={checker.role || 'Checker'} 
                             size="small" 
-                            color={checker.role === 'Recheck' ? 'error' : (checker.role === 'Checker' ? 'primary' : 'secondary')}
-                            variant={checker.role === 'Recheck' ? 'filled' : 'outlined'}
+                            color="primary"
+                            variant="outlined"
                           />
                         </TableCell>
                         <TableCell>

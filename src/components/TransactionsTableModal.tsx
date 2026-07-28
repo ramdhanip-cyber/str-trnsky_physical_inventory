@@ -39,7 +39,8 @@ import {
   Add,
   History,
   Summarize,
-  ViewColumn
+  ViewColumn,
+  Delete
 } from "@mui/icons-material";
 import Menu from "@mui/material/Menu";
 import Checkbox from "@mui/material/Checkbox";
@@ -95,6 +96,7 @@ interface TableModalProps {
   data: Transaction[];
   onSubmitAll: () => void;
   onUpdateTransaction: (updatedTransaction: Transaction) => void;
+  onDeleteTransaction?: (transaction: Transaction) => Promise<void> | void;
   onCompleteLocation: () => Promise<void>;
 }
 
@@ -211,6 +213,7 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
   data,
   onSubmitAll,
   onUpdateTransaction,
+  onDeleteTransaction,
   onCompleteLocation,
 }) => {
   const theme = useTheme();
@@ -221,6 +224,9 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [editingBundles, setEditingBundles] = useState<Bundle[]>([]);
   const [openBundleDialog, setOpenBundleDialog] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [columnsMenuAnchor, setColumnsMenuAnchor] = useState<null | HTMLElement>(null);
   const [columnsMenuPosition, setColumnsMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const toggleableColumnIds = COLUMNS.filter((c) => !c.alwaysVisible).map((c) => c.id);
@@ -293,6 +299,32 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
     setEditingId(null);
     setEditingTransaction(null);
     setEditingBundles([]);
+  };
+
+  const handleDeleteClick = (transaction: Transaction) => {
+    setTransactionToDelete(transaction);
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleDeleteCancel = () => {
+    if (deleting) return;
+    setDeleteConfirmOpen(false);
+    setTransactionToDelete(null);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!transactionToDelete || !onDeleteTransaction) return;
+    try {
+      setDeleting(true);
+      await onDeleteTransaction(transactionToDelete);
+      setDeleteConfirmOpen(false);
+      setTransactionToDelete(null);
+      if (editingId === Number(transactionToDelete.id || transactionToDelete.tag_id)) {
+        handleCancel();
+      }
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleTransactionChange = (field: keyof Transaction, value: string | number) => {
@@ -566,9 +598,24 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
                 )}
               </Box>
             ) : (
-              <IconButton size="small" onClick={() => handleEdit(transaction)} sx={{ bgcolor: alpha(theme.palette.primary.main, 0.08), "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.18) } }}>
-                <Edit fontSize="small" />
-              </IconButton>
+              <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 0.5 }}>
+                <IconButton size="small" onClick={() => handleEdit(transaction)} sx={{ bgcolor: alpha(theme.palette.primary.main, 0.08), "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.18) } }}>
+                  <Edit fontSize="small" />
+                </IconButton>
+                {onDeleteTransaction && (
+                  <IconButton
+                    size="small"
+                    onClick={() => handleDeleteClick(transaction)}
+                    sx={{
+                      bgcolor: alpha(theme.palette.error.main, 0.08),
+                      color: theme.palette.error.main,
+                      "&:hover": { bgcolor: alpha(theme.palette.error.main, 0.18) },
+                    }}
+                  >
+                    <Delete fontSize="small" />
+                  </IconButton>
+                )}
+              </Box>
             )}
           </TableCell>
         );
@@ -930,6 +977,64 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
               }}
             >
               Save bundles
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        <Dialog
+          open={deleteConfirmOpen}
+          onClose={handleDeleteCancel}
+          maxWidth="xs"
+          fullWidth
+          PaperProps={{
+            sx: {
+              borderRadius: 3,
+              boxShadow: `0 16px 48px ${alpha(theme.palette.common.black, 0.12)}`,
+            },
+          }}
+        >
+          <DialogTitle sx={{ fontWeight: 700, color: theme.palette.error.main }}>
+            Delete transaction?
+          </DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              This permanently removes the transaction from history. This cannot be undone.
+            </Typography>
+            {transactionToDelete && (
+              <Box
+                sx={{
+                  p: 1.5,
+                  borderRadius: 2,
+                  bgcolor: alpha(theme.palette.error.main, 0.06),
+                  border: `1px solid ${alpha(theme.palette.error.main, 0.2)}`,
+                }}
+              >
+                <Typography variant="body2" fontWeight={600}>
+                  Tag: {transactionToDelete.sys_tag_no || transactionToDelete.tag_id}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {[transactionToDelete.form, transactionToDelete.grade, transactionToDelete.size, transactionToDelete.finish]
+                    .filter(Boolean)
+                    .join(" / ") || "—"}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Qty: {transactionToDelete.qty}
+                </Typography>
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={handleDeleteCancel} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              color="error"
+              onClick={handleDeleteConfirm}
+              disabled={deleting}
+              startIcon={<Delete />}
+            >
+              {deleting ? "Deleting..." : "Delete"}
             </Button>
           </DialogActions>
         </Dialog>

@@ -592,9 +592,16 @@ const CounterPage: React.FC = () => {
     if (event.key === 'Enter' || event.key === 'Tab') {
       event.preventDefault();
       let valueToUse = currentValue;
-      if (!valueToUse && event.target) {
+      if (valueToUse === undefined || valueToUse === null) {
         const target = event.target as HTMLInputElement;
-        valueToUse = target.value;
+        valueToUse = target?.value;
+      }
+
+      // Empty Enter/Tab on space-allowed fields → register as a single space
+      const fieldsThatAllowSpaces = ['finish', 'extendedFinish', 'width', 'length', 'lengthFeet', 'lengthInches', 'sysTag', 'heat', 'mill', 'remarks', 'ad_cmts'];
+      if ((!valueToUse || valueToUse.trim() === '') && fieldsThatAllowSpaces.includes(fieldName)) {
+        valueToUse = ' ';
+        handleFieldChange(fieldName, ' ');
       }
 
       // Auto-complete: if user typed partial value, find first matching option
@@ -1173,6 +1180,9 @@ const CounterPage: React.FC = () => {
           return typeof value === 'string' ? value.trim() : String(value);
         })
         .filter((v, i, arr) => arr.indexOf(v) === i);
+      if ((key === 'finish' || key === 'extFinish') && !options.includes(' ')) {
+        options.unshift(' ');
+      }
       setter(options);
     } catch (err) {
       console.error(`Error fetching attachment ${key} options:`, err);
@@ -1241,6 +1251,58 @@ const CounterPage: React.FC = () => {
       if (field === 'finish') { next.extFinishes = []; }
       return next;
     });
+  };
+
+  const attachmentFieldOrder: Array<'form' | 'grade' | 'size' | 'finish' | 'extFinishes' | 'quantity'> = [
+    'form', 'grade', 'size', 'finish', 'extFinishes', 'quantity'
+  ];
+  const attachmentFieldsAllowSpaces = ['finish', 'extFinishes'];
+
+  const focusAttachmentField = (field: string) => {
+    const el = document.querySelector(
+      `[data-attachment-field="${field}"]`
+    ) as HTMLInputElement | null;
+    if (el) {
+      el.focus();
+      el.select?.();
+    }
+  };
+
+  const handleAttachmentKeyPress = (
+    fieldName: 'form' | 'grade' | 'size' | 'finish' | 'extFinishes' | 'quantity',
+    event: React.KeyboardEvent,
+    currentValue?: string | string[]
+  ) => {
+    if (event.key !== 'Enter' && event.key !== 'Tab') return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    let valueToUse =
+      typeof currentValue === 'string'
+        ? currentValue
+        : (event.target as HTMLInputElement)?.value ?? '';
+
+    // Empty Enter/Tab on space-allowed fields → register as a single space
+    if (
+      attachmentFieldsAllowSpaces.includes(fieldName) &&
+      (!valueToUse || String(valueToUse).trim() === '')
+    ) {
+      valueToUse = ' ';
+      if (fieldName === 'finish') {
+        handleAttachmentFieldChange('finish', ' ');
+      } else if (fieldName === 'extFinishes') {
+        setAttachmentForm((prev) => ({
+          ...prev,
+          extFinishes: prev.extFinishes.length ? prev.extFinishes : [' '],
+        }));
+      }
+    }
+
+    const currentIndex = attachmentFieldOrder.indexOf(fieldName);
+    if (currentIndex < attachmentFieldOrder.length - 1) {
+      const nextField = attachmentFieldOrder[currentIndex + 1];
+      setTimeout(() => focusAttachmentField(nextField), 50);
+    }
   };
 
   const attachmentQty = parseFloat(attachmentForm.quantity);
@@ -2940,7 +3002,14 @@ const CounterPage: React.FC = () => {
               value={attachmentForm.form}
               onChange={(_, value) => handleAttachmentFieldChange('form', value || '')}
               renderInput={(params) => (
-                <TextField {...params} label="Form" required fullWidth />
+                <TextField
+                  {...params}
+                  label="Form"
+                  required
+                  fullWidth
+                  inputProps={{ ...params.inputProps, 'data-attachment-field': 'form' }}
+                  onKeyDown={(e) => handleAttachmentKeyPress('form', e, attachmentForm.form)}
+                />
               )}
             />
             <Autocomplete
@@ -2956,6 +3025,8 @@ const CounterPage: React.FC = () => {
                   label="Grade"
                   required
                   fullWidth
+                  inputProps={{ ...params.inputProps, 'data-attachment-field': 'grade' }}
+                  onKeyDown={(e) => handleAttachmentKeyPress('grade', e, attachmentForm.grade)}
                   InputProps={{
                     ...params.InputProps,
                     endAdornment: (
@@ -2981,6 +3052,8 @@ const CounterPage: React.FC = () => {
                   label="Size"
                   required
                   fullWidth
+                  inputProps={{ ...params.inputProps, 'data-attachment-field': 'size' }}
+                  onKeyDown={(e) => handleAttachmentKeyPress('size', e, attachmentForm.size)}
                   InputProps={{
                     ...params.InputProps,
                     endAdornment: (
@@ -3006,6 +3079,8 @@ const CounterPage: React.FC = () => {
                   label="Finish"
                   required
                   fullWidth
+                  inputProps={{ ...params.inputProps, 'data-attachment-field': 'finish' }}
+                  onKeyDown={(e) => handleAttachmentKeyPress('finish', e, attachmentForm.finish)}
                   InputProps={{
                     ...params.InputProps,
                     endAdornment: (
@@ -3024,14 +3099,19 @@ const CounterPage: React.FC = () => {
               options={attExtFinishOptions}
               value={attachmentForm.extFinishes}
               onChange={(_, values) => {
-                const cleaned = (values as string[]).map((v) => v.trim()).filter(Boolean);
+                const cleaned = (values as string[]).map((v) => (v === ' ' ? ' ' : v.trim())).filter((v) => v === ' ' || Boolean(v.trim()));
                 setAttachmentForm(prev => ({ ...prev, extFinishes: cleaned }));
               }}
               loading={attLoading.extFinish}
               disabled={!attachmentForm.finish}
               renderTags={(value, getTagProps) =>
                 value.map((option, index) => (
-                  <Chip label={option} size="small" {...getTagProps({ index })} key={`${option}-${index}`} />
+                  <Chip
+                    label={option === ' ' ? '(space)' : option}
+                    size="small"
+                    {...getTagProps({ index })}
+                    key={`${option}-${index}`}
+                  />
                 ))
               }
               renderInput={(params) => (
@@ -3040,10 +3120,12 @@ const CounterPage: React.FC = () => {
                   label="Extended Finish (multiple allowed)"
                   fullWidth
                   helperText={
-                    attachmentForm.extFinishes.length > 1
+                    attachmentForm.extFinishes.length > 0
                       ? `Combined: ${attachmentForm.extFinishes.join('')}`
                       : undefined
                   }
+                  inputProps={{ ...params.inputProps, 'data-attachment-field': 'extFinishes' }}
+                  onKeyDown={(e) => handleAttachmentKeyPress('extFinishes', e, '')}
                   InputProps={{
                     ...params.InputProps,
                     endAdornment: (
@@ -3063,7 +3145,8 @@ const CounterPage: React.FC = () => {
               fullWidth
               value={attachmentForm.quantity}
               onChange={(e) => setAttachmentForm(prev => ({ ...prev, quantity: e.target.value }))}
-              inputProps={{ min: 1 }}
+              inputProps={{ min: 1, 'data-attachment-field': 'quantity' }}
+              onKeyDown={(e) => handleAttachmentKeyPress('quantity', e, attachmentForm.quantity)}
             />
           </Stack>
         </DialogContent>
@@ -3133,6 +3216,38 @@ const CounterPage: React.FC = () => {
               message: `Failed to update transaction: ${error instanceof Error ? error.message : 'Unknown error'}`,
               severity: "error"
             });
+          }
+        }}
+        onDeleteTransaction={async (transaction) => {
+          const transactionId = transaction.id;
+          if (!transactionId) {
+            setSnackbar({
+              open: true,
+              message: 'Cannot delete: missing transaction ID',
+              severity: 'error',
+            });
+            throw new Error('Missing transaction ID');
+          }
+          try {
+            const response = await servicesAPI.deleteCounterTransaction(transactionId);
+            if (!response.data.success) {
+              throw new Error(response.data.message || 'Failed to delete transaction');
+            }
+            setSubmittedData((prev) => prev.filter((t) => t.id !== transactionId));
+            await refreshSubmittedTransactions();
+            setSnackbar({
+              open: true,
+              message: 'Transaction deleted successfully',
+              severity: 'success',
+            });
+          } catch (error) {
+            console.error('Error deleting transaction:', error);
+            setSnackbar({
+              open: true,
+              message: `Failed to delete transaction: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              severity: 'error',
+            });
+            throw error;
           }
         }}
         onCompleteLocation={handleCompleteLocation}

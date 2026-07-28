@@ -2192,6 +2192,79 @@ exports.updateCounterTransaction = async (req, res) => {
   }
 };
 
+/**
+ * Delete a Counter transaction (and its bundles / related marked-item rows).
+ * Body or params: transaction id
+ */
+exports.deleteCounterTransaction = async (req, res) => {
+  const transactionId = req.params.transaction_id || req.body?.id || req.body?.transaction_id;
+
+  if (!transactionId) {
+    return res.status(400).json({
+      success: false,
+      message: 'Transaction ID is required'
+    });
+  }
+
+  try {
+    await pool.query('BEGIN');
+
+    const existingTxResult = await pool.query(
+      `SELECT transaction_id, tag_id, role
+       FROM transactions
+       WHERE transaction_id = $1 AND role = 'Counter'`,
+      [transactionId]
+    );
+
+    if (existingTxResult.rows.length === 0) {
+      await pool.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'Counter transaction not found'
+      });
+    }
+
+    // Related child rows first (ignore missing tables/columns)
+    await pool.query('DELETE FROM bundles WHERE transaction_id = $1', [transactionId]);
+
+    try {
+      await pool.query('DELETE FROM checker_sku_item WHERE transaction_id = $1', [transactionId]);
+    } catch (relatedErr) {
+      if (!relatedErr?.message?.includes('does not exist')) {
+        throw relatedErr;
+      }
+    }
+
+    try {
+      await pool.query('DELETE FROM checker_activity_logs WHERE transaction_id = $1', [transactionId]);
+    } catch (relatedErr) {
+      if (!relatedErr?.message?.includes('does not exist')) {
+        throw relatedErr;
+      }
+    }
+
+    await pool.query('DELETE FROM transactions WHERE transaction_id = $1 AND role = $2', [
+      transactionId,
+      'Counter'
+    ]);
+
+    await pool.query('COMMIT');
+    res.status(200).json({
+      success: true,
+      message: 'Counter transaction deleted successfully',
+      transaction_id: Number(transactionId)
+    });
+  } catch (error) {
+    await pool.query('ROLLBACK');
+    console.error('Error deleting counter transaction:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete counter transaction',
+      error: error.message
+    });
+  }
+};
+
 exports.verifyTransactions = async (req, res) => {
   const { transaction_id } = req.body;
   
@@ -2300,16 +2373,36 @@ exports.quickVerifyMarkedItem = async (req, res) => {
     const originalTransaction = originalTxResult.rows[0];
     const checkerCount = originalTransaction.qty; // checker_count = qty
 
-    // 3. Update checker_sku_item: set verified=true, verified_at, checker_count
+    // 3. Update checker_sku_item: set verified=true, verified_at, checker_count;
+    //    clear prior reconciler approval so a new cycle can be approved again
     const updateCheckerSkuQuery = `
       UPDATE checker_sku_item
       SET verified = true,
           verified_at = CURRENT_TIMESTAMP,
-          checker_count = $1
+          checker_count = $1,
+          reconciler_approved = false,
+          reconciler_approved_at = NULL,
+          reconciler_approved_by = NULL
       WHERE id = $2
       RETURNING *
     `;
-      await pool.query(updateCheckerSkuQuery, [checkerCount, checker_sku_item_id]);
+    let updatedCheckerSku;
+    try {
+      updatedCheckerSku = await pool.query(updateCheckerSkuQuery, [checkerCount, checker_sku_item_id]);
+    } catch (updateErr) {
+      if (!updateErr?.message?.includes('reconciler_approved')) {
+        throw updateErr;
+      }
+      updatedCheckerSku = await pool.query(
+        `UPDATE checker_sku_item
+         SET verified = true,
+             verified_at = CURRENT_TIMESTAMP,
+             checker_count = $1
+         WHERE id = $2
+         RETURNING *`,
+        [checkerCount, checker_sku_item_id]
+      );
+    }
 
     // 4. Update recheck_items: mark as verified (if exists)
     // Find recheck_item by matching fields
@@ -2387,7 +2480,7 @@ exports.quickVerifyMarkedItem = async (req, res) => {
       success: true,
       message: 'Item quick verified successfully',
       data: {
-        checker_sku_item: checkerSkuItem,
+        checker_sku_item: updatedCheckerSku.rows[0],
         new_checker_transaction: newCheckerTx.rows[0],
         original_transaction_id: txIdToUse
       }
@@ -2473,7 +2566,8 @@ exports.editAndVerifyMarkedItem = async (req, res) => {
     // Use edited checker_count if provided, otherwise use qty from original transaction
     const finalCheckerCount = checker_count !== undefined ? checker_count : originalTransaction.qty;
 
-    // 3. Update checker_sku_item with edited values and set verified=true
+    // 3. Update checker_sku_item with edited values and set verified=true;
+    //    clear prior reconciler approval so a new cycle can be approved again
     // Use edited values if provided, otherwise keep existing values
     const updateCheckerSkuQuery = `
       UPDATE checker_sku_item
@@ -2490,11 +2584,14 @@ exports.editAndVerifyMarkedItem = async (req, res) => {
           mill = COALESCE($9, mill),
           heat = COALESCE($10, heat),
           type = COALESCE($11, type),
-          location = COALESCE($12, location)
+          location = COALESCE($12, location),
+          reconciler_approved = false,
+          reconciler_approved_at = NULL,
+          reconciler_approved_by = NULL
       WHERE id = $13
       RETURNING *
     `;
-    await pool.query(updateCheckerSkuQuery, [
+    const updateParams = [
       finalCheckerCount,
       form || null,
       grade || null,
@@ -2508,7 +2605,34 @@ exports.editAndVerifyMarkedItem = async (req, res) => {
       type || null,
       location || null,
       checker_sku_item_id
-    ]);
+    ];
+    try {
+      await pool.query(updateCheckerSkuQuery, updateParams);
+    } catch (updateErr) {
+      if (!updateErr?.message?.includes('reconciler_approved')) {
+        throw updateErr;
+      }
+      await pool.query(
+        `UPDATE checker_sku_item
+         SET verified = true,
+             verified_at = CURRENT_TIMESTAMP,
+             checker_count = $1,
+             form = COALESCE($2, form),
+             grade = COALESCE($3, grade),
+             size = COALESCE($4, size),
+             finish = COALESCE($5, finish),
+             ext_finish = COALESCE($6, ext_finish),
+             width = COALESCE($7, width),
+             length = COALESCE($8, length),
+             mill = COALESCE($9, mill),
+             heat = COALESCE($10, heat),
+             type = COALESCE($11, type),
+             location = COALESCE($12, location)
+         WHERE id = $13
+         RETURNING *`,
+        updateParams
+      );
+    }
 
     // 4. Update recheck_items: mark as verified (if exists)
     // Use edited values if provided, otherwise use values from checker_sku_item

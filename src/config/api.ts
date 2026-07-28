@@ -248,6 +248,8 @@ export const servicesAPI = {
   updateTransactionById: (transactionId: string, data: unknown) => api.put(`/services/transactions/${transactionId}`, data),
   getTransactionIdByTagAndLocation: (tagId: string, locationId: string) => api.get(`/services/transactions/by-tag-location?tag_id=${tagId}&location_id=${locationId}`),
   updateCounterTransaction: (data: unknown) => api.post('/services/counter/update-transaction', data),
+  deleteCounterTransaction: (transactionId: number | string) =>
+    api.delete(`/services/counter/transactions/${transactionId}`),
   updateCheckerStatus: (locationId: string, sectionId: string) => api.post(`/services/assigned-locations/checker/${locationId}/${sectionId}`),
   addLineItem: (data: unknown) => api.post('/services/checker/add-line-item', data),
   completeCheckerVerification: (data: { location_id: string; section_id: string }) => api.post('/services/checker/complete-verification', data),

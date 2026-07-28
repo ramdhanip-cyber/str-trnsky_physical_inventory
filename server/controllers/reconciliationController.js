@@ -940,31 +940,90 @@ exports.markItemsForRecheck = async (req, res) => {
 
     try {
       for (const item of items) {
-        // Check if item is already marked in checker_sku_item based on transaction_id, location_id, and section_id
-        let existingItem = null;
-        if (item.transaction_id && item.section_id) {
-          const checkQuery = `
-            SELECT id, verified 
-            FROM checker_sku_item 
-            WHERE location_id = $1 
-              AND transaction_id = $2 
-              AND section_id = $3
-              AND verified = false
-            LIMIT 1
-          `;
-          const checkResult = await pool.query(checkQuery, [
-            location_id,
-            item.transaction_id,
-            item.section_id
-          ]);
-
-          if (checkResult.rows.length > 0) {
-            existingItem = checkResult.rows[0];
+        // Resolve Counter transaction_id when client did not send one (common from reconciliation)
+        if (!item.transaction_id && location_id) {
+          try {
+            if (item.tag_id) {
+              const byTag = await pool.query(
+                `SELECT transaction_id, section_id
+                 FROM transactions
+                 WHERE location_id = $1
+                   AND role = 'Counter'
+                   AND (tag_id::text = $2 OR sys_tag_no::text = $2)
+                 ORDER BY created_at DESC
+                 LIMIT 1`,
+                [location_id, String(item.tag_id)]
+              );
+              if (byTag.rows[0]) {
+                item.transaction_id = byTag.rows[0].transaction_id;
+                if (!item.section_id) item.section_id = byTag.rows[0].section_id;
+              }
+            }
+            if (!item.transaction_id && item.form) {
+              const bySku = await pool.query(
+                `SELECT transaction_id, section_id
+                 FROM transactions
+                 WHERE location_id = $1
+                   AND role = 'Counter'
+                   AND LOWER(COALESCE(form,'')) = LOWER(COALESCE($2,''))
+                   AND LOWER(COALESCE(grade,'')) = LOWER(COALESCE($3,''))
+                   AND LOWER(COALESCE(size,'')) = LOWER(COALESCE($4,''))
+                   AND LOWER(COALESCE(finish,'')) = LOWER(COALESCE($5,''))
+                 ORDER BY created_at DESC
+                 LIMIT 1`,
+                [location_id, item.form || '', item.grade || '', item.size || '', item.finish || '']
+              );
+              if (bySku.rows[0]) {
+                item.transaction_id = bySku.rows[0].transaction_id;
+                if (!item.section_id) item.section_id = bySku.rows[0].section_id;
+              }
+            }
+          } catch (resolveErr) {
+            console.warn('Could not resolve transaction_id for marked item:', resolveErr.message);
           }
         }
 
-        // If item already exists, skip it
-        if (existingItem) {
+        // Check existing checker_sku_item rows for this Counter transaction + section
+        let existingPending = null;
+        let existingAwaitingApprove = null;
+        let existingApprovedRows = [];
+        if (item.transaction_id && item.section_id) {
+          let checkResult;
+          try {
+            checkResult = await pool.query(
+              `SELECT id, verified, COALESCE(reconciler_approved, false) AS reconciler_approved, created_at
+               FROM checker_sku_item 
+               WHERE location_id = $1 
+                 AND transaction_id = $2 
+                 AND section_id = $3
+               ORDER BY created_at DESC, id DESC`,
+              [location_id, item.transaction_id, item.section_id]
+            );
+          } catch (checkErr) {
+            if (!checkErr?.message?.includes('reconciler_approved')) {
+              throw checkErr;
+            }
+            checkResult = await pool.query(
+              `SELECT id, verified, false AS reconciler_approved, created_at
+               FROM checker_sku_item 
+               WHERE location_id = $1 
+                 AND transaction_id = $2 
+                 AND section_id = $3
+               ORDER BY created_at DESC, id DESC`,
+              [location_id, item.transaction_id, item.section_id]
+            );
+          }
+
+          existingPending = checkResult.rows.find((row) => !row.verified) || null;
+          existingAwaitingApprove =
+            checkResult.rows.find((row) => row.verified && !row.reconciler_approved) || null;
+          existingApprovedRows = checkResult.rows.filter(
+            (row) => row.verified && row.reconciler_approved
+          );
+        }
+
+        // Still awaiting checker — do not create another mark
+        if (existingPending) {
           skippedItems.push({
             form: item.form,
             grade: item.grade,
@@ -973,6 +1032,179 @@ exports.markItemsForRecheck = async (req, res) => {
             section_id: item.section_id,
             reason: 'Item already marked for checking'
           });
+          continue;
+        }
+
+        // Checker verified, reconciler has not approved yet — keep current cycle
+        if (existingAwaitingApprove) {
+          skippedItems.push({
+            form: item.form,
+            grade: item.grade,
+            size: item.size,
+            transaction_id: item.transaction_id,
+            section_id: item.section_id,
+            reason: 'Item already verified and awaiting reconciler approval'
+          });
+          continue;
+        }
+
+        // Previously approved — reopen the latest row for a new recheck cycle
+        // (keeps one checker_sku_item per Counter tx so UI does not stick on old approval)
+        if (existingApprovedRows.length > 0) {
+          const latest = existingApprovedRows[0];
+          const olderIds = existingApprovedRows.slice(1).map((row) => row.id);
+
+          if (olderIds.length > 0) {
+            await pool.query(
+              `DELETE FROM checker_sku_item WHERE id = ANY($1::int[])`,
+              [olderIds]
+            );
+          }
+
+          const recheckQuery = `
+            INSERT INTO recheck_items 
+            (location_id, form, grade, size, finish, ext_finish, width, length, 
+             system_qty, counted_qty, variance, recheck_reason, marked_by, tag_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            RETURNING id
+          `;
+
+          const recheckValues = [
+            location_id,
+            item.form,
+            item.grade,
+            item.size,
+            item.finish,
+            item.ext_finish,
+            item.width,
+            item.length,
+            item.system_qty || 0,
+            item.counted_qty || 0,
+            item.variance || 0,
+            recheck_reason || 'Marked for recheck during reconciliation',
+            marked_by,
+            item.tag_id
+          ];
+
+          const recheckResult = await pool.query(recheckQuery, recheckValues);
+
+          const reopenQuery = `
+            UPDATE checker_sku_item
+            SET verified = false,
+                verified_at = NULL,
+                checker_count = NULL,
+                reconciler_approved = false,
+                reconciler_approved_at = NULL,
+                reconciler_approved_by = NULL,
+                form = COALESCE($2, form),
+                grade = COALESCE($3, grade),
+                size = COALESCE($4, size),
+                finish = COALESCE($5, finish),
+                ext_finish = $6,
+                width = $7,
+                length = $8,
+                mill = $9,
+                heat = $10,
+                system_qty = $11,
+                counted_qty = $12,
+                variance = $13,
+                status = COALESCE($14, 'Pending'),
+                location = $15,
+                type = $16,
+                quality = $17
+            WHERE id = $1
+            RETURNING id
+          `;
+
+          let reopenResult;
+          try {
+            reopenResult = await pool.query(reopenQuery, [
+              latest.id,
+              item.form || null,
+              item.grade || null,
+              item.size || null,
+              item.finish || null,
+              item.ext_finish || null,
+              item.width || null,
+              item.length || null,
+              item.mill || null,
+              item.heat || null,
+              item.system_qty || 0,
+              item.counted_qty || 0,
+              item.variance || 0,
+              item.status || 'Pending',
+              item.location || null,
+              item.type || null,
+              item.quality || null
+            ]);
+          } catch (reopenErr) {
+            if (!reopenErr?.message?.includes('reconciler_approved')) {
+              throw reopenErr;
+            }
+            // Migration not applied yet — reset without approval columns
+            reopenResult = await pool.query(
+              `UPDATE checker_sku_item
+               SET verified = false,
+                   verified_at = NULL,
+                   checker_count = NULL,
+                   form = COALESCE($2, form),
+                   grade = COALESCE($3, grade),
+                   size = COALESCE($4, size),
+                   finish = COALESCE($5, finish),
+                   ext_finish = $6,
+                   width = $7,
+                   length = $8,
+                   mill = $9,
+                   heat = $10,
+                   system_qty = $11,
+                   counted_qty = $12,
+                   variance = $13,
+                   status = COALESCE($14, 'Pending'),
+                   location = $15,
+                   type = $16,
+                   quality = $17
+               WHERE id = $1
+               RETURNING id`,
+              [
+                latest.id,
+                item.form || null,
+                item.grade || null,
+                item.size || null,
+                item.finish || null,
+                item.ext_finish || null,
+                item.width || null,
+                item.length || null,
+                item.mill || null,
+                item.heat || null,
+                item.system_qty || 0,
+                item.counted_qty || 0,
+                item.variance || 0,
+                item.status || 'Pending',
+                item.location || null,
+                item.type || null,
+                item.quality || null
+              ]
+            );
+          }
+
+          results.push({
+            item_id: recheckResult.rows[0].id,
+            checker_sku_item_id: reopenResult.rows[0].id,
+            form: item.form,
+            grade: item.grade,
+            size: item.size,
+            status: 'reopened'
+          });
+
+          if (item.section_id) {
+            const key = `${location_id}|${item.section_id}`;
+            if (!locationSectionMap.has(key)) {
+              locationSectionMap.set(key, {
+                location_id: location_id,
+                section_id: item.section_id
+              });
+            }
+          }
           continue;
         }
 
@@ -1156,8 +1388,7 @@ exports.getMarkedItemsForChecking = async (req, res) => {
       });
     }
 
-    const query = `
-      SELECT 
+    const baseSelect = `
         csi.id,
         csi.location_id,
         csi.form,
@@ -1181,9 +1412,6 @@ exports.getMarkedItemsForChecking = async (req, res) => {
         csi.checker_count,
         csi.verified,
         csi.verified_at,
-        COALESCE(csi.reconciler_approved, false) AS reconciler_approved,
-        csi.reconciler_approved_at,
-        csi.reconciler_approved_by,
         csi.created_at,
         ct.transaction_id AS checker_transaction_id,
         ct.qty AS checker_qty,
@@ -1200,6 +1428,9 @@ exports.getMarkedItemsForChecking = async (req, res) => {
         ct.type AS checker_type,
         ct.location AS checker_location,
         ct.remarks AS checker_remarks
+    `;
+
+    const joinClause = `
       FROM checker_sku_item csi
       LEFT JOIN transactions counter_tx
         ON counter_tx.transaction_id = csi.transaction_id
@@ -1222,7 +1453,36 @@ exports.getMarkedItemsForChecking = async (req, res) => {
       ORDER BY csi.created_at DESC
     `;
 
-    const result = await pool.query(query, [location_id]);
+    const queryWithApproval = `
+      SELECT
+        ${baseSelect},
+        COALESCE(csi.reconciler_approved, false) AS reconciler_approved,
+        csi.reconciler_approved_at,
+        csi.reconciler_approved_by
+      ${joinClause}
+    `;
+
+    const queryWithoutApproval = `
+      SELECT
+        ${baseSelect},
+        false AS reconciler_approved,
+        NULL::timestamptz AS reconciler_approved_at,
+        NULL::int AS reconciler_approved_by
+      ${joinClause}
+    `;
+
+    let result;
+    try {
+      result = await pool.query(queryWithApproval, [location_id]);
+    } catch (queryError) {
+      // Migration may not be applied yet — fall back without approval columns
+      if (queryError?.message?.includes('reconciler_approved')) {
+        console.warn('reconciler_approved columns missing; using fallback marked-items query');
+        result = await pool.query(queryWithoutApproval, [location_id]);
+      } else {
+        throw queryError;
+      }
+    }
 
     res.json({
       success: true,

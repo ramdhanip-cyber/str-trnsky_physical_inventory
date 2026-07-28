@@ -232,22 +232,30 @@ const TeamManagement = () => {
         servicesAPI.getUsers(),
         servicesAPI.getRoles()
       ]);
-      
-      const processedTeams = teamsRes.data.map((team: Team) => ({
+
+      const teamsData = Array.isArray(teamsRes.data) ? teamsRes.data : [];
+      const usersData = Array.isArray(usersRes.data) ? usersRes.data : [];
+      const rolesData = Array.isArray(rolesRes.data) ? rolesRes.data : [];
+
+      const processedTeams = teamsData.map((team: Team) => ({
         ...team,
-        status: ['active'][Math.floor(Math.random() * 3)] as 'active'
+        team_name: team.team_name || `Team ${team.team_id}`,
+        members: Array.isArray(team.members)
+          ? team.members.filter((m) => m && m.full_name)
+          : [],
+        status: 'active' as const,
       }));
       
       setTeams(processedTeams);
       setFilteredTeams(processedTeams);
       
-      setUsers(usersRes.data.map((user: User) => ({
+      setUsers(usersData.map((user: User) => ({
         ...user,
         avatar_color: avatarColors[Math.floor(Math.random() * avatarColors.length)]
       })));
       
       // Assign colors to roles
-      const coloredRoles = rolesRes.data.map((role: Role, index: number) => ({
+      const coloredRoles = rolesData.map((role: Role, index: number) => ({
         ...role,
         color: avatarColors[index % avatarColors.length]
       }));
@@ -272,10 +280,11 @@ const TeamManagement = () => {
     
     // Apply search filter
     if (searchTerm.trim() !== '') {
+      const term = searchTerm.toLowerCase();
       result = result.filter(team =>
-        team.team_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        team.members.some(member => 
-          member.full_name.toLowerCase().includes(searchTerm.toLowerCase())
+        (team.team_name || '').toLowerCase().includes(term) ||
+        (team.members || []).some(member =>
+          (member.full_name || '').toLowerCase().includes(term)
         )
       );
     }
@@ -443,10 +452,7 @@ const TeamManagement = () => {
                 <Box>
                   <Typography variant="h4" component="h1" sx={{ 
                     fontWeight: 800,
-                    color: '#0088FE',
-                    backgroundClip: 'text',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
+                    color: '#0C2C48',
                     lineHeight: 1.2,
                     mb: 0.5
                   }}>
@@ -733,7 +739,7 @@ const TeamManagement = () => {
                             boxShadow: `0 4px 12px ${alpha('#0088FE', 0.3)}`
                           }}
                         >
-                          {team.team_name.charAt(0).toUpperCase()}
+                          {team.team_name?.charAt(0)?.toUpperCase() || 'T'}
                         </Avatar>
                         <Box flex={1} minWidth={0}>
                           <Typography 
@@ -746,7 +752,7 @@ const TeamManagement = () => {
                               whiteSpace: 'nowrap'
                             }}
                           >
-                            {team.team_name}
+                            {team.team_name || `Team ${team.team_id}`}
                           </Typography>
                           <Box display="flex" alignItems="center" gap={1}>
                             <AccessTimeIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
@@ -800,8 +806,8 @@ const TeamManagement = () => {
                         }}
                       >
                         <Stack spacing={1.5}>
-                          {team.members?.map((member) => (
-                            <Box key={member.id} display="flex" alignItems="center" gap={1.5}>
+                          {(team.members || []).filter((m) => m?.full_name).map((member) => (
+                            <Box key={member.id || `${member.user_id}-${member.role_id}`} display="flex" alignItems="center" gap={1.5}>
                               <Avatar 
                                 sx={{ 
                                   width: 36, 
@@ -812,7 +818,12 @@ const TeamManagement = () => {
                                   boxShadow: `0 2px 8px ${alpha(getAvatarColor(member.user_id), 0.3)}`
                                 }}
                               >
-                                {member.full_name.split(' ').map(n => n[0]).join('').toUpperCase()}
+                                {(member.full_name || '?')
+                                  .split(' ')
+                                  .filter(Boolean)
+                                  .map(n => n[0])
+                                  .join('')
+                                  .toUpperCase() || '?'}
                               </Avatar>
                               <Box flex={1} minWidth={0}>
                                 <Typography 
@@ -827,7 +838,7 @@ const TeamManagement = () => {
                                   {member.full_name}
                                 </Typography>
                                 <Chip 
-                                  label={member.role_desc} 
+                                  label={member.role_desc || 'Member'} 
                                   size="small" 
                                   sx={{ 
                                     height: 22, 
@@ -946,11 +957,11 @@ const TeamManagement = () => {
                             boxShadow: `0 4px 12px ${alpha('#0088FE', 0.3)}`
                           }}
                         >
-                          {team.team_name.charAt(0).toUpperCase()}
+                          {(team.team_name || 'T').charAt(0).toUpperCase()}
                         </Avatar>
                         <Box>
                           <Typography fontWeight={700} color="text.primary" variant="body1">
-                            {team.team_name}
+                            {team.team_name || `Team ${team.team_id}`}
                           </Typography>
                           <Box display="flex" alignItems="center" gap={0.5} mt={0.5}>
                             <AccessTimeIcon sx={{ fontSize: 12, color: 'text.secondary' }} />
@@ -964,8 +975,8 @@ const TeamManagement = () => {
                     
                     <TableCell sx={{ py: 3 }}>
                       <Stack direction="column" spacing={1.5}>
-                        {team.members?.map((member) => (
-                          <Box key={member.id} display="flex" alignItems="center" gap={1.5}>
+                        {(team.members || []).filter((m) => m?.full_name).map((member) => (
+                          <Box key={member.id || `${member.user_id}-${member.role_id}`} display="flex" alignItems="center" gap={1.5}>
                             <Tooltip title={member.full_name}>
                               <Avatar 
                                 sx={{ 
@@ -976,7 +987,12 @@ const TeamManagement = () => {
                                   fontWeight: 600
                                 }}
                               >
-                                {member.full_name.split(' ').map(n => n[0]).join('').toUpperCase()}
+                                {(member.full_name || '?')
+                                  .split(' ')
+                                  .filter(Boolean)
+                                  .map(n => n[0])
+                                  .join('')
+                                  .toUpperCase() || '?'}
                               </Avatar>
                             </Tooltip>
                             <Box>
@@ -984,7 +1000,7 @@ const TeamManagement = () => {
                                 {member.full_name}
                               </Typography>
                               <Chip 
-                                label={member.role_desc} 
+                                label={member.role_desc || 'Member'} 
                                 size="small" 
                                 sx={{ 
                                   height: 20, 
@@ -1120,17 +1136,17 @@ const TeamManagement = () => {
                     height: 40
                   }}
                 >
-                  {teams.find(t => t.team_id === teamToDelete)?.team_name.charAt(0).toUpperCase()}
+                  {(teams.find(t => t.team_id === teamToDelete)?.team_name || 'T').charAt(0).toUpperCase()}
                 </Avatar>
                 <Typography variant="subtitle1" fontWeight={600}>
-                  {teams.find(t => t.team_id === teamToDelete)?.team_name}
+                  {teams.find(t => t.team_id === teamToDelete)?.team_name || `Team ${teamToDelete}`}
                 </Typography>
               </Box>
               
               <Grid container spacing={1}>
                 <Grid item xs={6}>
                   <Typography variant="body2" color="text.secondary">
-                    <strong>Members:</strong> {teams.find(t => t.team_id === teamToDelete)?.members.length || 0}
+                    <strong>Members:</strong> {teams.find(t => t.team_id === teamToDelete)?.members?.length || 0}
                   </Typography>
                 </Grid>
                 <Grid item xs={6}>

@@ -2083,7 +2083,7 @@ exports.getTeamWithMembers = async (req, res) => {
         });
       }
       
-      if (row.user_id) { // Only add if there's a member
+      if (row.user_id && row.full_name) { // Only add if there's a real member with a name
         teamsMap.get(row.team_id).members.push({
           id: row.member_id,
           user_id: row.user_id,

@@ -36,6 +36,7 @@ router.put('/transactions/:transaction_id', post.updateTransactionById);
 router.put('/counter-review/update-transaction/:transaction_id', post.updateCounterReviewTransaction);
 router.post('/adjustment-data', authMiddleware, post.getAdjustmentData);
 router.post('/counter/update-transaction', post.updateCounterTransaction);
+router.delete('/counter/transactions/:transaction_id', post.deleteCounterTransaction);
 router.post('/checker/verify-transaction', post.verifyTransactions);
 router.post('/checker/unverify-transaction', post.unverifyTransactions);
 router.post('/checker/quick-verify-marked-item', post.quickVerifyMarkedItem);

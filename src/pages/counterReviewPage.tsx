@@ -57,7 +57,8 @@ import {
   Cancel,
   ViewColumn,
   CheckCircle,
-  DoneAll
+  DoneAll,
+  Warning
 } from '@mui/icons-material';
 import Checkbox from '@mui/material/Checkbox';
 import FormControlLabel from '@mui/material/FormControlLabel';
@@ -239,6 +240,55 @@ interface MarkedItemInfo {
   section_id?: number | null;
 }
 
+const normalizeMarkValue = (value: unknown): string =>
+  String(value ?? '').trim().toLowerCase();
+
+/** Prefer active recheck cycles over stale approved rows when multiple marks share a key */
+const markedItemPriority = (item: MarkedItemInfo): number => {
+  if (!item.verified) return 3; // awaiting checker
+  if (!item.reconciler_approved) return 2; // awaiting reconciler approve
+  return 1; // already approved
+};
+
+const shouldPreferMarkedItem = (candidate: MarkedItemInfo, existing: MarkedItemInfo): boolean => {
+  const candidatePriority = markedItemPriority(candidate);
+  const existingPriority = markedItemPriority(existing);
+  if (candidatePriority !== existingPriority) {
+    return candidatePriority > existingPriority;
+  }
+  return Number(candidate.id || 0) > Number(existing.id || 0);
+};
+
+/** Attribute key used to match marked SKU rows when transaction_id is missing/mismatched */
+const buildMarkedSkuKey = (item: {
+  form?: unknown;
+  grade?: unknown;
+  size?: unknown;
+  finish?: unknown;
+  ext_finish?: unknown;
+  width?: unknown;
+  length?: unknown;
+  mill?: unknown;
+  heat?: unknown;
+  location?: unknown;
+  type?: unknown;
+  section_id?: unknown;
+}): string =>
+  [
+    normalizeMarkValue(item.form),
+    normalizeMarkValue(item.grade),
+    normalizeMarkValue(item.size),
+    normalizeMarkValue(item.finish),
+    normalizeMarkValue(item.ext_finish),
+    normalizeMarkValue(item.width),
+    normalizeMarkValue(item.length),
+    normalizeMarkValue(item.mill),
+    normalizeMarkValue(item.heat),
+    normalizeMarkValue(item.location),
+    normalizeMarkValue(item.type),
+    item.section_id != null && item.section_id !== '' ? String(item.section_id) : '',
+  ].join('|');
+
 interface TransactionRowProps {
   transaction: Transaction;
   sections: Section[];
@@ -269,6 +319,7 @@ const TransactionRow = ({
   visibleColumnList,
 }: TransactionRowProps) => {
   const [expanded, setExpanded] = useState(false);
+  const [checkerExpanded, setCheckerExpanded] = useState(false);
   const [editFormData, setEditFormData] = useState({
     tag_id: transaction.tag_id,
     sys_tag_no: transaction.sys_tag_no,
@@ -373,8 +424,40 @@ const TransactionRow = ({
               <Typography component="span" variant="body2" color="text.secondary">–</Typography>
             )}
             {isAwaitingChecker && <Chip label="Awaiting checker" size="small" color="info" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 600 }} />}
-            {isVerifiedPending && <Chip label="Checker verified" size="small" color="warning" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 600 }} />}
-            {isApproved && <Chip label="Approved (Checker)" size="small" color="success" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 600 }} />}
+            {isVerifiedPending && (
+              <Chip
+                label="Checker verified"
+                size="small"
+                color="warning"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCheckerExpanded((prev) => !prev);
+                }}
+                onDelete={(e) => {
+                  e.stopPropagation();
+                  setCheckerExpanded((prev) => !prev);
+                }}
+                deleteIcon={checkerExpanded ? <ExpandLess /> : <ExpandMore />}
+                sx={{ height: 22, fontSize: '0.65rem', fontWeight: 600, cursor: 'pointer' }}
+              />
+            )}
+            {isApproved && (
+              <Chip
+                label="Approved (Checker)"
+                size="small"
+                color="success"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCheckerExpanded((prev) => !prev);
+                }}
+                onDelete={(e) => {
+                  e.stopPropagation();
+                  setCheckerExpanded((prev) => !prev);
+                }}
+                deleteIcon={checkerExpanded ? <ExpandLess /> : <ExpandMore />}
+                sx={{ height: 22, fontSize: '0.65rem', fontWeight: 600, cursor: 'pointer' }}
+              />
+            )}
           </Box>
         );
       case 'section':
@@ -429,9 +512,26 @@ const TransactionRow = ({
       case 'date':
         return cell(<Tooltip title={transaction.created_at ? formatDateMMDDYYYY(transaction.created_at) : 'No date available'}><Typography variant="body2" noWrap>{transaction.created_at ? formatDateMMDDYYYY(transaction.created_at) : 'N/A'}</Typography></Tooltip>);
       case 'details':
-        return cell(transaction.count_type === 'bundle' && (
-          <Button size="small" variant="outlined" onClick={() => setExpanded(!expanded)} startIcon={<Info />} endIcon={expanded ? <ExpandLess /> : <ExpandMore />} sx={{ borderRadius: 2, minWidth: 100, fontWeight: 600, textTransform: 'none', backgroundColor: expanded ? alpha(theme.palette.primary.main, 0.08) : 'transparent' }}>{expanded ? 'Hide' : 'Details'}</Button>
-        ));
+        return cell(
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            {transaction.count_type === 'bundle' && (
+              <Button size="small" variant="outlined" onClick={() => setExpanded(!expanded)} startIcon={<Info />} endIcon={expanded ? <ExpandLess /> : <ExpandMore />} sx={{ borderRadius: 2, minWidth: 100, fontWeight: 600, textTransform: 'none', backgroundColor: expanded ? alpha(theme.palette.primary.main, 0.08) : 'transparent' }}>{expanded ? 'Hide' : 'Details'}</Button>
+            )}
+            {(isVerifiedPending || isApproved) && (
+              <Button
+                size="small"
+                variant={checkerExpanded ? 'contained' : 'outlined'}
+                color={isApproved ? 'success' : 'warning'}
+                onClick={() => setCheckerExpanded((prev) => !prev)}
+                startIcon={<CheckCircle />}
+                endIcon={checkerExpanded ? <ExpandLess /> : <ExpandMore />}
+                sx={{ borderRadius: 2, fontWeight: 600, textTransform: 'none', whiteSpace: 'nowrap' }}
+              >
+                {checkerExpanded ? 'Hide checker' : 'Checker result'}
+              </Button>
+            )}
+          </Box>
+        );
       case 'actions':
         return cell(
           <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
@@ -525,77 +625,79 @@ const TransactionRow = ({
             colSpan={visibleColumnList.length}
             sx={{
               p: 0,
-              borderBottom: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+              borderBottom: checkerExpanded ? `1px solid ${alpha(theme.palette.divider, 0.5)}` : 0,
               backgroundColor: isApproved
                 ? alpha(theme.palette.success.main, 0.04)
                 : alpha(theme.palette.warning.main, 0.06)
             }}
           >
-            <Box sx={{
-              p: 2,
-              mx: 2,
-              my: 1.5,
-              borderRadius: 2,
-              border: `1px solid ${alpha(isApproved ? theme.palette.success.main : theme.palette.warning.main, 0.35)}`,
-              backgroundColor: 'background.paper'
-            }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2, flexWrap: 'wrap' }}>
-                <Box>
-                  <Typography variant="subtitle2" fontWeight={700} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                    <CheckCircle fontSize="small" color={isApproved ? 'success' : 'warning'} />
-                    {isApproved ? 'Approved checker result' : 'Checker verification result'}
-                  </Typography>
-                  <Grid container spacing={1.5}>
-                    <Grid item xs={12} sm={4}>
-                      <Typography variant="caption" color="text.secondary">Counter qty</Typography>
-                      <Typography variant="body2" fontWeight={600}>{counterQty}</Typography>
+            <Collapse in={checkerExpanded} timeout="auto" unmountOnExit>
+              <Box sx={{
+                p: 2,
+                mx: 2,
+                my: 1.5,
+                borderRadius: 2,
+                border: `1px solid ${alpha(isApproved ? theme.palette.success.main : theme.palette.warning.main, 0.35)}`,
+                backgroundColor: 'background.paper'
+              }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2, flexWrap: 'wrap' }}>
+                  <Box sx={{ flex: 1, minWidth: 240 }}>
+                    <Typography variant="subtitle2" fontWeight={700} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                      <CheckCircle fontSize="small" color={isApproved ? 'success' : 'warning'} />
+                      {isApproved ? 'Approved checker result' : 'Checker verification result'}
+                    </Typography>
+                    <Grid container spacing={1.5}>
+                      <Grid item xs={12} sm={4}>
+                        <Typography variant="caption" color="text.secondary">Counter qty</Typography>
+                        <Typography variant="body2" fontWeight={600}>{counterQty}</Typography>
+                      </Grid>
+                      <Grid item xs={12} sm={4}>
+                        <Typography variant="caption" color="text.secondary">Checker qty</Typography>
+                        <Typography
+                          variant="body2"
+                          fontWeight={700}
+                          color={qtyChanged ? 'warning.main' : 'text.primary'}
+                        >
+                          {checkerDisplayQty}
+                          {qtyChanged ? ' (changed)' : ''}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={12} sm={4}>
+                        <Typography variant="caption" color="text.secondary">Form / Grade / Size</Typography>
+                        <Typography variant="body2">
+                          {String(checkerField('form', transaction.form) ?? '-')} / {String(checkerField('grade', transaction.grade) ?? '-')} / {String(checkerField('size', transaction.size) ?? '-')}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <Typography variant="caption" color="text.secondary">Finish / Ext / Width / Length</Typography>
+                        <Typography variant="body2">
+                          {String(checkerField('finish', transaction.finish) ?? '-')} / {String(checkerField('ext_finish', transaction.ext_finish) ?? '-')} / {String(checkerField('width', transaction.width) ?? '-')} / {String(checkerField('length', transaction.length) ?? '-')}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <Typography variant="caption" color="text.secondary">Mill / Heat / Type / Location</Typography>
+                        <Typography variant="body2">
+                          {String(checkerField('mill', transaction.mill) ?? '-')} / {String(checkerField('heat', transaction.heat) ?? '-')} / {String(checkerField('type', transaction.type) ?? '-')} / {String(checkerField('location', transaction.location) ?? '-')}
+                        </Typography>
+                      </Grid>
                     </Grid>
-                    <Grid item xs={12} sm={4}>
-                      <Typography variant="caption" color="text.secondary">Checker qty</Typography>
-                      <Typography
-                        variant="body2"
-                        fontWeight={700}
-                        color={qtyChanged ? 'warning.main' : 'text.primary'}
-                      >
-                        {checkerDisplayQty}
-                        {qtyChanged ? ' (changed)' : ''}
-                      </Typography>
-                    </Grid>
-                    <Grid item xs={12} sm={4}>
-                      <Typography variant="caption" color="text.secondary">Form / Grade / Size</Typography>
-                      <Typography variant="body2">
-                        {String(checkerField('form', transaction.form) ?? '-')} / {String(checkerField('grade', transaction.grade) ?? '-')} / {String(checkerField('size', transaction.size) ?? '-')}
-                      </Typography>
-                    </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <Typography variant="caption" color="text.secondary">Finish / Ext / Width / Length</Typography>
-                      <Typography variant="body2">
-                        {String(checkerField('finish', transaction.finish) ?? '-')} / {String(checkerField('ext_finish', transaction.ext_finish) ?? '-')} / {String(checkerField('width', transaction.width) ?? '-')} / {String(checkerField('length', transaction.length) ?? '-')}
-                      </Typography>
-                    </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <Typography variant="caption" color="text.secondary">Mill / Heat / Type / Location</Typography>
-                      <Typography variant="body2">
-                        {String(checkerField('mill', transaction.mill) ?? '-')} / {String(checkerField('heat', transaction.heat) ?? '-')} / {String(checkerField('type', transaction.type) ?? '-')} / {String(checkerField('location', transaction.location) ?? '-')}
-                      </Typography>
-                    </Grid>
-                  </Grid>
+                  </Box>
+                  {isVerifiedPending && onApprove && (
+                    <Button
+                      variant="contained"
+                      color="success"
+                      size="small"
+                      disabled={approving}
+                      startIcon={approving ? <CircularProgress size={16} color="inherit" /> : <CheckCircle />}
+                      onClick={() => onApprove(markedInfo.id)}
+                      sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700, whiteSpace: 'nowrap' }}
+                    >
+                      {approving ? 'Approving…' : 'Approve'}
+                    </Button>
+                  )}
                 </Box>
-                {isVerifiedPending && onApprove && (
-                  <Button
-                    variant="contained"
-                    color="success"
-                    size="small"
-                    disabled={approving}
-                    startIcon={approving ? <CircularProgress size={16} color="inherit" /> : <CheckCircle />}
-                    onClick={() => onApprove(markedInfo.id)}
-                    sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700, whiteSpace: 'nowrap' }}
-                  >
-                    {approving ? 'Approving…' : 'Approve'}
-                  </Button>
-                )}
               </Box>
-            </Box>
+            </Collapse>
           </TableCell>
         </TableRow>
       )}
@@ -632,9 +734,13 @@ const CountReviewPage = () => {
   const [existingCheckerDialogOpen, setExistingCheckerDialogOpen] = useState(false);
   const [existingCheckerInfo, setExistingCheckerInfo] = useState<{ userName: string, teamName: string } | null>(null);
   const [markedItemsByTx, setMarkedItemsByTx] = useState<Map<number, MarkedItemInfo>>(new Map());
+  const [markedItemsBySku, setMarkedItemsBySku] = useState<Map<string, MarkedItemInfo>>(new Map());
   const [approvingItemId, setApprovingItemId] = useState<number | null>(null);
   const [approvingAll, setApprovingAll] = useState(false);
   const [approveAllDialogOpen, setApproveAllDialogOpen] = useState(false);
+  const [unrecheckedDialogOpen, setUnrecheckedDialogOpen] = useState(false);
+  const [unrecheckedItems, setUnrecheckedItems] = useState<MarkedItemInfo[]>([]);
+  const [checkingRecheckStatus, setCheckingRecheckStatus] = useState(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' | 'warning' }>({ open: false, message: '', severity: 'success' });
   const [columnsMenuAnchor, setColumnsMenuAnchor] = useState<null | HTMLElement>(null);
   const [columnsMenuPosition, setColumnsMenuPosition] = useState<{ top: number; left: number } | null>(null);
@@ -679,20 +785,137 @@ const CountReviewPage = () => {
     try {
       const response = await servicesAPI.getMarkedItemsForChecking(location_id);
       if (response.data.success) {
-        const map = new Map<number, MarkedItemInfo>();
+        const byTx = new Map<number, MarkedItemInfo>();
+        const bySku = new Map<string, MarkedItemInfo>();
         (response.data.items || []).forEach((item: MarkedItemInfo) => {
-          if (item.transaction_id) {
-            map.set(Number(item.transaction_id), {
-              ...item,
-              verified: Boolean(item.verified),
-              reconciler_approved: Boolean(item.reconciler_approved),
-            });
+          const normalized: MarkedItemInfo = {
+            ...item,
+            verified: Boolean(item.verified),
+            reconciler_approved: Boolean(item.reconciler_approved),
+          };
+          if (item.transaction_id != null && String(item.transaction_id).trim() !== '') {
+            const txKey = Number(item.transaction_id);
+            const existingTx = byTx.get(txKey);
+            if (!existingTx || shouldPreferMarkedItem(normalized, existingTx)) {
+              byTx.set(txKey, normalized);
+            }
+          }
+          const skuKey = buildMarkedSkuKey(item);
+          const existing = bySku.get(skuKey);
+          if (!existing || shouldPreferMarkedItem(normalized, existing)) {
+            bySku.set(skuKey, normalized);
           }
         });
-        setMarkedItemsByTx(map);
+        setMarkedItemsByTx(byTx);
+        setMarkedItemsBySku(bySku);
       }
     } catch (error) {
       console.error('Error fetching marked items:', error);
+      setSnackbar({
+        open: true,
+        message: 'Failed to load marked-for-check items. Highlighting may be incomplete.',
+        severity: 'warning',
+      });
+    }
+  };
+
+  const resolveMarkedInfo = (transaction: Transaction): MarkedItemInfo | null => {
+    if (transaction.transaction_id != null) {
+      const byId = markedItemsByTx.get(Number(transaction.transaction_id));
+      if (byId) return byId;
+    }
+    return (
+      markedItemsBySku.get(
+        buildMarkedSkuKey({
+          form: transaction.form,
+          grade: transaction.grade,
+          size: transaction.size,
+          finish: transaction.finish,
+          ext_finish: transaction.ext_finish,
+          width: transaction.width,
+          length: transaction.length,
+          mill: transaction.mill,
+          heat: transaction.heat,
+          location: transaction.location,
+          type: transaction.type,
+          section_id: transaction.section_id,
+        })
+      ) ||
+      markedItemsBySku.get(
+        buildMarkedSkuKey({
+          form: transaction.form,
+          grade: transaction.grade,
+          size: transaction.size,
+          finish: transaction.finish,
+          ext_finish: transaction.ext_finish,
+          width: transaction.width,
+          length: transaction.length,
+          mill: transaction.mill,
+          heat: transaction.heat,
+          location: transaction.location,
+          type: transaction.type,
+          section_id: '',
+        })
+      ) ||
+      null
+    );
+  };
+
+  /** Refresh marked items and return those still awaiting checker verification */
+  const getUnrecheckedMarkedItems = async (): Promise<MarkedItemInfo[]> => {
+    if (!location_id) return [];
+    try {
+      const response = await servicesAPI.getMarkedItemsForChecking(location_id);
+      if (!response.data.success) return [];
+
+      const byTx = new Map<number, MarkedItemInfo>();
+      const bySku = new Map<string, MarkedItemInfo>();
+      const unrechecked: MarkedItemInfo[] = [];
+
+      (response.data.items || []).forEach((item: MarkedItemInfo) => {
+        const normalized: MarkedItemInfo = {
+          ...item,
+          verified: Boolean(item.verified),
+          reconciler_approved: Boolean(item.reconciler_approved),
+        };
+        if (item.transaction_id != null && String(item.transaction_id).trim() !== '') {
+          const txKey = Number(item.transaction_id);
+          const existingTx = byTx.get(txKey);
+          if (!existingTx || shouldPreferMarkedItem(normalized, existingTx)) {
+            byTx.set(txKey, normalized);
+          }
+        }
+        const skuKey = buildMarkedSkuKey(item);
+        const existing = bySku.get(skuKey);
+        if (!existing || shouldPreferMarkedItem(normalized, existing)) {
+          bySku.set(skuKey, normalized);
+        }
+        if (!normalized.verified) {
+          unrechecked.push(normalized);
+        }
+      });
+
+      setMarkedItemsByTx(byTx);
+      setMarkedItemsBySku(bySku);
+      return unrechecked;
+    } catch (error) {
+      console.error('Error checking unrechecked marked items:', error);
+      return [];
+    }
+  };
+
+  const openReconcileIfRecheckComplete = async () => {
+    setCheckingRecheckStatus(true);
+    try {
+      const pending = await getUnrecheckedMarkedItems();
+      if (pending.length > 0) {
+        setUnrecheckedItems(pending);
+        setUnrecheckedDialogOpen(true);
+        return;
+      }
+      setReconcileDialogOpen(true);
+    } finally {
+      setCheckingRecheckStatus(false);
     }
   };
 
@@ -757,7 +980,9 @@ const CountReviewPage = () => {
   useEffect(() => {
     if (sections.length > 0) {
       loadAllTransactions();
+      fetchMarkedItems();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sections]);
 
   // Filter transactions based on search and section filter
@@ -896,6 +1121,16 @@ const CountReviewPage = () => {
       setSnackbar({ open: true, message: 'Select at least one field for comparison.', severity: 'warning' });
       return;
     }
+
+    // Block reconcile if any marked-for-recheck items are still awaiting checker
+    const pending = await getUnrecheckedMarkedItems();
+    if (pending.length > 0) {
+      setReconcileDialogOpen(false);
+      setUnrecheckedItems(pending);
+      setUnrecheckedDialogOpen(true);
+      return;
+    }
+
     try {
       setLoading(prev => ({ ...prev, reconcile: true }));
       setReconcileDialogOpen(false);
@@ -1125,10 +1360,9 @@ const CountReviewPage = () => {
       ? (t.bundles?.reduce((s, b) => s + (b.num_of_bundle * b.bundle_count), 0) || 0)
       : (t.qty || 0));
   }, 0);
-  const markedCount = filteredTransactions.filter(t => t.transaction_id && markedItemsByTx.has(t.transaction_id)).length;
+  const markedCount = filteredTransactions.filter((t) => Boolean(resolveMarkedInfo(t))).length;
   const pendingApproveCount = filteredTransactions.filter((t) => {
-    if (!t.transaction_id) return false;
-    const info = markedItemsByTx.get(t.transaction_id);
+    const info = resolveMarkedInfo(t);
     return Boolean(info?.verified && !info.reconciler_approved);
   }).length;
 
@@ -1186,12 +1420,12 @@ const CountReviewPage = () => {
             <Button
               variant="contained"
               color="primary"
-              onClick={() => setReconcileDialogOpen(true)}
-              disabled={loading.reconcile || sections.length === 0 || sections.some(s => s.status === 'In Progress')}
-              startIcon={loading.reconcile ? <CircularProgress size={20} color="inherit" /> : <CompareArrows />}
+              onClick={openReconcileIfRecheckComplete}
+              disabled={loading.reconcile || checkingRecheckStatus || sections.length === 0 || sections.some(s => s.status === 'In Progress')}
+              startIcon={(loading.reconcile || checkingRecheckStatus) ? <CircularProgress size={20} color="inherit" /> : <CompareArrows />}
               sx={{ borderRadius: 2, fontWeight: 600, textTransform: 'none', px: 2 }}
             >
-              {loading.reconcile ? 'Reconciling...' : 'Reconcile'}
+              {loading.reconcile ? 'Reconciling...' : checkingRecheckStatus ? 'Checking…' : 'Reconcile'}
             </Button>
             <Button
               variant="outlined"
@@ -1425,9 +1659,7 @@ const CountReviewPage = () => {
                   {filteredTransactions.map((transaction, index) => {
                     const isCurrentlyEditing = editingTransaction === transaction.transaction_id;
                     const isCurrentlySaving = savingTransaction === transaction.transaction_id;
-                    const markedInfo = transaction.transaction_id
-                      ? markedItemsByTx.get(transaction.transaction_id) || null
-                      : null;
+                    const markedInfo = resolveMarkedInfo(transaction);
                     const isMarked = Boolean(markedInfo);
 
                     return (
@@ -1799,6 +2031,69 @@ const CountReviewPage = () => {
             sx={{ borderRadius: 2, fontWeight: 600, textTransform: 'none', px: 3 }}
           >
             Run reconciliation
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={unrecheckedDialogOpen}
+        onClose={() => setUnrecheckedDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1.5, pb: 1 }}>
+          <Warning color="warning" />
+          Not all items are rechecked
+        </DialogTitle>
+        <DialogContent>
+          <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
+            {unrecheckedItems.length} item{unrecheckedItems.length === 1 ? '' : 's'} marked for recheck
+            {unrecheckedItems.length === 1 ? ' has' : ' have'} not been verified by the checker yet.
+            Complete checker verification before running reconciliation.
+          </Alert>
+          <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2, maxHeight: 360 }}>
+            <Table size="small" stickyHeader>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Form</TableCell>
+                  <TableCell>Grade</TableCell>
+                  <TableCell>Size</TableCell>
+                  <TableCell>Finish</TableCell>
+                  <TableCell>Width</TableCell>
+                  <TableCell>Length</TableCell>
+                  <TableCell>Location</TableCell>
+                  <TableCell align="right">Counted Qty</TableCell>
+                  <TableCell>Status</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {unrecheckedItems.map((item) => (
+                  <TableRow key={item.id} hover>
+                    <TableCell>{item.form || '—'}</TableCell>
+                    <TableCell>{item.grade || '—'}</TableCell>
+                    <TableCell>{item.size || '—'}</TableCell>
+                    <TableCell>{item.finish || '—'}</TableCell>
+                    <TableCell>{item.width ?? '—'}</TableCell>
+                    <TableCell>{item.length ?? '—'}</TableCell>
+                    <TableCell>{item.location || '—'}</TableCell>
+                    <TableCell align="right">{item.counted_qty ?? '—'}</TableCell>
+                    <TableCell>
+                      <Chip label="Awaiting checker" size="small" color="warning" sx={{ fontWeight: 600 }} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button
+            onClick={() => setUnrecheckedDialogOpen(false)}
+            variant="contained"
+            sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}
+          >
+            OK
           </Button>
         </DialogActions>
       </Dialog>
