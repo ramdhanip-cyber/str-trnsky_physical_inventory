@@ -1965,7 +1965,9 @@ exports.getReconciliationReport = async (req, res) => {
               )
               - SUM((item->>'weight')::numeric),
               3
-          ) AS VarTons
+          ) AS VarTons,
+          ROUND(SUM(COALESCE((item->>'prd_ohd_mat_cst')::numeric, 0)), 3) AS prd_ohd_mat_cst,
+          ROUND(SUM(COALESCE((item->>'prd_ohd_mat_val')::numeric, 0)), 3) AS prd_ohd_mat_val
       
       FROM reconciliation_records,
       jsonb_array_elements(items_data) AS item
