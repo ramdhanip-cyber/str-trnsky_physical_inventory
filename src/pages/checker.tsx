@@ -299,17 +299,18 @@ const Checker: React.FC = () => {
     setIsEditing(true);
   };
 
-  const handleSave = async () => {
+  const handleSave = async (overrides?: Partial<Transaction>) => {
     if (!editingTransaction) return;
     const beforeSnapshot = editingBeforeSnapshot;
+    const current = { ...editingTransaction, ...overrides };
   
     // Validate quantity
-    if (editingTransaction.count_type === 'piece' && !editingTransaction.checker_count) {
+    if (current.count_type === 'piece' && !current.checker_count) {
       setError('Checker count cannot be empty for piece count');
       return;
     }
   
-    if (editingTransaction.count_type === 'bundle') {
+    if (current.count_type === 'bundle') {
       const hasEmptyBundles = editingBundles.some(b => b.bundle_count <= 0);
       if (hasEmptyBundles) {
         setError('All bundles must have a count greater than 0');
@@ -323,28 +324,28 @@ const Checker: React.FC = () => {
       
       // Get original transaction_id from tag_id (which stores the original transaction_id)
       // transaction_id in editingTransaction is the checker_sku_item id
-      const checkerSkuItemId = editingTransaction.transaction_id;
-      const originalTransactionId = editingTransaction.tag_id ? parseInt(editingTransaction.tag_id) : null;
+      const checkerSkuItemId = current.transaction_id;
+      const originalTransactionId = current.tag_id ? parseInt(current.tag_id) : null;
 
       // Prepare payload for edit and verify
       const payload = {
         checker_sku_item_id: checkerSkuItemId,
         ...(originalTransactionId && { original_transaction_id: originalTransactionId }),
-        sys_tag_no: editingTransaction.sys_tag_no,
-        form: editingTransaction.form,
-        grade: editingTransaction.grade,
-        size: editingTransaction.size,
-        finish: editingTransaction.finish,
-        ext_finish: editingTransaction.ext_finish,
-        width: editingTransaction.width,
-        length: editingTransaction.length,
-        mill: editingTransaction.mill,
-        heat: editingTransaction.heat,
-        type: editingTransaction.type,
-        remarks: editingTransaction.remarks,
-        location: editingTransaction.location,
-        checker_count: editingTransaction.checker_count,
-        bundles: editingTransaction.count_type === 'bundle' ? editingBundles : []
+        sys_tag_no: current.sys_tag_no,
+        form: current.form,
+        grade: current.grade,
+        size: current.size,
+        finish: current.finish,
+        ext_finish: current.ext_finish,
+        width: current.width,
+        length: current.length,
+        mill: current.mill,
+        heat: current.heat,
+        type: current.type,
+        remarks: current.remarks,
+        location: current.location,
+        checker_count: current.checker_count,
+        bundles: current.count_type === 'bundle' ? editingBundles : []
       };
 
       // Call the edit and verify endpoint

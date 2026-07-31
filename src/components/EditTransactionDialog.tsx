@@ -20,11 +20,35 @@ import {
   Chip,
   FormControl,
   InputLabel,
+  InputAdornment,
   Tooltip,
   useTheme,
   alpha
 } from "@mui/material";
 import { Save, Close, Add, Delete } from "@mui/icons-material";
+
+type LengthUnit = 'ft' | 'in';
+
+/** Convert a user-entered length to feet for storage. */
+const toFeet = (value: string | number, unit: LengthUnit): string => {
+  if (value === '' || value === null || value === undefined) return '';
+  const num = typeof value === 'number' ? value : parseFloat(String(value));
+  if (Number.isNaN(num) || num < 0) return '';
+  const feet = unit === 'in' ? num / 12 : num;
+  return feet.toFixed(4).replace(/\.?0+$/, '') || '0';
+};
+
+/** Convert stored feet to the display unit. */
+const fromFeet = (feetValue: string | number | undefined | null, unit: LengthUnit): string => {
+  if (feetValue === '' || feetValue === null || feetValue === undefined) return '';
+  const feet = typeof feetValue === 'number' ? feetValue : parseFloat(String(feetValue));
+  if (Number.isNaN(feet)) return '';
+  if (unit === 'in') {
+    const inches = feet * 12;
+    return inches.toFixed(4).replace(/\.?0+$/, '') || '0';
+  }
+  return feet.toFixed(4).replace(/\.?0+$/, '') || '0';
+};
 
 interface Transaction {
   transaction_id: number;
@@ -61,7 +85,7 @@ interface EditTransactionDialogProps {
   transaction: Transaction | null;
   bundles: Bundle[];
   onClose: () => void;
-  onSave: () => void;
+  onSave: (overrides?: Partial<Transaction>) => void;
   onFieldChange: (field: keyof Transaction, value: string | number) => void;
   onBundleChange: (index: number, field: keyof Bundle, value: number) => void;
   onAddBundle: () => void;
@@ -84,6 +108,22 @@ const EditTransactionDialog: React.FC<EditTransactionDialogProps> = ({
   const theme = useTheme();
   const [totalQuantity, setTotalQuantity] = useState<number>(0);
   const [error] = useState<string | null>(null);
+  const [lengthUnit, setLengthUnit] = useState<LengthUnit>('ft');
+  const [lengthInput, setLengthInput] = useState('');
+
+  // Reset length UI whenever a different transaction is opened
+  useEffect(() => {
+    if (open && transaction) {
+      setLengthUnit('ft');
+      setLengthInput(fromFeet(transaction.length, 'ft'));
+    }
+    if (!open) {
+      setLengthUnit('ft');
+      setLengthInput('');
+    }
+    // Only re-init when dialog opens / transaction id changes — not on every length keystroke
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, transaction?.transaction_id]);
 
   useEffect(() => {
     if (transaction) {
@@ -101,8 +141,24 @@ const EditTransactionDialog: React.FC<EditTransactionDialogProps> = ({
     onFieldChange(field, value);
   };
 
+  const handleLengthInputChange = (raw: string) => {
+    setLengthInput(raw);
+    const feet = toFeet(raw, lengthUnit);
+    handleFieldChange('length', feet);
+  };
+
+  const handleLengthUnitChange = (unit: LengthUnit) => {
+    // Convert current stored feet into the newly selected display unit
+    const storedFeet = transaction?.length ?? toFeet(lengthInput, lengthUnit);
+    setLengthUnit(unit);
+    setLengthInput(fromFeet(storedFeet, unit));
+  };
+
   const handleSave = () => {
-    onSave();
+    // Always persist length in feet, including the latest unit conversion
+    const feet = toFeet(lengthInput, lengthUnit);
+    handleFieldChange('length', feet);
+    onSave({ length: feet });
   };
 
 
@@ -310,12 +366,41 @@ const EditTransactionDialog: React.FC<EditTransactionDialogProps> = ({
           />
           <TextField
             label="Length"
-            value={transaction.length}
-            onChange={(e) => handleFieldChange('length', e.target.value)}
+            value={lengthInput}
+            onChange={(e) => handleLengthInputChange(e.target.value)}
             fullWidth
             size="small"
             required
             type="number"
+            inputProps={{ min: 0, step: 'any' }}
+            helperText={
+              lengthUnit === 'in' && lengthInput !== ''
+                ? `Stored as ${toFeet(lengthInput, 'in') || '0'} ft`
+                : lengthUnit === 'ft'
+                  ? 'Stored in feet'
+                  : ' '
+            }
+            InputProps={{
+              endAdornment: (
+                <InputAdornment position="end">
+                  <Select
+                    value={lengthUnit}
+                    onChange={(e) => handleLengthUnitChange(e.target.value as LengthUnit)}
+                    variant="standard"
+                    disableUnderline
+                    sx={{
+                      fontSize: '0.8125rem',
+                      fontWeight: 600,
+                      minWidth: 52,
+                      '& .MuiSelect-select': { py: 0.5, pr: '24px !important' },
+                    }}
+                  >
+                    <MenuItem value="ft">ft</MenuItem>
+                    <MenuItem value="in">in</MenuItem>
+                  </Select>
+                </InputAdornment>
+              ),
+            }}
             sx={modernFieldSx}
           />
           <TextField
