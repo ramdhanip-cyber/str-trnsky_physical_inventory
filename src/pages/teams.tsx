@@ -28,8 +28,7 @@ import {
   Card,
   CardContent,
   LinearProgress,
-  ToggleButton,
-  ToggleButtonGroup,
+  Paper,
   alpha,
   Menu,
   MenuItem,
@@ -45,89 +44,85 @@ import {
   Refresh as RefreshIcon,
   GroupAdd as GroupAddIcon,
   Cancel as CancelIcon,
+  Clear as ClearIcon,
   ViewModule as ViewModuleIcon,
   ViewList as ViewListIcon,
   AccessTime as AccessTimeIcon,
+  LocalOffer as LocalOfferIcon,
   PersonAdd as PersonAddIcon,
-  MoreVert as MoreVertIcon
+  MoreVert as MoreVertIcon,
 } from "@mui/icons-material";
 import { servicesAPI } from '../config/api';
 import { styled } from '@mui/material/styles';
 import AddTeamDialog from './AddTeamDialog';
 import EditTeamDialog from './EditTeamDialog';
 
+const BRAND = '#0C2C48';
+const BRAND_GRADIENT = 'linear-gradient(135deg, #0C2C48 0%, #1E5A8A 100%)';
+const MEMBERS_GRADIENT = 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)';
+const AVG_GRADIENT = 'linear-gradient(135deg, #4776E6 0%, #8E54E9 100%)';
+const FILTER_GRADIENT = 'linear-gradient(135deg, #fc4a1a 0%, #f7b733 100%)';
+
+const SKEU_BG = '#e8eef4';
+const SKEU_LIGHT = '#ffffff';
+const SKEU_DARK = '#c5d0db';
+const skeuRaised = (size = 7) =>
+  `${size}px ${size}px ${size * 2}px ${SKEU_DARK}, -${size}px -${size}px ${size * 2}px ${SKEU_LIGHT}`;
+const skeuInset = (size = 4) =>
+  `inset ${size}px ${size}px ${size * 2}px ${SKEU_DARK}, inset -${size}px -${size}px ${size * 2}px ${SKEU_LIGHT}`;
+
 // Styled components
-const StyledCard = styled(Card)(({ theme }) => ({
-  borderRadius: '20px',
-  boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-  border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
-  background: theme.palette.mode === 'dark' 
-    ? `linear-gradient(135deg, ${alpha(theme.palette.background.paper, 0.9)} 0%, ${alpha(theme.palette.background.paper, 0.95)} 100%)`
-    : theme.palette.background.paper,
-  backdropFilter: 'blur(10px)',
+const StyledCard = styled(Card)(() => ({
+  borderRadius: '18px',
+  border: 'none',
+  background: `linear-gradient(145deg, ${SKEU_LIGHT} 0%, ${SKEU_BG} 100%)`,
+  boxShadow: skeuRaised(8),
+  transition: 'box-shadow 0.18s ease, transform 0.18s ease',
   '&:hover': {
-    transform: 'translateY(-4px)',
-    boxShadow: '0 12px 40px rgba(0,0,0,0.15)',
-    borderColor: alpha(theme.palette.primary.main, 0.3)
-  }
+    transform: 'translateY(-2px)',
+    boxShadow: skeuRaised(10),
+  },
 }));
 
 const TeamCard = styled(Card)(() => ({
-  borderRadius: '20px',
-  boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-  border: `1px solid ${alpha('#b8d4f0', 0.4)}`,
+  borderRadius: '16px',
+  border: 'none',
+  boxShadow: skeuRaised(7),
+  transition: 'box-shadow 0.18s ease, transform 0.18s ease',
   position: 'relative',
   overflow: 'hidden',
-  width: '320px',
-  height: '420px',
+  height: '100%',
   display: 'flex',
   flexDirection: 'column',
-  background: `${alpha('#0088FE', 0.08)}`,
+  background: `linear-gradient(145deg, ${SKEU_LIGHT} 0%, ${SKEU_BG} 100%)`,
   '&::before': {
     content: '""',
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: '4px',
-    background: `#0088FE`,
-    opacity: 0,
-    transition: 'opacity 0.3s ease'
+    height: '3px',
+    background: BRAND_GRADIENT,
   },
   '&:hover': {
-    transform: 'translateY(-8px) scale(1.02)',
-    boxShadow: '0 20px 60px rgba(184, 212, 240, 0.25)',
-    borderColor: alpha('#b8d4f0', 0.6),
-    background: `${alpha('#0088FE', 0.1)}`,
-    '&::before': {
-      opacity: 1
-    }
-  }
+    transform: 'translateY(-2px)',
+    boxShadow: skeuRaised(9),
+  },
 }));
 
-const StatCard = styled(Card)(({ theme }) => ({
-  borderRadius: '16px',
-  padding: theme.spacing(2.5),
-  background: `${alpha('#0088FE', 0.08)}`,
-  border: `1px solid ${alpha('#0088FE', 0.15)}`,
-  transition: 'all 0.3s ease',
+const StatCard = styled(Card)(() => ({
+  borderRadius: '18px',
+  padding: '20px 22px',
+  border: 'none',
+  background: `linear-gradient(145deg, ${SKEU_LIGHT} 0%, ${SKEU_BG} 100%)`,
+  boxShadow: skeuRaised(8),
+  height: '100%',
+  transition: 'box-shadow 0.18s ease, transform 0.18s ease',
   '&:hover': {
-    transform: 'translateY(-4px)',
-    boxShadow: `0 8px 24px ${alpha('#b8d4f0', 0.3)}`
-  }
+    transform: 'translateY(-2px)',
+    boxShadow: skeuRaised(10),
+  },
 }));
-
-// const StatusBadge = styled(Badge)(({ theme }) => ({
-//   '& .MuiBadge-badge': {
-//     right: 10,
-//     top: 10,
-//     border: `2px solid ${theme.palette.background.paper}`,
-//     padding: '0 4px',
-//     borderRadius: '12px'
-//   }
-// }));
 
 const ActionButton = styled(Button)(() => ({
   borderRadius: '12px',
@@ -136,8 +131,17 @@ const ActionButton = styled(Button)(() => ({
   padding: '8px 16px',
   boxShadow: 'none',
   '&:hover': {
-    boxShadow: 'none'
-  }
+    boxShadow: 'none',
+  },
+}));
+
+const FilterBar = styled(Paper)(() => ({
+  padding: '16px 20px',
+  borderRadius: '18px',
+  border: 'none',
+  background: `linear-gradient(145deg, ${SKEU_LIGHT} 0%, ${SKEU_BG} 100%)`,
+  boxShadow: skeuRaised(8),
+  marginBottom: 24,
 }));
 
 // Interfaces
@@ -364,11 +368,6 @@ const TeamManagement = () => {
     return role?.color || theme.palette.info.main;
   };
 
-  const handleViewModeChange = (_event: React.MouseEvent<HTMLElement>, newView: 'grid' | 'table' | null) => {
-    if (newView !== null) {
-      setViewMode(newView);
-    }
-  };
 
   const handleMenuOpen = (event: React.MouseEvent<HTMLElement>, teamId: number) => {
     setAnchorEl(event.currentTarget);
@@ -427,232 +426,244 @@ const TeamManagement = () => {
   }
 
   return (
-    <Box sx={{ p: isMobile ? 1 : 3, background: `${alpha('#0088FE', 0.03)}`, minHeight: '100vh' }}>
-      {/* Header Section */}
-      <StyledCard sx={{ mb: 3, background: `${alpha('#0088FE', 0.06)}` }}>
-        <CardContent>
-          <Grid container spacing={3} alignItems="center">
-            <Grid item xs={12} md={6}>
-              <Box display="flex" alignItems="center" gap={2}>
-                <Box sx={{
-                  width: 56,
-                  height: 56,
-                  borderRadius: '16px',
-                  background: `#0088FE`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: `0 8px 24px ${alpha('#0088FE', 0.25)}`
-                }}>
-                  <WorkspacesIcon sx={{ 
-                    fontSize: 32,
-                    color: 'white'
-                  }} />
-                </Box>
-                <Box>
-                  <Typography variant="h4" component="h1" sx={{ 
-                    fontWeight: 800,
-                    color: '#0C2C48',
-                    lineHeight: 1.2,
-                    mb: 0.5
-                  }}>
-                    Team Management
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                    Organize and manage your inventory teams efficiently
-                  </Typography>
-                </Box>
-              </Box>
-            </Grid>
-            
-            <Grid item xs={12} md={6}>
-              <Box display="flex" gap={2} justifyContent={isMobile ? 'flex-start' : 'flex-end'} alignItems="center" flexWrap="wrap">
-                <TextField
-                  size="small"
-                  placeholder="Search teams or members..."
-                  variant="outlined"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <SearchIcon sx={{ color: theme.palette.text.secondary }} />
-                      </InputAdornment>
-                    ),
-                    sx: {
-                      backgroundColor: theme.palette.background.paper,
-                      borderRadius: '12px',
-                      width: isMobile ? '100%' : 280,
-                      '& .MuiOutlinedInput-root': {
-                        '&:hover fieldset': {
-                          borderColor: theme.palette.primary.main,
-                        },
-                      }
-                    }
-                  }}
-                />
-                
-                <ToggleButtonGroup
-                  value={viewMode}
-                  exclusive
-                  onChange={handleViewModeChange}
-                  size="small"
-                  sx={{
-                    '& .MuiToggleButton-root': {
-                      borderRadius: '12px',
-                      border: `1px solid ${alpha('#667eea', 0.3)}`,
-                      '&.Mui-selected': {
-                            background: `#0088FE`,
-                            color: 'white',
-                        '&:hover': {
-                          background: `linear-gradient(135deg, #d4c5f9, #b8d4f0)`,
-                        }
-                      }
-                    }
-                  }}
-                >
-                  <ToggleButton value="grid" aria-label="grid view">
-                    <ViewModuleIcon fontSize="small" />
-                  </ToggleButton>
-                  <ToggleButton value="table" aria-label="table view">
-                    <ViewListIcon fontSize="small" />
-                  </ToggleButton>
-                </ToggleButtonGroup>
-                
-                <ActionButton 
-                  variant="contained" 
-                  color="primary" 
-                  startIcon={<AddIcon />}
-                  onClick={handleAddTeamClick}
-                  sx={{
-                    minWidth: 'auto',
-                    background: `linear-gradient(135deg, #b8d4f0 0%, #d4c5f9 100%)`,
-                    color: '#6b7f9f',
-                    boxShadow: `0 4px 16px ${alpha('#b8d4f0', 0.4)}`,
-                    '&:hover': {
-                      boxShadow: `0 8px 24px ${alpha('#b8d4f0', 0.5)}`,
-                      transform: 'translateY(-2px)',
-                      background: `linear-gradient(135deg, #d4c5f9 0%, #b8d4f0 100%)`
-                    }
-                  }}
-                >
-                  {isMobile ? 'New' : 'New Team'}
-                </ActionButton>
-              </Box>
-            </Grid>
-          </Grid>
-        </CardContent>
-      </StyledCard>
+    <Box sx={{ p: isMobile ? 2 : 3, bgcolor: SKEU_BG, minHeight: 'calc(100vh - 112px)' }}>
+      {/* Hero Header */}
+      <Box
+        sx={{
+          position: 'relative',
+          overflow: 'hidden',
+          borderRadius: '20px',
+          mb: 3,
+          px: isMobile ? 2.5 : 4,
+          py: isMobile ? 3 : 3.5,
+          background: BRAND_GRADIENT,
+          color: '#fff',
+          boxShadow: '0 14px 40px 0 rgba(12,44,72,0.30)',
+        }}
+      >
+        <Box sx={{ position: 'absolute', top: -60, right: -40, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.06)' }} />
+        <Box sx={{ position: 'absolute', bottom: -80, right: 120, width: 180, height: 180, borderRadius: '50%', background: 'rgba(255,255,255,0.04)' }} />
 
-      {/* Statistics Cards */}
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard>
-            <Box display="flex" alignItems="center" justifyContent="space-between">
-              <Box>
-                <Typography variant="h4" sx={{ fontWeight: 800, mb: 0.5 }}>
-                  {teams.length}
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                  Total Teams
-                </Typography>
-              </Box>
-              <Box sx={{
-                width: 56,
-                height: 56,
-                borderRadius: '14px',
-                background: `${alpha('#0088FE', 0.1)}`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <WorkspacesIcon sx={{ fontSize: 28, color: '#0088FE' }} />
-              </Box>
+        <Box
+          sx={{
+            position: 'relative',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: isMobile ? 'flex-start' : 'center',
+            flexDirection: isMobile ? 'column' : 'row',
+            gap: isMobile ? 2.5 : 2,
+          }}
+        >
+          <Box display="flex" alignItems="center" gap={2}>
+            <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.15)', width: 56, height: 56 }}>
+              <WorkspacesIcon sx={{ fontSize: 30, color: '#fff' }} />
+            </Avatar>
+            <Box>
+              <Typography variant="h4" component="h1" fontWeight={800} sx={{ letterSpacing: '-0.5px', lineHeight: 1.15 }}>
+                Team Management
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.75)', mt: 0.5 }}>
+                Organize and manage your inventory teams efficiently
+              </Typography>
             </Box>
-          </StatCard>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard>
-            <Box display="flex" alignItems="center" justifyContent="space-between">
-              <Box>
-                <Typography variant="h4" sx={{ fontWeight: 800, mb: 0.5 }}>
-                  {totalMembers}
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                  Total Members
-                </Typography>
+          </Box>
+
+          <ActionButton
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={handleAddTeamClick}
+            sx={{
+              bgcolor: '#fff',
+              color: BRAND,
+              fontWeight: 700,
+              px: 2.5,
+              boxShadow: '0 6px 18px rgba(0,0,0,0.18)',
+              '&:hover': { bgcolor: 'rgba(255,255,255,0.9)' },
+            }}
+          >
+            {isMobile ? 'New' : 'New Team'}
+          </ActionButton>
+        </Box>
+      </Box>
+
+      {/* Statistics — skeuomorphic */}
+      <Grid container spacing={2.5} sx={{ mb: 3 }}>
+        {(
+          [
+            { label: 'Total Teams', value: teams.length, grad: BRAND_GRADIENT, icon: <WorkspacesIcon /> },
+            { label: 'Total Members', value: totalMembers, grad: MEMBERS_GRADIENT, icon: <PeopleIcon /> },
+            { label: 'Avg per Team', value: averageMembersPerTeam, grad: AVG_GRADIENT, icon: <PersonAddIcon /> },
+            { label: 'Filtered Results', value: filteredTeams.length, grad: FILTER_GRADIENT, icon: <SearchIcon /> },
+          ] as const
+        ).map((stat) => (
+          <Grid item xs={12} sm={6} md={3} key={stat.label}>
+            <StatCard elevation={0}>
+              <Box display="flex" alignItems="center" justifyContent="space-between">
+                <Box>
+                  <Typography
+                    variant="h4"
+                    sx={{
+                      fontWeight: 800,
+                      mb: 0.5,
+                      color: BRAND,
+                      lineHeight: 1.1,
+                      textShadow: '1px 1px 0 rgba(255,255,255,0.8)',
+                    }}
+                  >
+                    {stat.value}
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: alpha(BRAND, 0.55), fontWeight: 700 }}>
+                    {stat.label}
+                  </Typography>
+                </Box>
+                <Avatar
+                  sx={{
+                    width: 48,
+                    height: 48,
+                    background: stat.grad,
+                    color: '#fff',
+                    boxShadow: `3px 3px 8px ${SKEU_DARK}, inset 0 1px 0 ${alpha('#fff', 0.28)}`,
+                  }}
+                >
+                  {stat.icon}
+                </Avatar>
               </Box>
-              <Box sx={{
-                width: 56,
-                height: 56,
-                borderRadius: '14px',
-                background: `${alpha('#0088FE', 0.1)}`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <PeopleIcon sx={{ fontSize: 28, color: '#0088FE' }} />
-              </Box>
-            </Box>
-          </StatCard>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard>
-            <Box display="flex" alignItems="center" justifyContent="space-between">
-              <Box>
-                <Typography variant="h4" sx={{ fontWeight: 800, mb: 0.5 }}>
-                  {averageMembersPerTeam}
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                  Avg per Team
-                </Typography>
-              </Box>
-              <Box sx={{
-                width: 56,
-                height: 56,
-                borderRadius: '14px',
-                background: `${alpha('#0088FE', 0.1)}`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <PersonAddIcon sx={{ fontSize: 28, color: '#0088FE' }} />
-              </Box>
-            </Box>
-          </StatCard>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard>
-            <Box display="flex" alignItems="center" justifyContent="space-between">
-              <Box>
-                <Typography variant="h4" sx={{ fontWeight: 800, mb: 0.5 }}>
-                  {filteredTeams.length}
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                  Filtered Results
-                </Typography>
-              </Box>
-              <Box sx={{
-                width: 56,
-                height: 56,
-                borderRadius: '14px',
-                background: `${alpha('#0088FE', 0.1)}`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <SearchIcon sx={{ fontSize: 28, color: '#0088FE' }} />
-              </Box>
-            </Box>
-          </StatCard>
-        </Grid>
+            </StatCard>
+          </Grid>
+        ))}
       </Grid>
 
+      {/* Search + view — skeuomorphic bar between insights and content */}
+      <FilterBar elevation={0}>
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: { xs: 'column', sm: 'row' },
+            alignItems: { xs: 'stretch', sm: 'center' },
+            justifyContent: 'space-between',
+            gap: 2,
+            minHeight: 40,
+          }}
+        >
+          <TextField
+            size="small"
+            variant="outlined"
+            placeholder="Search teams or members..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            sx={{
+              width: '100%',
+              maxWidth: { xs: '100%', sm: 360, md: 400 },
+            }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon sx={{ color: alpha(BRAND, 0.5) }} />
+                </InputAdornment>
+              ),
+              endAdornment: searchTerm ? (
+                <InputAdornment position="end">
+                  <IconButton size="small" onClick={() => setSearchTerm('')} aria-label="Clear search">
+                    <ClearIcon fontSize="small" />
+                  </IconButton>
+                </InputAdornment>
+              ) : null,
+              sx: {
+                height: 40,
+                borderRadius: 3,
+                background: SKEU_BG,
+                boxShadow: skeuInset(4),
+                '& fieldset': { border: 'none' },
+                '&.Mui-focused': {
+                  boxShadow: `${skeuInset(4)}, 0 0 0 2px ${alpha(BRAND, 0.18)}`,
+                },
+              },
+            }}
+          />
+
+          <Box
+            sx={{
+              display: 'inline-flex',
+              flexDirection: 'row',
+              alignItems: 'center',
+              alignSelf: { xs: 'flex-end', sm: 'center' },
+              flexShrink: 0,
+              height: 40,
+              px: '4px',
+              gap: '4px',
+              boxSizing: 'border-box',
+              borderRadius: '12px',
+              background: SKEU_BG,
+              boxShadow: skeuInset(3),
+            }}
+          >
+            <Tooltip title="Grid view">
+              <IconButton
+                size="small"
+                onClick={() => setViewMode('grid')}
+                aria-label="grid view"
+                sx={{
+                  borderRadius: 1.5,
+                  width: 32,
+                  height: 32,
+                  p: 0,
+                  transition: 'box-shadow 0.15s ease',
+                  ...(viewMode === 'grid'
+                    ? {
+                        color: '#fff',
+                        background: BRAND_GRADIENT,
+                        boxShadow: `2px 2px 5px ${SKEU_DARK}, inset 0 1px 0 ${alpha('#fff', 0.2)}`,
+                        '&:hover': { background: BRAND_GRADIENT },
+                      }
+                    : {
+                        color: BRAND,
+                        background: 'transparent',
+                        boxShadow: 'none',
+                        '&:hover': { background: alpha(BRAND, 0.06) },
+                      }),
+                }}
+              >
+                <ViewModuleIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="List view">
+              <IconButton
+                size="small"
+                onClick={() => setViewMode('table')}
+                aria-label="list view"
+                sx={{
+                  borderRadius: 1.5,
+                  width: 32,
+                  height: 32,
+                  p: 0,
+                  transition: 'box-shadow 0.15s ease',
+                  ...(viewMode === 'table'
+                    ? {
+                        color: '#fff',
+                        background: BRAND_GRADIENT,
+                        boxShadow: `2px 2px 5px ${SKEU_DARK}, inset 0 1px 0 ${alpha('#fff', 0.2)}`,
+                        '&:hover': { background: BRAND_GRADIENT },
+                      }
+                    : {
+                        color: BRAND,
+                        background: 'transparent',
+                        boxShadow: 'none',
+                        '&:hover': { background: alpha(BRAND, 0.06) },
+                      }),
+                }}
+              >
+                <ViewListIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        </Box>
+      </FilterBar>
+
       {/* Teams Display - Grid or Table */}
-      {refreshing && <LinearProgress color="primary" sx={{ mb: 2, borderRadius: '10px' }} />}
+      {refreshing && <LinearProgress color="primary" sx={{ mb: 2, borderRadius: '10px', bgcolor: alpha(BRAND, 0.08), '& .MuiLinearProgress-bar': { bgcolor: BRAND } }} />}
       
       {filteredTeams.length === 0 ? (
-        <StyledCard>
+        <StyledCard elevation={0}>
           <CardContent>
             <Box sx={{ 
               display: 'flex', 
@@ -661,25 +672,18 @@ const TeamManagement = () => {
               gap: 3,
               py: 6
             }}>
-              <Box sx={{
-                width: 120,
-                height: 120,
-                borderRadius: '50%',
-                background: `${alpha('#0088FE', 0.1)}`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <GroupAddIcon sx={{ 
-                  fontSize: 60, 
-                  color: '#0088FE',
-                  backgroundClip: 'text',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent'
-                }} />
-              </Box>
+              <Avatar
+                sx={{
+                  width: 96,
+                  height: 96,
+                  background: BRAND_GRADIENT,
+                  boxShadow: skeuRaised(6),
+                }}
+              >
+                <GroupAddIcon sx={{ fontSize: 48, color: '#fff' }} />
+              </Avatar>
               <Box textAlign="center">
-                <Typography variant="h4" sx={{ fontWeight: 700, mb: 1, color: '#0088FE' }}>
+                <Typography variant="h4" sx={{ fontWeight: 700, mb: 1, color: BRAND }}>
                   No Teams Found
                 </Typography>
                 <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 500, mb: 3 }}>
@@ -689,20 +693,19 @@ const TeamManagement = () => {
                 </Typography>
                 <ActionButton 
                   variant="contained" 
-                  color="primary" 
                   startIcon={<AddIcon />}
                   onClick={handleAddTeamClick}
                   size="large"
                   sx={{ 
                     px: 4,
                     py: 1.5,
-                    background: `#0088FE`,
+                    background: BRAND_GRADIENT,
                     color: 'white',
-                    boxShadow: `0 4px 16px ${alpha('#0088FE', 0.3)}`,
+                    boxShadow: `0 4px 16px ${alpha(BRAND, 0.3)}`,
                     '&:hover': {
-                      boxShadow: `0 8px 24px ${alpha('#0088FE', 0.4)}`,
-                      transform: 'translateY(-2px)',
-                      background: `#0066CC`
+                      boxShadow: `0 8px 24px ${alpha(BRAND, 0.4)}`,
+                      background: BRAND_GRADIENT,
+                      filter: 'brightness(1.05)',
                     }
                   }}
                 >
@@ -713,191 +716,282 @@ const TeamManagement = () => {
           </CardContent>
         </StyledCard>
       ) : viewMode === 'grid' ? (
-        <Box sx={{ 
-          display: 'flex', 
-          flexWrap: 'wrap',
-          gap: 3, 
-          justifyContent: 'flex-start',
-          alignContent: 'flex-start'
-        }}>
-          {filteredTeams.map((team) => (
-            <Box key={team.team_id} sx={{ flexShrink: 0 }}>
-              <Fade in={true} timeout={300}>
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: {
+              xs: '1fr',
+              sm: 'repeat(2, 1fr)',
+              md: 'repeat(3, 1fr)',
+              lg: 'repeat(4, 1fr)',
+            },
+            gap: 2.5,
+            alignItems: 'stretch',
+          }}
+        >
+          {filteredTeams.map((team) => {
+            const members = (team.members || []).filter((m) => m?.full_name);
+            const tagLabel =
+              team.tag_from || team.tag_to
+                ? `${team.tag_from || '—'} → ${team.tag_to || '—'}`
+                : null;
+
+            return (
+              <Fade in key={team.team_id} timeout={280}>
                 <TeamCard>
-                  <CardContent sx={{ p: 3, display: 'flex', flexDirection: 'column', height: '100%', flex: 1 }}>
-                    {/* Team Header */}
-                    <Box display="flex" alignItems="flex-start" justifyContent="space-between" mb={2} flexShrink={0}>
-                      <Box display="flex" alignItems="center" gap={2} flex={1}>
-                        <Avatar 
-                          sx={{ 
-                            width: 48,
-                            height: 48,
-                            background: `#0088FE`,
-                            color: 'white',
-                            fontWeight: 700,
-                            fontSize: '1.2rem',
-                            boxShadow: `0 4px 12px ${alpha('#0088FE', 0.3)}`
+                  <CardContent
+                    sx={{
+                      p: 2,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 1.5,
+                      height: '100%',
+                      '&:last-child': { pb: 2 },
+                    }}
+                  >
+                    {/* Header */}
+                    <Box display="flex" alignItems="center" gap={1.25}>
+                      <Avatar
+                        sx={{
+                          width: 40,
+                          height: 40,
+                          background: BRAND_GRADIENT,
+                          color: '#fff',
+                          fontWeight: 800,
+                          fontSize: '0.95rem',
+                          boxShadow: `2px 2px 6px ${SKEU_DARK}, inset 0 1px 0 ${alpha('#fff', 0.25)}`,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {team.team_name?.charAt(0)?.toUpperCase() || 'T'}
+                      </Avatar>
+                      <Box flex={1} minWidth={0}>
+                        <Typography
+                          variant="subtitle1"
+                          sx={{
+                            fontWeight: 800,
+                            color: BRAND,
+                            lineHeight: 1.2,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
                           }}
                         >
-                          {team.team_name?.charAt(0)?.toUpperCase() || 'T'}
-                        </Avatar>
-                        <Box flex={1} minWidth={0}>
-                          <Typography 
-                            variant="h6" 
-                            sx={{ 
-                              fontWeight: 700,
-                              mb: 0.5,
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap'
-                            }}
-                          >
-                            {team.team_name || `Team ${team.team_id}`}
+                          {team.team_name || `Team ${team.team_id}`}
+                        </Typography>
+                        <Box display="flex" alignItems="center" gap={0.5} mt={0.25}>
+                          <AccessTimeIcon sx={{ fontSize: 12, color: alpha(BRAND, 0.45) }} />
+                          <Typography variant="caption" sx={{ color: alpha(BRAND, 0.5), fontWeight: 600 }}>
+                            {team.time_created
+                              ? new Date(team.time_created).toLocaleDateString()
+                              : 'No date'}
                           </Typography>
-                          <Box display="flex" alignItems="center" gap={1}>
-                            <AccessTimeIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-                            <Typography variant="caption" color="text.secondary">
-                              {new Date(team.time_created || '').toLocaleDateString()}
-                            </Typography>
-                          </Box>
                         </Box>
                       </Box>
                       <IconButton
                         size="small"
                         onClick={(e) => handleMenuOpen(e, team.team_id)}
                         sx={{
-                          color: 'text.secondary',
-                          '&:hover': {
-                            backgroundColor: alpha(theme.palette.action.hover, 0.5)
-                          }
+                          width: 28,
+                          height: 28,
+                          color: alpha(BRAND, 0.45),
+                          background: SKEU_BG,
+                          boxShadow: skeuRaised(2),
+                          '&:hover': { background: SKEU_BG, color: BRAND },
                         }}
                       >
-                        <MoreVertIcon fontSize="small" />
+                        <MoreVertIcon sx={{ fontSize: 16 }} />
                       </IconButton>
                     </Box>
 
-                    {/* Members */}
-                    <Box mb={2.5} flex={1} display="flex" flexDirection="column" minHeight={0}>
-                      <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', mb: 1.5, display: 'block', flexShrink: 0 }}>
-                        MEMBERS ({team.members?.length || 0})
-                      </Typography>
-                      <Box
+                    {/* Meta chips */}
+                    <Box display="flex" flexWrap="wrap" gap={0.75}>
+                      <Chip
+                        size="small"
+                        icon={<PeopleIcon sx={{ fontSize: '14px !important' }} />}
+                        label={`${members.length} member${members.length === 1 ? '' : 's'}`}
                         sx={{
-                          flex: 1,
-                          minHeight: 0,
-                          maxHeight: '140px', // Height for 2 members (approximately 70px each)
-                          overflowY: 'auto',
-                          overflowX: 'hidden',
-                          pr: 1,
-                          '&::-webkit-scrollbar': {
-                            width: '6px',
-                          },
-                          '&::-webkit-scrollbar-track': {
-                            background: alpha(theme.palette.divider, 0.1),
-                            borderRadius: '10px',
-                          },
-                          '&::-webkit-scrollbar-thumb': {
-                            background: `#0088FE`,
-                            borderRadius: '10px',
-                            '&:hover': {
-                              background: `#0066CC`,
-                            },
-                          },
+                          height: 26,
+                          fontWeight: 700,
+                          fontSize: '0.7rem',
+                          color: BRAND,
+                          background: SKEU_BG,
+                          boxShadow: skeuInset(2),
+                          border: 'none',
+                          '& .MuiChip-icon': { color: BRAND },
                         }}
-                      >
-                        <Stack spacing={1.5}>
-                          {(team.members || []).filter((m) => m?.full_name).map((member) => (
-                            <Box key={member.id || `${member.user_id}-${member.role_id}`} display="flex" alignItems="center" gap={1.5}>
-                              <Avatar 
-                                sx={{ 
-                                  width: 36, 
-                                  height: 36, 
+                      />
+                      {tagLabel && (
+                        <Chip
+                          size="small"
+                          icon={<LocalOfferIcon sx={{ fontSize: '14px !important' }} />}
+                          label={tagLabel}
+                          sx={{
+                            height: 26,
+                            maxWidth: '100%',
+                            fontWeight: 700,
+                            fontSize: '0.7rem',
+                            color: BRAND,
+                            background: SKEU_BG,
+                            boxShadow: skeuInset(2),
+                            border: 'none',
+                            '& .MuiChip-icon': { color: alpha(BRAND, 0.7) },
+                            '& .MuiChip-label': {
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                            },
+                          }}
+                        />
+                      )}
+                    </Box>
+
+                    {/* Members well — scrollable */}
+                    <Box
+                      sx={{
+                        flex: 1,
+                        p: 1.25,
+                        borderRadius: '12px',
+                        background: SKEU_BG,
+                        boxShadow: skeuInset(3),
+                        minHeight: members.length === 0 ? 56 : undefined,
+                        maxHeight: 148,
+                        overflowY: members.length > 4 ? 'auto' : 'visible',
+                        overflowX: 'hidden',
+                        '&::-webkit-scrollbar': { width: 5 },
+                        '&::-webkit-scrollbar-track': {
+                          background: alpha(BRAND, 0.06),
+                          borderRadius: 8,
+                        },
+                        '&::-webkit-scrollbar-thumb': {
+                          background: alpha(BRAND, 0.35),
+                          borderRadius: 8,
+                          '&:hover': { background: alpha(BRAND, 0.5) },
+                        },
+                      }}
+                    >
+                      {members.length === 0 ? (
+                        <Box
+                          sx={{
+                            height: '100%',
+                            minHeight: 40,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <Typography variant="caption" sx={{ color: alpha(BRAND, 0.45), fontWeight: 600 }}>
+                            No members assigned
+                          </Typography>
+                        </Box>
+                      ) : (
+                        <Stack spacing={0.75}>
+                          {members.map((member) => (
+                            <Box
+                              key={member.id || `${member.user_id}-${member.role_id}`}
+                              display="flex"
+                              alignItems="center"
+                              gap={1}
+                            >
+                              <Avatar
+                                sx={{
+                                  width: 28,
+                                  height: 28,
                                   bgcolor: getAvatarColor(member.user_id),
-                                  fontSize: 14,
-                                  fontWeight: 600,
-                                  boxShadow: `0 2px 8px ${alpha(getAvatarColor(member.user_id), 0.3)}`
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  color: BRAND,
+                                  boxShadow: `1px 1px 3px ${SKEU_DARK}`,
+                                  flexShrink: 0,
                                 }}
                               >
                                 {(member.full_name || '?')
                                   .split(' ')
                                   .filter(Boolean)
-                                  .map(n => n[0])
+                                  .map((n) => n[0])
                                   .join('')
                                   .toUpperCase() || '?'}
                               </Avatar>
-                              <Box flex={1} minWidth={0}>
-                                <Typography 
-                                  variant="body2" 
-                                  sx={{ 
-                                    fontWeight: 600,
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap'
-                                  }}
-                                >
-                                  {member.full_name}
-                                </Typography>
-                                <Chip 
-                                  label={member.role_desc || 'Member'} 
-                                  size="small" 
-                                  sx={{ 
-                                    height: 22, 
-                                    fontSize: '0.7rem',
-                                    bgcolor: getRoleColor(member.role_id),
-                                    color: theme.palette.getContrastText(getRoleColor(member.role_id)),
-                                    fontWeight: 600,
-                                    mt: 0.5
-                                  }}
-                                />
-                              </Box>
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  flex: 1,
+                                  minWidth: 0,
+                                  fontWeight: 700,
+                                  fontSize: '0.8rem',
+                                  color: BRAND,
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {member.full_name}
+                              </Typography>
+                              <Chip
+                                label={member.role_desc || 'Member'}
+                                size="small"
+                                sx={{
+                                  height: 20,
+                                  fontSize: '0.65rem',
+                                  fontWeight: 700,
+                                  flexShrink: 0,
+                                  bgcolor: getRoleColor(member.role_id),
+                                  color: theme.palette.getContrastText(getRoleColor(member.role_id)),
+                                }}
+                              />
                             </Box>
                           ))}
                         </Stack>
-                      </Box>
+                      )}
                     </Box>
 
                     {/* Actions */}
-                    <Box display="flex" gap={1} pt={1} borderTop={`1px solid ${alpha(theme.palette.divider, 0.5)}`} flexShrink={0}>
+                    <Box display="flex" gap={1}>
                       <Tooltip title="Edit team">
-                        <IconButton 
-                          color="primary"
+                        <IconButton
                           onClick={() => handleEditClick(team)}
                           size="small"
                           sx={{
                             flex: 1,
+                            height: 34,
                             borderRadius: '10px',
-                            backgroundColor: alpha('#0088FE', 0.15),
+                            color: BRAND,
+                            background: `linear-gradient(145deg, ${SKEU_LIGHT}, ${SKEU_BG})`,
+                            boxShadow: skeuRaised(3),
                             '&:hover': {
-                              backgroundColor: alpha('#0088FE', 0.25)
-                            }
+                              background: `linear-gradient(145deg, ${SKEU_LIGHT}, ${SKEU_BG})`,
+                              boxShadow: skeuRaised(4),
+                            },
                           }}
                         >
-                          <EditIcon fontSize="small" />
+                          <EditIcon sx={{ fontSize: 18 }} />
                         </IconButton>
                       </Tooltip>
                       <Tooltip title="Delete team">
-                        <IconButton 
-                          color="error"
+                        <IconButton
                           onClick={() => handleDeleteClick(team.team_id)}
                           size="small"
                           sx={{
                             flex: 1,
+                            height: 34,
                             borderRadius: '10px',
-                            backgroundColor: alpha(theme.palette.error.main, 0.1),
+                            color: theme.palette.error.main,
+                            background: `linear-gradient(145deg, ${SKEU_LIGHT}, ${SKEU_BG})`,
+                            boxShadow: skeuRaised(3),
                             '&:hover': {
-                              backgroundColor: alpha(theme.palette.error.main, 0.2)
-                            }
+                              background: alpha(theme.palette.error.main, 0.08),
+                              boxShadow: skeuRaised(4),
+                            },
                           }}
                         >
-                          <DeleteIcon fontSize="small" />
+                          <DeleteIcon sx={{ fontSize: 18 }} />
                         </IconButton>
                       </Tooltip>
                     </Box>
                   </CardContent>
                 </TeamCard>
               </Fade>
-            </Box>
-          ))}
+            );
+          })}
         </Box>
       ) : (
         <StyledCard>
@@ -949,12 +1043,12 @@ const TeamManagement = () => {
                       <Box display="flex" alignItems="center" gap={2}>
                         <Avatar 
                           sx={{ 
-                            background: `#0088FE`,
-                            color: '#6b7f9f',
+                            background: BRAND_GRADIENT,
+                            color: '#fff',
                             width: 44,
                             height: 44,
                             fontWeight: 700,
-                            boxShadow: `0 4px 12px ${alpha('#0088FE', 0.3)}`
+                            boxShadow: `0 4px 12px ${alpha(BRAND, 0.3)}`
                           }}
                         >
                           {(team.team_name || 'T').charAt(0).toUpperCase()}
@@ -1021,31 +1115,32 @@ const TeamManagement = () => {
                       <Stack direction="row" spacing={1} justifyContent="flex-end">
                         <Tooltip title="Edit team">
                           <IconButton 
-                            color="primary"
-                            onClick={() => handleEditClick(team)}
-                            size="small"
-                            sx={{
-                              backgroundColor: alpha(theme.palette.primary.main, 0.1),
-                              '&:hover': {
-                                backgroundColor: alpha(theme.palette.primary.main, 0.2)
-                              }
-                            }}
-                          >
-                            <EditIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Delete team">
-                          <IconButton 
-                            color="error"
-                            onClick={() => handleDeleteClick(team.team_id)}
-                            size="small"
-                            sx={{
-                              backgroundColor: alpha(theme.palette.error.main, 0.1),
-                              '&:hover': {
-                                backgroundColor: alpha(theme.palette.error.main, 0.2)
-                              }
-                            }}
-                          >
+                          color="primary"
+                          onClick={() => handleEditClick(team)}
+                          size="small"
+                          sx={{
+                            backgroundColor: alpha(BRAND, 0.1),
+                            color: BRAND,
+                            '&:hover': {
+                              backgroundColor: alpha(BRAND, 0.18)
+                            }
+                          }}
+                        >
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Delete team">
+                        <IconButton 
+                          color="error"
+                          onClick={() => handleDeleteClick(team.team_id)}
+                          size="small"
+                          sx={{
+                            backgroundColor: alpha(theme.palette.error.main, 0.1),
+                            '&:hover': {
+                              backgroundColor: alpha(theme.palette.error.main, 0.2)
+                            }
+                          }}
+                        >
                             <DeleteIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>

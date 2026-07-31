@@ -29,13 +29,23 @@ import { Save, Close, Add, Delete } from "@mui/icons-material";
 
 type LengthUnit = 'ft' | 'in';
 
+/** Trim trailing zeros without turning 120 into 12. */
+const formatLengthNumber = (n: number): string => {
+  if (!Number.isFinite(n) || n < 0) return '';
+  return n
+    .toFixed(4)
+    .replace(/(\.\d*?[1-9])0+$/, '$1')
+    .replace(/\.0+$/, '')
+    .replace(/\.$/, '');
+};
+
 /** Convert a user-entered length to feet for storage. */
 const toFeet = (value: string | number, unit: LengthUnit): string => {
   if (value === '' || value === null || value === undefined) return '';
   const num = typeof value === 'number' ? value : parseFloat(String(value));
   if (Number.isNaN(num) || num < 0) return '';
   const feet = unit === 'in' ? num / 12 : num;
-  return feet.toFixed(4).replace(/\.?0+$/, '') || '0';
+  return formatLengthNumber(feet) || '0';
 };
 
 /** Convert stored feet to the display unit. */
@@ -44,10 +54,9 @@ const fromFeet = (feetValue: string | number | undefined | null, unit: LengthUni
   const feet = typeof feetValue === 'number' ? feetValue : parseFloat(String(feetValue));
   if (Number.isNaN(feet)) return '';
   if (unit === 'in') {
-    const inches = feet * 12;
-    return inches.toFixed(4).replace(/\.?0+$/, '') || '0';
+    return formatLengthNumber(feet * 12) || '0';
   }
-  return feet.toFixed(4).replace(/\.?0+$/, '') || '0';
+  return formatLengthNumber(feet) || '0';
 };
 
 interface Transaction {
@@ -148,10 +157,13 @@ const EditTransactionDialog: React.FC<EditTransactionDialogProps> = ({
   };
 
   const handleLengthUnitChange = (unit: LengthUnit) => {
-    // Convert current stored feet into the newly selected display unit
-    const storedFeet = transaction?.length ?? toFeet(lengthInput, lengthUnit);
+    // Convert from the value currently shown in the input (source of truth), not a possibly stale parent field
+    const storedFeet = toFeet(lengthInput, lengthUnit) || String(transaction?.length ?? '');
     setLengthUnit(unit);
     setLengthInput(fromFeet(storedFeet, unit));
+    if (storedFeet !== '') {
+      handleFieldChange('length', storedFeet);
+    }
   };
 
   const handleSave = () => {

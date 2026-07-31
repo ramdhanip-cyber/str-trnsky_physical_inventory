@@ -12,7 +12,10 @@ import {
   Chip,
   IconButton,
   Tabs,
-  Tab
+  Tab,
+  Avatar,
+  Stack,
+  alpha,
 } from "@mui/material";
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
@@ -20,8 +23,12 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import CloseIcon from '@mui/icons-material/Close';
 import StorageIcon from '@mui/icons-material/Storage';
 import DownloadIcon from '@mui/icons-material/Download';
+import LayersIcon from '@mui/icons-material/Layers';
 import * as XLSX from 'xlsx';
 import { servicesAPI } from '../config/api';
+
+const BRAND = '#0C2C48';
+const BRAND_GRADIENT = 'linear-gradient(135deg, #0C2C48 0%, #1E5A8A 100%)';
 
 interface SectionsProps {
   open: boolean;
@@ -363,32 +370,96 @@ const Sections: React.FC<SectionsProps> = ({
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
-      <DialogTitle>
-        {creationSuccess ? "Sections Created Successfully" : "Create New Sections"}
-        <Typography
-          variant="body2"
-          color="textSecondary"
-          style={{ marginTop: "5px", fontSize: "0.875rem" }}
+    <Dialog
+      open={open}
+      onClose={handleClose}
+      maxWidth="md"
+      fullWidth
+      PaperProps={{
+        sx: {
+          borderRadius: 2,
+          overflow: 'hidden',
+          boxShadow: '0 16px 48px rgba(12,44,72,0.2)',
+        },
+      }}
+    >
+      <DialogTitle
+        sx={{
+          background: BRAND_GRADIENT,
+          color: '#fff',
+          py: 2,
+          px: 2.5,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1.5,
+        }}
+      >
+        <Avatar
+          sx={{
+            width: 40,
+            height: 40,
+            bgcolor: 'rgba(255,255,255,0.16)',
+            border: '1px solid rgba(255,255,255,0.25)',
+          }}
         >
-          for {location_desc} | {branch} | {warehouse}
-        </Typography>
+          {creationSuccess ? <CheckCircleIcon sx={{ fontSize: 22 }} /> : <LayersIcon sx={{ fontSize: 22 }} />}
+        </Avatar>
+        <Box flex={1} minWidth={0}>
+          <Typography variant="h6" fontWeight={700} sx={{ lineHeight: 1.2 }}>
+            {creationSuccess ? 'Sections Created Successfully' : 'Create New Sections'}
+          </Typography>
+          <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.72)' }}>
+            {location_desc} · {branch} · {warehouse}
+          </Typography>
+        </Box>
+        <IconButton
+          onClick={handleClose}
+          size="small"
+          sx={{
+            color: '#fff',
+            bgcolor: 'rgba(255,255,255,0.12)',
+            '&:hover': { bgcolor: 'rgba(255,255,255,0.22)' },
+          }}
+        >
+          <CloseIcon fontSize="small" />
+        </IconButton>
       </DialogTitle>
-      <DialogContent>
+
+      <DialogContent sx={{ px: 2.5, pt: 2.5, pb: 1.5 }}>
         {hasExistingSections && !creationSuccess && (
-          <Alert severity="info" sx={{ mb: 2 }}>
-            Sections already exist for this location: {existingSections.join(", ")}
+          <Alert severity="info" sx={{ mb: 2, borderRadius: 1.5 }}>
+            Sections already exist for this location: {existingSections.join(', ')}
           </Alert>
         )}
 
         {creationSuccess ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 3 }}>
-            <CheckCircleIcon color="success" sx={{ fontSize: 60, mb: 2 }} />
-            <Typography variant="h6" color="textSecondary" gutterBottom>
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              py: 4,
+              px: 2,
+              borderRadius: 2,
+              border: `1px solid ${alpha(BRAND, 0.1)}`,
+              bgcolor: alpha('#2e7d32', 0.04),
+            }}
+          >
+            <Avatar
+              sx={{
+                width: 64,
+                height: 64,
+                mb: 2,
+                background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+              }}
+            >
+              <CheckCircleIcon sx={{ fontSize: 36 }} />
+            </Avatar>
+            <Typography variant="h6" fontWeight={700} sx={{ color: BRAND, mb: 0.5 }}>
               Sections Created
             </Typography>
             {success && (
-              <Typography variant="body1" sx={{ mb: 2 }}>
+              <Typography variant="body2" color="text.secondary" textAlign="center">
                 {success}
               </Typography>
             )}
@@ -396,27 +467,53 @@ const Sections: React.FC<SectionsProps> = ({
         ) : (
           <>
             {error && (
-              <Alert severity="error" sx={{ mb: 2 }}>
+              <Alert severity="error" sx={{ mb: 2, borderRadius: 1.5 }} onClose={() => setError(null)}>
                 {error}
               </Alert>
             )}
+            {success && (
+              <Alert severity="success" sx={{ mb: 2, borderRadius: 1.5 }} onClose={() => setSuccess(null)}>
+                {success}
+              </Alert>
+            )}
 
-            <Tabs value={activeTab} onChange={(_, newValue) => setActiveTab(newValue)} sx={{ mb: 2 }}>
-              <Tab 
-                icon={<CloudUploadIcon />} 
-                label="Upload Excel File" 
-                iconPosition="start"
-              />
-              <Tab 
-                icon={<StorageIcon />} 
-                label="Select from Preload" 
-                iconPosition="start"
-              />
+            <Tabs
+              value={activeTab}
+              onChange={(_, newValue) => setActiveTab(newValue)}
+              sx={{
+                mb: 2.5,
+                minHeight: 44,
+                borderBottom: `1px solid ${alpha(BRAND, 0.1)}`,
+                '& .MuiTab-root': {
+                  textTransform: 'none',
+                  fontWeight: 700,
+                  minHeight: 44,
+                  color: alpha(BRAND, 0.5),
+                  '&.Mui-selected': { color: BRAND },
+                },
+                '& .MuiTabs-indicator': {
+                  height: 3,
+                  borderRadius: '3px 3px 0 0',
+                  background: BRAND_GRADIENT,
+                },
+              }}
+            >
+              <Tab icon={<CloudUploadIcon />} label="Upload Excel File" iconPosition="start" />
+              <Tab icon={<StorageIcon />} label="Select from Preload" iconPosition="start" />
             </Tabs>
 
             {activeTab === 0 && (
               <Box>
-                <Box sx={{ mb: 3 }}>
+                <Box
+                  sx={{
+                    p: 2.5,
+                    mb: 2,
+                    borderRadius: 2,
+                    border: `1px dashed ${alpha(BRAND, 0.25)}`,
+                    bgcolor: alpha(BRAND, 0.02),
+                    textAlign: 'center',
+                  }}
+                >
                   <input
                     accept=".xlsx,.xls,.csv"
                     style={{ display: 'none' }}
@@ -426,60 +523,108 @@ const Sections: React.FC<SectionsProps> = ({
                   />
                   <label htmlFor="excel-upload">
                     <Button
-                      variant="outlined"
+                      variant="contained"
                       component="span"
                       startIcon={<CloudUploadIcon />}
-                      sx={{ mb: 2 }}
+                      sx={{
+                        mb: 1.25,
+                        textTransform: 'none',
+                        fontWeight: 700,
+                        background: BRAND_GRADIENT,
+                        boxShadow: 'none',
+                        '&:hover': {
+                          background: BRAND_GRADIENT,
+                          filter: 'brightness(1.05)',
+                          boxShadow: 'none',
+                        },
+                      }}
                     >
                       Upload Excel File
                     </Button>
                   </label>
-                  <Typography variant="body2" color="textSecondary" sx={{ ml: 1 }}>
+                  <Typography variant="body2" color="text.secondary">
                     Upload an Excel file with section names in the first column
                   </Typography>
                 </Box>
 
                 {uploadedFile && (
-                  <Box sx={{ mb: 2 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                      <DescriptionIcon color="primary" />
-                      <Typography variant="body1">
-                        {uploadedFile.name}
-                      </Typography>
-                      <IconButton size="small" onClick={handleRemoveFile}>
-                        <CloseIcon />
+                  <Box
+                    sx={{
+                      mb: 2,
+                      p: 1.75,
+                      borderRadius: 2,
+                      border: `1px solid ${alpha(BRAND, 0.12)}`,
+                      bgcolor: alpha(BRAND, 0.02),
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, mb: cleanedSections.length || isProcessing ? 1.5 : 0 }}>
+                      <Avatar
+                        sx={{
+                          width: 36,
+                          height: 36,
+                          background: BRAND_GRADIENT,
+                        }}
+                      >
+                        <DescriptionIcon sx={{ fontSize: 18 }} />
+                      </Avatar>
+                      <Box flex={1} minWidth={0}>
+                        <Typography variant="body2" fontWeight={700} noWrap sx={{ color: BRAND }}>
+                          {uploadedFile.name}
+                        </Typography>
+                        {cleanedSections.length > 0 && (
+                          <Typography variant="caption" color="text.secondary">
+                            {cleanedSections.length} unique sections
+                            {duplicatesRemoved > 0 && ` · ${duplicatesRemoved} duplicates removed`}
+                          </Typography>
+                        )}
+                      </Box>
+                      <IconButton
+                        size="small"
+                        onClick={handleRemoveFile}
+                        sx={{
+                          color: 'error.main',
+                          border: `1px solid ${alpha('#d32f2f', 0.25)}`,
+                          borderRadius: 1.5,
+                        }}
+                      >
+                        <CloseIcon fontSize="small" />
                       </IconButton>
                     </Box>
-                    
+
                     {isProcessing && (
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <CircularProgress size={20} />
-                        <Typography variant="body2">Processing file...</Typography>
-                      </Box>
+                      <Stack direction="row" alignItems="center" spacing={1}>
+                        <CircularProgress size={18} sx={{ color: BRAND }} />
+                        <Typography variant="body2" color="text.secondary">
+                          Processing file…
+                        </Typography>
+                      </Stack>
                     )}
 
                     {cleanedSections.length > 0 && (
-                      <Box>
-                        <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-                          Found {cleanedSections.length} unique sections
-                          {duplicatesRemoved > 0 && ` (${duplicatesRemoved} duplicates removed)`}
-                        </Typography>
-                        <Box sx={{ 
-                          maxHeight: 150, 
-                          overflow: 'auto', 
-                          border: '1px solid #e0e0e0', 
-                          borderRadius: 1, 
-                          p: 1 
-                        }}>
-                          {cleanedSections.map((section, index) => (
-                            <Chip 
-                              key={index} 
-                              label={section} 
-                              size="small" 
-                              sx={{ m: 0.5 }} 
-                            />
-                          ))}
-                        </Box>
+                      <Box
+                        sx={{
+                          maxHeight: 160,
+                          overflow: 'auto',
+                          p: 1,
+                          borderRadius: 1.5,
+                          border: `1px solid ${alpha(BRAND, 0.1)}`,
+                          bgcolor: '#fff',
+                        }}
+                      >
+                        {cleanedSections.map((section, index) => (
+                          <Chip
+                            key={index}
+                            label={section}
+                            size="small"
+                            sx={{
+                              m: 0.4,
+                              fontWeight: 600,
+                              color: BRAND,
+                              borderColor: alpha(BRAND, 0.2),
+                            }}
+                            variant="outlined"
+                          />
+                        ))}
                       </Box>
                     )}
                   </Box>
@@ -489,52 +634,82 @@ const Sections: React.FC<SectionsProps> = ({
 
             {activeTab === 1 && (
               <Box>
-                <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-                  Select sections from the preloaded list for {warehouse}
-                </Typography>
-                
+                <Box display="flex" alignItems="center" justifyContent="space-between" mb={1.5}>
+                  <Typography variant="body2" color="text.secondary">
+                    Select sections from the preloaded list for <strong>{warehouse}</strong>
+                  </Typography>
+                  {selectedPreloadSections.length > 0 && (
+                    <Chip
+                      size="small"
+                      label={`${selectedPreloadSections.length} selected`}
+                      sx={{
+                        height: 24,
+                        fontWeight: 700,
+                        fontSize: '0.7rem',
+                        color: '#fff',
+                        background: BRAND_GRADIENT,
+                      }}
+                    />
+                  )}
+                </Box>
+
                 {isLoadingPreload ? (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <CircularProgress size={20} />
-                    <Typography variant="body2">Loading preload sections...</Typography>
-                  </Box>
+                  <Stack direction="row" alignItems="center" spacing={1} py={3} justifyContent="center">
+                    <CircularProgress size={20} sx={{ color: BRAND }} />
+                    <Typography variant="body2" color="text.secondary">
+                      Loading preload sections…
+                    </Typography>
+                  </Stack>
                 ) : (
-                  <Box sx={{ 
-                    maxHeight: 300, 
-                    overflow: 'auto', 
-                    border: '1px solid #e0e0e0', 
-                    borderRadius: 1, 
-                    p: 1 
-                  }}>
+                  <Box
+                    sx={{
+                      maxHeight: 300,
+                      overflow: 'auto',
+                      p: 1.25,
+                      borderRadius: 2,
+                      border: `1px solid ${alpha(BRAND, 0.12)}`,
+                      bgcolor: alpha(BRAND, 0.02),
+                    }}
+                  >
                     {Array.isArray(preloadSections) && preloadSections.length > 0 ? (
                       preloadSections
-                        .filter(section => section.loc_loc && section.loc_loc.trim() !== '')
+                        .filter((section) => section.loc_loc && section.loc_loc.trim() !== '')
                         .map((section, index) => {
                           const isExisting = currentExistingSections.includes(section.loc_loc);
                           const isSelected = selectedPreloadSections.includes(section.loc_loc);
-                          
+
                           return (
                             <Chip
                               key={index}
                               label={isExisting ? `${section.loc_loc} (Already Created)` : section.loc_loc}
                               onClick={() => handlePreloadSectionToggle(section.loc_loc)}
-                              color={isSelected ? "primary" : isExisting ? "default" : "default"}
-                              variant={isSelected ? "filled" : "outlined"}
+                              color={isSelected ? 'primary' : 'default'}
+                              variant={isSelected ? 'filled' : 'outlined'}
                               disabled={isExisting}
-                              sx={{ 
+                              sx={{
                                 m: 0.5,
+                                fontWeight: 600,
                                 opacity: isExisting ? 0.5 : 1,
                                 cursor: isExisting ? 'not-allowed' : 'pointer',
+                                ...(isSelected
+                                  ? {
+                                      background: BRAND_GRADIENT,
+                                      color: '#fff',
+                                    }
+                                  : {
+                                      color: BRAND,
+                                      borderColor: alpha(BRAND, 0.25),
+                                    }),
                                 '&.Mui-disabled': {
                                   opacity: 0.5,
-                                  textDecoration: 'line-through'
-                                }
+                                  textDecoration: 'line-through',
+                                },
                               }}
                             />
                           );
                         })
                     ) : (
-                      <Typography variant="body2" color="textSecondary">
+                      <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
                         No preload sections available for {warehouse}
                       </Typography>
                     )}
@@ -545,54 +720,85 @@ const Sections: React.FC<SectionsProps> = ({
           </>
         )}
       </DialogContent>
-      <DialogActions>
+
+      <DialogActions
+        sx={{
+          px: 2.5,
+          py: 2,
+          gap: 1,
+          borderTop: `1px solid ${alpha(BRAND, 0.08)}`,
+          flexWrap: 'wrap',
+        }}
+      >
         <Button
           onClick={handleExportSectionsManagement}
-          color="primary"
           variant="outlined"
-          startIcon={<DownloadIcon />}
+          startIcon={isExporting ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />}
           disabled={isExporting}
+          sx={{
+            mr: 'auto',
+            textTransform: 'none',
+            fontWeight: 600,
+            color: BRAND,
+            borderColor: alpha(BRAND, 0.25),
+            '&:hover': {
+              borderColor: BRAND,
+              bgcolor: alpha(BRAND, 0.04),
+            },
+          }}
         >
-          {isExporting ? (
-            <>
-              <CircularProgress size={18} sx={{ mr: 1 }} />
-              Exporting...
-            </>
-          ) : 'Export'}
+          {isExporting ? 'Exporting…' : 'Export'}
         </Button>
-        <Button onClick={handleClose} color="primary">
-          {creationSuccess ? "Close" : "Cancel"}
+        <Button
+          onClick={handleClose}
+          sx={{ textTransform: 'none', fontWeight: 600, color: BRAND }}
+        >
+          {creationSuccess ? 'Close' : 'Cancel'}
         </Button>
         {!creationSuccess && !hasExistingSections && (
           <>
             {activeTab === 0 && cleanedSections.length > 0 && (
-              <Button 
-                onClick={handleCreateSections} 
-                color="primary" 
+              <Button
+                onClick={handleCreateSections}
                 variant="contained"
                 disabled={isCreating}
+                startIcon={isCreating ? <CircularProgress size={18} color="inherit" /> : <LayersIcon />}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 700,
+                  px: 2.5,
+                  background: BRAND_GRADIENT,
+                  boxShadow: 'none',
+                  '&:hover': {
+                    background: BRAND_GRADIENT,
+                    filter: 'brightness(1.05)',
+                    boxShadow: 'none',
+                  },
+                }}
               >
-                {isCreating ? (
-                  <>
-                    <CircularProgress size={20} sx={{ mr: 1 }} />
-                    Creating...
-                  </>
-                ) : "Create Sections"}
+                {isCreating ? 'Creating…' : 'Create Sections'}
               </Button>
             )}
             {activeTab === 1 && selectedPreloadSections.length > 0 && (
-              <Button 
-                onClick={handleCreateFromPreload} 
-                color="primary" 
+              <Button
+                onClick={handleCreateFromPreload}
                 variant="contained"
                 disabled={isCreating}
+                startIcon={isCreating ? <CircularProgress size={18} color="inherit" /> : <LayersIcon />}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 700,
+                  px: 2.5,
+                  background: BRAND_GRADIENT,
+                  boxShadow: 'none',
+                  '&:hover': {
+                    background: BRAND_GRADIENT,
+                    filter: 'brightness(1.05)',
+                    boxShadow: 'none',
+                  },
+                }}
               >
-                {isCreating ? (
-                  <>
-                    <CircularProgress size={20} sx={{ mr: 1 }} />
-                    Creating...
-                  </>
-                ) : `Create ${selectedPreloadSections.length} Sections`}
+                {isCreating ? 'Creating…' : `Create ${selectedPreloadSections.length} Sections`}
               </Button>
             )}
           </>

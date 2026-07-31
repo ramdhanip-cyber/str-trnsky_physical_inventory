@@ -4,7 +4,6 @@ import { useAuth } from "../context/AuthContext";
 import { getLoginPath } from "../config/appPath";
 import { getDefaultRouteForRole, orderRoles, parseUserRoles } from "../config/roleUtils";
 import {
-  AppBar,
   Box,
   CssBaseline,
   Divider,
@@ -13,7 +12,6 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
-  Toolbar,
   Typography,
   IconButton,
   Collapse,
@@ -40,9 +38,6 @@ import {
   AddLocationAlt,
   Category,
   Build,
-  History,
-  Settings,
-  Book,
   Reviews,
   Engineering,
   Inventory,
@@ -64,6 +59,7 @@ import {
   FactCheck,
   AutoAwesome,
   Inventory2,
+  Settings,
 } from "@mui/icons-material";
 import type { Theme } from "@mui/material/styles";
 
@@ -100,6 +96,8 @@ const ModernDrawer = styled(Drawer)(({ theme }) => ({
       duration: theme.transitions.duration.enteringScreen,
     }),
     overflowX: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
   },
 }));
 
@@ -111,6 +109,15 @@ const DrawerHeader = styled('div')(() => ({
   background: 'rgba(255,255,255,0.04)',
   borderBottom: '1px solid rgba(255,255,255,0.10)',
   minHeight: 72,
+  flexShrink: 0,
+}));
+
+const DrawerFooter = styled('div')(() => ({
+  flexShrink: 0,
+  marginTop: 'auto',
+  padding: '12px 14px 16px',
+  borderTop: '1px solid rgba(255,255,255,0.10)',
+  background: 'rgba(0,0,0,0.18)',
 }));
 
 const NavItem = styled(ListItemButton)<{ component?: ElementType; to?: string }>(() => ({
@@ -155,20 +162,6 @@ const NavItem = styled(ListItemButton)<{ component?: ElementType; to?: string }>
     },
   },
   '&.Mui-disabled': { opacity: 0.45 },
-}));
-
-const CategoryDivider = styled(Divider)(() => ({
-  margin: '12px 20px',
-  borderColor: 'rgba(255,255,255,0.10)',
-}));
-
-const AppHeader = styled(AppBar)(({ theme }) => ({
-  backgroundColor: theme.palette.background.default,
-  color: theme.palette.text.primary,
-  boxShadow: 'none',
-  borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
-  backdropFilter: 'blur(8px)',
-  zIndex: theme.zIndex.drawer + 1,
 }));
 
 const UserMenu = styled(Menu)(({ theme }) => ({
@@ -225,9 +218,9 @@ const menuItems = {
       icon: <Reviews />,
       path: null,
       subItems: [
-        { text: "Counter", icon: <Engineering />, path: "/assigned-counters" },
-        { text: "Checker", icon: <Inventory />, path: "/assigned-checkers" },
-        { text: "Checker Logs", icon: <Book />, path: "/checker-logs" }
+        { text: "Reconciliations", icon: <Engineering />, path: "/assigned-counters" },
+        { text: "Checker vs Counter", icon: <Inventory />, path: "/assigned-checkers" },
+        { text: "Adjustments", icon: <Tune />, path: "/adjustment" }
       ]
     },
     {
@@ -240,26 +233,6 @@ const menuItems = {
         { text: "Count", icon: <ListAlt />, path: "/reports/count" },
         { text: "Custom", icon: <Assessment />, path: "/reports/custom" }
       ]
-    }
-  ],
-  Common: [
-    {
-      text: "User Logs",
-      icon: <Book />,
-      path: "/logs",
-      subItems: []
-    },
-    {
-      text: "History",
-      icon: <History />,
-      path: "/history",
-      subItems: []
-    },
-    {
-      text: "Settings",
-      icon: <Settings />,
-      path: "/settings",
-      subItems: []
     }
   ]
 };
@@ -581,155 +554,138 @@ export default function ModernNavigation({ children }: NavigationProps) {
         )}
       </DrawerHeader>
 
-      <Box sx={{ overflowX: 'hidden', overflowY: 'auto', py: 1.5, flex: 1,
+      <Box sx={{ overflowX: 'hidden', overflowY: 'auto', py: 1.5, flex: 1, minHeight: 0,
         '&::-webkit-scrollbar': { width: 6 },
         '&::-webkit-scrollbar-thumb': { backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 3 },
         '&::-webkit-scrollbar-track': { backgroundColor: 'transparent' },
       }}>
-        {/* Only show Reconciler section if role is Reconciler */}
         {role === 'Reconciler' && (
           <Box key="Reconciler">
             {!collapsed && <CategoryLabel>Reconciler</CategoryLabel>}
             <List disablePadding>
               {renderMenuItems(menuItems.Reconciler)}
             </List>
-            <CategoryDivider />
           </Box>
         )}
-        {/* Always show Common section */}
-        <Box key="Common">
-          {!collapsed && <CategoryLabel>Common</CategoryLabel>}
-          <List disablePadding>
-            {renderMenuItems(menuItems.Common)}
-          </List>
-        </Box>
       </Box>
+
+      <DrawerFooter sx={{ px: collapsed ? 1 : 1.75 }}>
+        {!collapsed && (
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mb: 1.25 }}>
+            <Chip
+              icon={<Security sx={{ fontSize: '14px !important', color: 'rgba(255,255,255,0.9) !important' }} />}
+              label={role || 'Reconciler'}
+              size="small"
+              sx={{
+                height: 26,
+                borderRadius: 1.5,
+                fontWeight: 700,
+                fontSize: '0.7rem',
+                color: '#fff',
+                backgroundColor: 'rgba(255,255,255,0.12)',
+                border: '1px solid rgba(255,255,255,0.22)',
+                '& .MuiChip-icon': { ml: 0.5 },
+              }}
+            />
+            <Chip
+              label="SANDBOX"
+              size="small"
+              sx={{
+                height: 26,
+                borderRadius: 1.5,
+                fontWeight: 700,
+                fontSize: '0.65rem',
+                letterSpacing: '0.5px',
+                textTransform: 'uppercase',
+                color: '#FFE082',
+                backgroundColor: 'rgba(255,167,38,0.22)',
+                border: '1px solid rgba(255,167,38,0.4)',
+              }}
+            />
+          </Box>
+        )}
+
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            borderRadius: 2,
+            p: collapsed ? 0.5 : 1,
+            justifyContent: collapsed ? 'center' : 'flex-start',
+          }}
+        >
+          {!collapsed && (
+            <>
+              <ModernAvatar
+                sx={{
+                  width: 40,
+                  height: 40,
+                  bgcolor: 'rgba(255,255,255,0.18)',
+                  color: '#fff',
+                  fontWeight: 800,
+                  border: '2px solid rgba(255,255,255,0.28)',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+                  cursor: 'default',
+                  '&:hover': { transform: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.25)' },
+                }}
+              >
+                {fullName?.charAt(0).toUpperCase() || 'U'}
+              </ModernAvatar>
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Typography noWrap sx={{ fontWeight: 700, fontSize: '0.875rem', color: '#fff', lineHeight: 1.2 }}>
+                  {fullName || 'User'}
+                </Typography>
+                <Typography noWrap variant="caption" sx={{ color: 'rgba(255,255,255,0.55)', fontWeight: 600 }}>
+                  {role || 'Account'}
+                </Typography>
+              </Box>
+            </>
+          )}
+          <Tooltip title={collapsed ? (fullName || 'Account settings') : 'Account settings'} placement="right" arrow>
+            <IconButton
+              onClick={handleMenuOpen}
+              size="small"
+              aria-label="Account settings"
+              sx={{
+                width: 34,
+                height: 34,
+                color: 'rgba(255,255,255,0.9)',
+                bgcolor: 'rgba(255,255,255,0.12)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                '&:hover': { bgcolor: 'rgba(255,255,255,0.2)', color: '#fff' },
+              }}
+            >
+              <Settings sx={{ fontSize: 18 }} />
+            </IconButton>
+          </Tooltip>
+        </Box>
+      </DrawerFooter>
     </>
   );
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
       <CssBaseline />
-      <AppHeader
-        position="fixed"
+
+      <IconButton
+        color="inherit"
+        aria-label="open drawer"
+        onClick={handleDrawerToggle}
         sx={{
-          width: { sm: `calc(100% - ${collapsed ? collapsedWidth : drawerWidth}px)` },
-          ml: { sm: `${collapsed ? collapsedWidth : drawerWidth}px` },
-          transition: theme => theme.transitions.create(['width', 'margin'], {
-            easing: theme.transitions.easing.sharp,
-            duration: theme.transitions.duration.enteringScreen,
-          }),
+          display: { xs: 'inline-flex', sm: 'none' },
+          position: 'fixed',
+          top: 12,
+          left: 12,
+          zIndex: (theme) => theme.zIndex.drawer + 2,
+          bgcolor: '#0C2C48',
+          color: '#fff',
+          boxShadow: '0 6px 18px rgba(12,44,72,0.35)',
+          '&:hover': { bgcolor: '#123a5e' },
         }}
       >
-        <Toolbar sx={{ justifyContent: 'space-between' }}>
-          <IconButton
-            color="inherit"
-            aria-label="open drawer"
-            edge="start"
-            onClick={handleDrawerToggle}
-            sx={{ mr: 2, display: { sm: 'none' } }}
-          >
-            <MenuIcon />
-          </IconButton>
-
-          <Box sx={{ flexGrow: 1 }} />
-
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Chip
-              icon={<Security sx={{ fontSize: 18 }} />}
-              label={role || 'Reconciler'}
-              variant="outlined"
-              sx={{
-                borderRadius: 2,
-                fontWeight: 600,
-                borderColor: theme => alpha(theme.palette.primary.main, 0.4),
-                color: 'primary.main',
-                backgroundColor: theme => alpha(theme.palette.primary.main, 0.08),
-              }}
-            />
-            <Chip
-              label="SANDBOX"
-              size="small"
-              sx={(theme) => ({
-                borderRadius: 1.5,
-                fontWeight: 700,
-                fontSize: '0.7rem',
-                backgroundColor: alpha(theme.palette.warning.main, 0.15),
-                color: theme.palette.warning.dark,
-                border: `1px solid ${alpha(theme.palette.warning.main, 0.3)}`,
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-              })}
-            />
-            <Box>
-              <IconButton onClick={handleMenuOpen}>
-                <ModernAvatar>
-                  {fullName?.charAt(0).toUpperCase() || 'U'}
-                </ModernAvatar>
-              </IconButton>
-              <UserMenu
-                anchorEl={anchorEl}
-                open={Boolean(anchorEl)}
-                onClose={handleMenuClose}
-                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-              >
-                <Box sx={{ px: 2, py: 1 }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                    {fullName}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {role}
-                  </Typography>
-                </Box>
-                <Divider sx={{ my: 1 }} />
-                <MenuItem onClick={() => { handleMenuClose(); navigate('/profile'); }}>
-                  <AccountCircle />
-                  Profile
-                </MenuItem>
-                {userRoles.length > 1 && (
-                  <>
-                    <Divider sx={{ my: 1 }} />
-                    <Box sx={{ px: 2, py: 0.5, display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                      <SwapHoriz sx={{ fontSize: 16, color: 'text.secondary' }} />
-                      <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', letterSpacing: 0.4 }}>
-                        SWITCH ROLE
-                      </Typography>
-                    </Box>
-                    {userRoles.map((roleOption) => (
-                      <MenuItem
-                        key={roleOption}
-                        onClick={() => handleRoleSwitch(roleOption)}
-                        selected={roleOption === role}
-                        sx={{
-                          justifyContent: 'space-between',
-                          fontWeight: roleOption === role ? 600 : 400,
-                          bgcolor: roleOption === role
-                            ? (theme) => alpha(theme.palette.primary.main, 0.08)
-                            : 'transparent',
-                        }}
-                      >
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                          {getRoleIcon(roleOption)}
-                          <Typography variant="body2">{roleOption}</Typography>
-                        </Box>
-                        {roleOption === role && (
-                          <Check fontSize="small" color="primary" />
-                        )}
-                      </MenuItem>
-                    ))}
-                  </>
-                )}
-                <Divider sx={{ my: 1 }} />
-                <MenuItem onClick={() => { handleMenuClose(); setOpenLogoutDialog(true); }}>
-                  <LogoutIcon />
-                  Logout
-                </MenuItem>
-              </UserMenu>
-            </Box>
-          </Box>
-        </Toolbar>
-      </AppHeader>
+        <MenuIcon />
+      </IconButton>
 
       <ModernDrawer
         variant="permanent"
@@ -769,13 +725,23 @@ export default function ModernNavigation({ children }: NavigationProps) {
           p: 3,
           width: { sm: `calc(100% - ${collapsed ? collapsedWidth : drawerWidth}px)` },
           ml: { sm: `${collapsed ? collapsedWidth : drawerWidth}px` },
-          transition: theme => theme.transitions.create(['width', 'margin'], {
+          minHeight: '100vh',
+          bgcolor:
+            location.pathname === '/assigned-counters' ||
+            location.pathname === '/assigned-checkers' ||
+            location.pathname === '/locations' ||
+            location.pathname === '/users' ||
+            location.pathname === '/teams' ||
+            location.pathname === '/items' ||
+            location.pathname === '/stock-available'
+              ? '#e8eef4'
+              : 'background.default',
+          transition: theme => theme.transitions.create(['width', 'margin', 'background-color'], {
             easing: theme.transitions.easing.sharp,
             duration: theme.transitions.duration.enteringScreen,
           }),
         }}
       >
-        <Toolbar />
         {children}
       </Box>
 
@@ -792,6 +758,66 @@ export default function ModernNavigation({ children }: NavigationProps) {
       >
         {collapsed ? <ChevronRight /> : <ChevronLeft />}
       </ToggleButton>
+
+      <UserMenu
+        anchorEl={anchorEl}
+        open={Boolean(anchorEl)}
+        onClose={handleMenuClose}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+      >
+        <Box sx={{ px: 2, py: 1 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+            {fullName}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {role}
+          </Typography>
+        </Box>
+        <Divider sx={{ my: 1 }} />
+        <MenuItem onClick={() => { handleMenuClose(); navigate('/profile'); }}>
+          <AccountCircle />
+          Profile
+        </MenuItem>
+        {userRoles.length > 1 && (
+          <>
+            <Divider sx={{ my: 1 }} />
+            <Box sx={{ px: 2, py: 0.5, display: 'flex', alignItems: 'center', gap: 0.75 }}>
+              <SwapHoriz sx={{ fontSize: 16, color: 'text.secondary' }} />
+              <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', letterSpacing: 0.4 }}>
+                SWITCH ROLE
+              </Typography>
+            </Box>
+            {userRoles.map((roleOption) => (
+              <MenuItem
+                key={roleOption}
+                onClick={() => handleRoleSwitch(roleOption)}
+                selected={roleOption === role}
+                sx={{
+                  justifyContent: 'space-between',
+                  fontWeight: roleOption === role ? 600 : 400,
+                  bgcolor: roleOption === role
+                    ? (theme) => alpha(theme.palette.primary.main, 0.08)
+                    : 'transparent',
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                  {getRoleIcon(roleOption)}
+                  <Typography variant="body2">{roleOption}</Typography>
+                </Box>
+                {roleOption === role && (
+                  <Check fontSize="small" color="primary" />
+                )}
+              </MenuItem>
+            ))}
+          </>
+        )}
+        <Divider sx={{ my: 1 }} />
+        <MenuItem onClick={() => { handleMenuClose(); setOpenLogoutDialog(true); }}>
+          <LogoutIcon />
+          Logout
+        </MenuItem>
+      </UserMenu>
 
       <Dialog
         open={openLogoutDialog}

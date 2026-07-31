@@ -2566,6 +2566,16 @@ exports.editAndVerifyMarkedItem = async (req, res) => {
     // Use edited checker_count if provided, otherwise use qty from original transaction
     const finalCheckerCount = checker_count !== undefined ? checker_count : originalTransaction.qty;
 
+    // Length/width must stay in feet. Prefer explicit edited values (already converted by UI).
+    const resolvedLength =
+      length !== undefined && length !== null && String(length).trim() !== ''
+        ? length
+        : originalTransaction.length;
+    const resolvedWidth =
+      width !== undefined && width !== null && String(width).trim() !== ''
+        ? width
+        : originalTransaction.width;
+
     // 3. Update checker_sku_item with edited values and set verified=true;
     //    clear prior reconciler approval so a new cycle can be approved again
     // Use edited values if provided, otherwise keep existing values
@@ -2598,8 +2608,8 @@ exports.editAndVerifyMarkedItem = async (req, res) => {
       size || null,
       finish || null,
       ext_finish || null,
-      width !== undefined ? width : null,
-      length !== undefined ? length : null,
+      resolvedWidth,
+      resolvedLength,
       mill || null,
       heat || null,
       type || null,
@@ -2660,8 +2670,8 @@ exports.editAndVerifyMarkedItem = async (req, res) => {
       size || checkerSkuItem.size,
       finish || checkerSkuItem.finish,
       ext_finish || checkerSkuItem.ext_finish,
-      width || checkerSkuItem.width,
-      length || checkerSkuItem.length
+      resolvedWidth ?? checkerSkuItem.width,
+      resolvedLength ?? checkerSkuItem.length
     ]);
 
     // 5. Calculate total qty for bundle count type
@@ -2726,8 +2736,8 @@ exports.editAndVerifyMarkedItem = async (req, res) => {
         size || originalTransaction.size,
         finish || originalTransaction.finish,
         ext_finish || originalTransaction.ext_finish,
-        width || originalTransaction.width,
-        length || originalTransaction.length,
+        resolvedWidth,
+        resolvedLength,
         originalTransaction.count_type || 'piece',
         totalQty,
         finalCheckerCount,
@@ -2763,8 +2773,8 @@ exports.editAndVerifyMarkedItem = async (req, res) => {
         size || originalTransaction.size,
         finish || originalTransaction.finish,
         ext_finish || originalTransaction.ext_finish,
-        width || originalTransaction.width,
-        length || originalTransaction.length,
+        resolvedWidth,
+        resolvedLength,
         originalTransaction.count_type || 'piece',
         totalQty,
         finalCheckerCount,

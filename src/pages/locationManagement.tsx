@@ -24,7 +24,6 @@ import {
   Avatar,
   useTheme,
   alpha,
-  ListItemIcon,
   Skeleton,
   Stack,
   InputAdornment,
@@ -81,6 +80,7 @@ interface Warehouse {
   whs_whs_nm: string;
 }
 
+const BRAND = '#0C2C48';
 const BRAND_GRADIENT = 'linear-gradient(135deg, #0C2C48 0%, #1E5A8A 100%)';
 
 const STAT_GRADIENTS = {
@@ -88,6 +88,16 @@ const STAT_GRADIENTS = {
   warehouses: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
   itemGroups: 'linear-gradient(135deg, #fc4a1a 0%, #f7b733 100%)',
 };
+
+/** Soft clay surface for skeuomorphic depth */
+const SKEU_BG = '#e8eef4';
+const SKEU_LIGHT = '#ffffff';
+const SKEU_DARK = '#c5d0db';
+const skeuRaised = (size = 7) =>
+  `${size}px ${size}px ${size * 2}px ${SKEU_DARK}, -${size}px -${size}px ${size * 2}px ${SKEU_LIGHT}`;
+const skeuInset = (size = 4) =>
+  `inset ${size}px ${size}px ${size * 2}px ${SKEU_DARK}, inset -${size}px -${size}px ${size * 2}px ${SKEU_LIGHT}`;
+const skeuPressed = `inset 3px 3px 7px ${SKEU_DARK}, inset -2px -2px 5px ${SKEU_LIGHT}`;
 
 const LocationManagement: React.FC = () => {
   const theme = useTheme();
@@ -518,7 +528,7 @@ const LocationManagement: React.FC = () => {
 
   try {
     return (
-      <Box sx={{ p: 3, position: 'relative' }}>
+      <Box sx={{ p: 3, position: 'relative', bgcolor: SKEU_BG, minHeight: 'calc(100vh - 112px)' }}>
         {/* Refreshing Overlay */}
         {refreshing && !loading && (
           <Box sx={{
@@ -602,8 +612,8 @@ const LocationManagement: React.FC = () => {
           </Box>
         </Box>
 
-        {/* Stats Strip */}
-        <Grid container spacing={2} sx={{ mb: 3 }}>
+        {/* Stats Strip — skeuomorphic */}
+        <Grid container spacing={2.5} sx={{ mb: 3 }}>
           {[
             { label: 'Total Locations', value: locations.length, grad: BRAND_GRADIENT, icon: <Warehouse /> },
             { label: hasActiveFilters ? 'Filtered Results' : 'All Locations', value: filteredLocations.length, grad: STAT_GRADIENTS.filtered, icon: <Search /> },
@@ -611,23 +621,48 @@ const LocationManagement: React.FC = () => {
             { label: 'Item Groups', value: totalItemGroups, grad: STAT_GRADIENTS.itemGroups, icon: <Category /> },
           ].map((stat) => (
             <Grid item xs={6} md={3} key={stat.label}>
-              <Card sx={{
-                borderRadius: '16px',
-                border: '1px solid rgba(12,44,72,0.06)',
-                boxShadow: '0 6px 24px 0 rgba(12,44,72,0.05)',
-                height: '100%',
-                transition: 'transform 0.25s ease, box-shadow 0.25s ease',
-                '&:hover': { transform: 'translateY(-3px)', boxShadow: '0 14px 32px 0 rgba(12,44,72,0.12)' }
-              }}>
-                <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 2 }}>
-                  <Avatar sx={{ background: stat.grad, width: 44, height: 44, color: '#fff' }}>
+              <Card
+                elevation={0}
+                sx={{
+                  borderRadius: '18px',
+                  border: 'none',
+                  background: `linear-gradient(145deg, ${SKEU_LIGHT} 0%, ${SKEU_BG} 100%)`,
+                  boxShadow: skeuRaised(8),
+                  height: '100%',
+                  transition: 'box-shadow 0.18s ease, transform 0.18s ease',
+                  '&:hover': {
+                    transform: 'translateY(-2px)',
+                    boxShadow: skeuRaised(10),
+                  },
+                }}
+              >
+                <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 2.25, '&:last-child': { pb: 2.25 } }}>
+                  <Avatar
+                    sx={{
+                      background: stat.grad,
+                      width: 48,
+                      height: 48,
+                      color: '#fff',
+                      boxShadow: `3px 3px 8px ${SKEU_DARK}, inset 0 1px 0 ${alpha('#fff', 0.28)}`,
+                    }}
+                  >
                     {stat.icon}
                   </Avatar>
                   <Box>
-                    <Typography variant="h5" fontWeight={800} sx={{ color: theme.palette.primary.main, lineHeight: 1 }}>
+                    <Typography
+                      variant="h5"
+                      fontWeight={800}
+                      sx={{
+                        color: BRAND,
+                        lineHeight: 1,
+                        textShadow: '1px 1px 0 rgba(255,255,255,0.8)',
+                      }}
+                    >
                       {stat.value.toLocaleString()}
                     </Typography>
-                    <Typography variant="body2" color="text.secondary">{stat.label}</Typography>
+                    <Typography variant="body2" sx={{ mt: 0.5, color: alpha(BRAND, 0.55), fontWeight: 700 }}>
+                      {stat.label}
+                    </Typography>
                   </Box>
                 </CardContent>
               </Card>
@@ -635,21 +670,49 @@ const LocationManagement: React.FC = () => {
           ))}
         </Grid>
 
-      {/* Filters and Search */}
-      <Paper sx={{ p: 3, mb: 3, borderRadius: '16px', border: '1px solid rgba(12,44,72,0.06)', boxShadow: '0 6px 24px 0 rgba(12,44,72,0.05)' }}>
-        <Grid container spacing={2} alignItems="center">
-          <Grid item xs={12} md={6}>
+      {/* Filters and Search — skeuomorphic */}
+      <Paper
+        elevation={0}
+        sx={{
+          p: 2.5,
+          mb: 3,
+          borderRadius: '18px',
+          border: 'none',
+          background: `linear-gradient(145deg, ${SKEU_LIGHT} 0%, ${SKEU_BG} 100%)`,
+          boxShadow: skeuRaised(8),
+        }}
+      >
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: { xs: 'column', md: 'row' },
+            alignItems: { xs: 'stretch', md: 'center' },
+            justifyContent: 'space-between',
+            gap: 2,
+            minHeight: 40,
+          }}
+        >
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: { xs: 'column', sm: 'row' },
+              alignItems: { xs: 'stretch', sm: 'center' },
+              gap: 1.5,
+              flex: 1,
+              minWidth: 0,
+            }}
+          >
             <TextField
-              fullWidth
               variant="outlined"
               size="small"
               placeholder="Search by count, warehouse, or ID..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              sx={{ flex: 1, minWidth: { sm: 240 }, maxWidth: 440 }}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <Search color="action" />
+                    <Search sx={{ color: alpha(BRAND, 0.5) }} />
                   </InputAdornment>
                 ),
                 endAdornment: searchTerm ? (
@@ -665,31 +728,41 @@ const LocationManagement: React.FC = () => {
                   </InputAdornment>
                 ) : undefined,
                 sx: {
-                  borderRadius: 2,
-                  backgroundColor: alpha(theme.palette.action.hover, 0.08),
-                  '& .MuiOutlinedInput-notchedOutline': {
-                    borderColor: alpha(theme.palette.primary.main, 0.2),
+                  height: 40,
+                  borderRadius: 3,
+                  background: SKEU_BG,
+                  boxShadow: skeuInset(4),
+                  '& fieldset': { border: 'none' },
+                  '&.Mui-focused': {
+                    boxShadow: `${skeuInset(4)}, 0 0 0 2px ${alpha(BRAND, 0.18)}`,
                   },
-                  '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                    borderColor: theme.palette.primary.main,
-                  }
-                }
+                },
               }}
             />
-          </Grid>
-          <Grid item xs={6} md={2}>
-            <FormControl fullWidth size="small">
-              <InputLabel>Filter by Warehouse</InputLabel>
+
+            <FormControl size="small" sx={{ minWidth: { sm: 200 }, flexShrink: 0 }}>
+              <InputLabel sx={{ color: alpha(BRAND, 0.55), '&.Mui-focused': { color: BRAND } }}>
+                Filter by Warehouse
+              </InputLabel>
               <Select
                 value={selectedWarehouseFilter}
                 onChange={(e) => setSelectedWarehouseFilter(e.target.value)}
                 label="Filter by Warehouse"
-                sx={{ borderRadius: 2 }}
                 startAdornment={
                   <InputAdornment position="start">
-                    <Warehouse fontSize="small" />
+                    <Warehouse fontSize="small" sx={{ color: alpha(BRAND, 0.55) }} />
                   </InputAdornment>
                 }
+                sx={{
+                  height: 40,
+                  borderRadius: 3,
+                  background: SKEU_BG,
+                  boxShadow: skeuInset(4),
+                  '& fieldset': { border: 'none' },
+                  '&.Mui-focused': {
+                    boxShadow: `${skeuInset(4)}, 0 0 0 2px ${alpha(BRAND, 0.18)}`,
+                  },
+                }}
               >
                 <MenuItem value="">All Warehouses</MenuItem>
                 {getSafeWarehouses().map((warehouse, index) => (
@@ -699,48 +772,93 @@ const LocationManagement: React.FC = () => {
                 ))}
               </Select>
             </FormControl>
-          </Grid>
+          </Box>
 
-          <Grid item xs={12} md={2}>
-            <Box display="flex" justifyContent="flex-end" alignItems="center" gap={1}>
-              <Typography variant="body2" color="text.secondary">
-                {filteredLocations.length} locations
-              </Typography>
+          <Box
+            sx={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              alignSelf: { xs: 'flex-end', md: 'center' },
+              gap: 1,
+              flexShrink: 0,
+            }}
+          >
+            <Typography variant="body2" sx={{ color: alpha(BRAND, 0.55), fontWeight: 700, whiteSpace: 'nowrap' }}>
+              {filteredLocations.length} locations
+            </Typography>
+            <Box
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                height: 40,
+                px: '4px',
+                gap: '4px',
+                boxSizing: 'border-box',
+                borderRadius: '12px',
+                background: SKEU_BG,
+                boxShadow: skeuInset(3),
+              }}
+            >
               <Tooltip title="Clear Filters">
-                <IconButton 
-                  onClick={() => {
-                    setSearchTerm('');
-                    setSelectedWarehouseFilter('');
-                  }}
-                  disabled={!searchTerm && !selectedWarehouseFilter}
-                  sx={{
-                    backgroundColor: alpha(theme.palette.action.hover, 0.1),
-                    borderRadius: 2
-                  }}
-                >
-                  <Clear fontSize="small" />
-                </IconButton>
+                <span>
+                  <IconButton
+                    size="small"
+                    onClick={() => {
+                      setSearchTerm('');
+                      setSelectedWarehouseFilter('');
+                    }}
+                    disabled={!searchTerm && !selectedWarehouseFilter}
+                    sx={{
+                      borderRadius: 1.5,
+                      width: 32,
+                      height: 32,
+                      p: 0,
+                      color: BRAND,
+                      background: `linear-gradient(145deg, ${SKEU_LIGHT}, ${SKEU_BG})`,
+                      boxShadow: skeuRaised(3),
+                      '&:hover': {
+                        background: `linear-gradient(145deg, ${SKEU_LIGHT}, ${SKEU_BG})`,
+                      },
+                      '&:active': { boxShadow: skeuPressed },
+                      '&.Mui-disabled': {
+                        boxShadow: 'none',
+                        background: 'transparent',
+                      },
+                    }}
+                  >
+                    <Clear fontSize="small" />
+                  </IconButton>
+                </span>
               </Tooltip>
               <Tooltip title="Refresh">
-                <IconButton 
+                <IconButton
+                  size="small"
                   onClick={handleRefresh}
                   disabled={refreshing}
                   sx={{
-                    backgroundColor: alpha(theme.palette.action.hover, 0.1),
-                    borderRadius: 2
+                    borderRadius: 1.5,
+                    width: 32,
+                    height: 32,
+                    p: 0,
+                    color: '#fff',
+                    background: BRAND_GRADIENT,
+                    boxShadow: `2px 2px 5px ${SKEU_DARK}, inset 0 1px 0 ${alpha('#fff', 0.2)}`,
+                    '&:hover': { background: BRAND_GRADIENT, filter: 'brightness(1.05)' },
+                    '&:active': { boxShadow: skeuPressed },
+                    '&.Mui-disabled': { opacity: 0.6 },
                   }}
                 >
                   <Refresh fontSize="small" />
                 </IconButton>
               </Tooltip>
             </Box>
-          </Grid>
-        </Grid>
+          </Box>
+        </Box>
         
         {/* Active Filters Display */}
         {(searchTerm || selectedWarehouseFilter) && (
           <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-            <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center' }}>
+            <Typography variant="body2" sx={{ color: alpha(BRAND, 0.55), fontWeight: 600, display: 'flex', alignItems: 'center' }}>
               Active filters:
             </Typography>
             {searchTerm && (
@@ -748,8 +866,14 @@ const LocationManagement: React.FC = () => {
                 label={`Search: "${searchTerm}"`}
                 size="small"
                 onDelete={() => setSearchTerm('')}
-                color="primary"
-                variant="outlined"
+                sx={{
+                  fontWeight: 600,
+                  color: BRAND,
+                  background: `linear-gradient(145deg, ${SKEU_LIGHT}, ${SKEU_BG})`,
+                  boxShadow: skeuRaised(3),
+                  border: 'none',
+                  '& .MuiChip-deleteIcon': { color: alpha(BRAND, 0.55) },
+                }}
               />
             )}
             {selectedWarehouseFilter && (
@@ -757,8 +881,14 @@ const LocationManagement: React.FC = () => {
                 label={`Warehouse: ${selectedWarehouseFilter}`}
                 size="small"
                 onDelete={() => setSelectedWarehouseFilter('')}
-                color="primary"
-                variant="outlined"
+                sx={{
+                  fontWeight: 600,
+                  color: BRAND,
+                  background: `linear-gradient(145deg, ${SKEU_LIGHT}, ${SKEU_BG})`,
+                  boxShadow: skeuRaised(3),
+                  border: 'none',
+                  '& .MuiChip-deleteIcon': { color: alpha(BRAND, 0.55) },
+                }}
               />
             )}
           </Box>
@@ -1087,10 +1217,18 @@ const LocationManagement: React.FC = () => {
                         aria-label="more options"
                         onClick={(e) => handleMenuClick(e, location)}
                         sx={{
-                          backgroundColor: 'rgba(12,44,72,0.05)',
+                          width: 36,
+                          height: 36,
+                          color: BRAND,
+                          background: `linear-gradient(145deg, ${SKEU_LIGHT} 0%, ${SKEU_BG} 100%)`,
+                          boxShadow: skeuRaised(3),
                           '&:hover': {
-                            backgroundColor: alpha(theme.palette.primary.main, 0.14)
-                          }
+                            background: `linear-gradient(145deg, ${SKEU_LIGHT} 0%, ${SKEU_BG} 100%)`,
+                            boxShadow: skeuRaised(4),
+                          },
+                          '&:active': {
+                            boxShadow: skeuPressed,
+                          },
                         }}
                       >
                         <MoreVert />
@@ -1360,7 +1498,7 @@ const LocationManagement: React.FC = () => {
         )}
       </Paper>
 
-      {/* Context Menu */}
+      {/* Context Menu — skeuomorphic icons only */}
       <Menu
         anchorEl={anchorEl}
         open={Boolean(anchorEl)}
@@ -1373,39 +1511,109 @@ const LocationManagement: React.FC = () => {
           vertical: 'top',
           horizontal: 'right',
         }}
-        PaperProps={{
-          sx: {
-            borderRadius: '16px',
-            boxShadow: '0 8px 32px rgba(12,44,72,0.12)',
-            minWidth: 200
-          }
+        slotProps={{
+          paper: {
+            sx: {
+              mt: 1,
+              minWidth: 250,
+              borderRadius: 2,
+              overflow: 'hidden',
+              boxShadow: '0 8px 28px rgba(12,44,72,0.16)',
+            },
+          },
         }}
       >
-        <MenuList dense>
-          <MenuItem onClick={handleCreateSections}>
-            <ListItemIcon>
-              <Add fontSize="small" color="primary" />
-            </ListItemIcon>
-            <ListItemText primary="Create Sections" />
-          </MenuItem>
-          <MenuItem onClick={handleViewSections}>
-            <ListItemIcon>
-              <Visibility fontSize="small" color="info" />
-            </ListItemIcon>
-            <ListItemText primary="Assign Team to sections" />
-          </MenuItem>
-          <MenuItem onClick={handleAssignItem}>
-            <ListItemIcon>
-              <Assignment fontSize="small" color="warning" />
-            </ListItemIcon>
-            <ListItemText primary="Assign Item Group" />
-          </MenuItem>
-          <MenuItem onClick={handleDeletePhysicalInventory}>
-            <ListItemIcon>
-              <Delete fontSize="small" color="error" />
-            </ListItemIcon>
-            <ListItemText primary="Remove Physical Inventory" />
-          </MenuItem>
+        <Box
+          sx={{
+            px: 2,
+            py: 1.25,
+            background: BRAND_GRADIENT,
+          }}
+        >
+          <Typography
+            variant="caption"
+            sx={{
+              color: 'rgba(255,255,255,0.9)',
+              fontWeight: 800,
+              letterSpacing: 0.7,
+              textTransform: 'uppercase',
+            }}
+          >
+            Location actions
+          </Typography>
+        </Box>
+        <MenuList dense sx={{ py: 0.75 }}>
+          {(
+            [
+              {
+                label: 'Create Sections',
+                onClick: handleCreateSections,
+                icon: <Add fontSize="small" />,
+                grad: BRAND_GRADIENT,
+              },
+              {
+                label: 'Assign Team to sections',
+                onClick: handleViewSections,
+                icon: <Visibility fontSize="small" />,
+                grad: 'linear-gradient(145deg, #0f9b8e 0%, #38ef7d 55%, #1a7a6d 100%)',
+              },
+              {
+                label: 'Assign Item Group',
+                onClick: handleAssignItem,
+                icon: <Assignment fontSize="small" />,
+                grad: 'linear-gradient(145deg, #fc4a1a 0%, #f7b733 55%, #d97706 100%)',
+              },
+              {
+                label: 'Remove Physical Inventory',
+                onClick: handleDeletePhysicalInventory,
+                icon: <Delete fontSize="small" />,
+                grad: 'linear-gradient(145deg, #eb3349 0%, #f45c43 55%, #b71c1c 100%)',
+                danger: true,
+              },
+            ] as const
+          ).map((item) => (
+            <MenuItem
+              key={item.label}
+              onClick={item.onClick}
+              sx={{
+                py: 1.1,
+                px: 1.75,
+                gap: 1.5,
+                borderRadius: 0,
+                '&:hover': {
+                  bgcolor: alpha(BRAND, 0.06),
+                },
+              }}
+            >
+              <Avatar
+                sx={{
+                  width: 34,
+                  height: 34,
+                  background: item.grad,
+                  color: '#fff',
+                  border: `1px solid ${alpha('#fff', 0.35)}`,
+                  boxShadow: `
+                    3px 4px 8px ${alpha('#000', 0.22)},
+                    inset 0 2px 3px ${alpha('#fff', 0.45)},
+                    inset 0 -2px 4px ${alpha('#000', 0.22)}
+                  `,
+                  '& .MuiSvgIcon-root': {
+                    filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.25))',
+                  },
+                }}
+              >
+                {item.icon}
+              </Avatar>
+              <ListItemText
+                primary={item.label}
+                primaryTypographyProps={{
+                  fontWeight: 600,
+                  fontSize: '0.875rem',
+                  color: 'danger' in item && item.danger ? '#c62828' : BRAND,
+                }}
+              />
+            </MenuItem>
+          ))}
         </MenuList>
       </Menu>
 

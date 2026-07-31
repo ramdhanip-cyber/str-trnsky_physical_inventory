@@ -1050,7 +1050,7 @@ const Checker: React.FC = () => {
                     <TableCell>{transaction.width}</TableCell>
                     <TableCell>{transaction.finish}</TableCell>
                     <TableCell>{transaction.ext_finish}</TableCell>
-                    <TableCell>{transaction.length}</TableCell>
+                    <TableCell>{transaction.length ? `${transaction.length} ft` : '—'}</TableCell>
                     <TableCell>{transaction.type || '-'}</TableCell>
                     <TableCell>{transaction.location || '-'}</TableCell>
                     <TableCell>{transaction.remarks || '-'}</TableCell>

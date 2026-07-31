@@ -1,15 +1,40 @@
 import React, { useState } from 'react';
 import { servicesAPI } from '../config/api';
 import {
-  Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, FormControl, InputLabel, 
-  Select, MenuItem, OutlinedInput, Box, IconButton, Alert, Typography, Paper, 
-  Tooltip, Stack, Chip, Snackbar
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  OutlinedInput,
+  Box,
+  IconButton,
+  Alert,
+  Typography,
+  Avatar,
+  Chip,
+  Stack,
+  Divider,
+  Tooltip,
+  Snackbar,
+  CircularProgress,
+  alpha,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
-import RemoveIcon from '@mui/icons-material/Remove';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import GroupAddIcon from '@mui/icons-material/GroupAdd';
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import CloseIcon from '@mui/icons-material/Close';
+import PeopleIcon from '@mui/icons-material/People';
+import PersonIcon from '@mui/icons-material/Person';
 import { User, Role } from './teams';
+
+const BRAND = '#0C2C48';
+const BRAND_GRADIENT = 'linear-gradient(135deg, #0C2C48 0%, #1E5A8A 100%)';
 
 interface UserRole {
   userId: string;
@@ -29,6 +54,19 @@ const AddTeamDialog: React.FC<AddTeamDialogProps> = ({ open, onClose, onTeamCrea
   const [userRoles, setUserRoles] = useState<UserRole[]>([{ userId: '', roleId: '' }]);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const resetForm = () => {
+    setTeamName('');
+    setUserRoles([{ userId: '', roleId: '' }]);
+    setError(null);
+  };
+
+  const handleClose = () => {
+    if (loading) return;
+    resetForm();
+    onClose();
+  };
 
   const handleAddUserRole = () => {
     setUserRoles([...userRoles, { userId: '', roleId: '' }]);
@@ -36,7 +74,7 @@ const AddTeamDialog: React.FC<AddTeamDialogProps> = ({ open, onClose, onTeamCrea
 
   const handleRemoveUserRole = (index: number) => {
     const updatedUserRoles = userRoles.filter((_, i) => i !== index);
-    setUserRoles(updatedUserRoles);
+    setUserRoles(updatedUserRoles.length > 0 ? updatedUserRoles : [{ userId: '', roleId: '' }]);
   };
 
   const handleUserRoleChange = (index: number, key: keyof UserRole, value: string) => {
@@ -45,25 +83,25 @@ const AddTeamDialog: React.FC<AddTeamDialogProps> = ({ open, onClose, onTeamCrea
     setUserRoles(updatedUserRoles);
   };
 
+  const filledCount = userRoles.filter((ur) => ur.userId && ur.roleId).length;
+
   const validateForm = (): boolean => {
-    // Reset error
     setError(null);
 
-    // Check if team name is empty
     if (!teamName.trim()) {
       setError('Team name is required');
       return false;
     }
 
-    // Check if at least one user role is properly filled
-    const hasValidUserRole = userRoles.some(ur => ur.userId && ur.roleId);
+    const hasValidUserRole = userRoles.some((ur) => ur.userId && ur.roleId);
     if (!hasValidUserRole) {
       setError('At least one team member with a role is required');
       return false;
     }
 
-    // Check for incomplete user role pairs
-    const hasIncompleteUserRole = userRoles.some(ur => (!ur.userId && ur.roleId) || (ur.userId && !ur.roleId));
+    const hasIncompleteUserRole = userRoles.some(
+      (ur) => (!ur.userId && ur.roleId) || (ur.userId && !ur.roleId)
+    );
     if (hasIncompleteUserRole) {
       setError('Please complete both user and role selection for all team members');
       return false;
@@ -75,198 +113,320 @@ const AddTeamDialog: React.FC<AddTeamDialogProps> = ({ open, onClose, onTeamCrea
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
-    // Validate form
-    if (!validateForm()) {
-      return;
-    }
+    if (!validateForm()) return;
 
     const teamData = {
       teamName,
-      tagRange: { from: 0, to: 0 }, // Default value set to 0 since Tag Range is removed from UI
-      userRoles: userRoles.filter(ur => ur.userId && ur.roleId), // Only send complete user-role pairs
+      tagRange: { from: 0, to: 0 },
+      userRoles: userRoles.filter((ur) => ur.userId && ur.roleId),
     };
 
     try {
+      setLoading(true);
       const response = await servicesAPI.createTeam(teamData);
       if (response.data.success) {
         setSuccessMessage('Team created successfully!');
         await onTeamCreated();
+        resetForm();
         onClose();
-        setTeamName('');
-        setUserRoles([{ userId: '', roleId: '' }]);
-        setError(null);
       } else {
-        setError("Error creating team");
+        setError('Error creating team');
       }
-    } catch (error: unknown) {
-      console.error("Error submitting team:", error);
-      const errorMessage = error && typeof error === 'object' && 'response' in error && 
-        error.response && typeof error.response === 'object' && 'data' in error.response &&
-        error.response.data && typeof error.response.data === 'object' && 'message' in error.response.data
-        ? String(error.response.data.message)
-        : 'Failed to create team. Please try again.';
+    } catch (err: unknown) {
+      console.error('Error submitting team:', err);
+      const errorMessage =
+        err &&
+        typeof err === 'object' &&
+        'response' in err &&
+        err.response &&
+        typeof err.response === 'object' &&
+        'data' in err.response &&
+        err.response.data &&
+        typeof err.response.data === 'object' &&
+        'message' in err.response.data
+          ? String(err.response.data.message)
+          : 'Failed to create team. Please try again.';
       setError(errorMessage);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <>
-      <Dialog 
-        open={open} 
-        onClose={onClose} 
-        maxWidth="md" 
+      <Dialog
+        open={open}
+        onClose={handleClose}
+        maxWidth="sm"
         fullWidth
         PaperProps={{
           sx: {
             borderRadius: 2,
-            boxShadow: 3
-          }
+            overflow: 'hidden',
+            boxShadow: '0 16px 48px rgba(12,44,72,0.2)',
+          },
         }}
       >
-        <DialogTitle sx={{ 
-          pb: 1, 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: 1,
-          borderBottom: '1px solid',
-          borderColor: 'divider',
-          bgcolor: 'primary.main',
-          color: 'white'
-        }}>
-          <GroupAddIcon />
-          <Typography variant="h6" component="span">
-            Create New Team
-          </Typography>
+        <DialogTitle
+          sx={{
+            background: BRAND_GRADIENT,
+            color: '#fff',
+            py: 2,
+            px: 2.5,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1.5,
+          }}
+        >
+          <Avatar
+            sx={{
+              width: 40,
+              height: 40,
+              bgcolor: 'rgba(255,255,255,0.16)',
+              border: '1px solid rgba(255,255,255,0.25)',
+            }}
+          >
+            <GroupAddIcon sx={{ fontSize: 20 }} />
+          </Avatar>
+          <Box flex={1} minWidth={0}>
+            <Typography variant="h6" fontWeight={700} sx={{ lineHeight: 1.2 }}>
+              Create New Team
+            </Typography>
+            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.72)' }}>
+              Name the team and assign members with roles
+            </Typography>
+          </Box>
+          <IconButton
+            onClick={handleClose}
+            disabled={loading}
+            size="small"
+            sx={{
+              color: '#fff',
+              bgcolor: 'rgba(255,255,255,0.12)',
+              '&:hover': { bgcolor: 'rgba(255,255,255,0.22)' },
+            }}
+          >
+            <CloseIcon fontSize="small" />
+          </IconButton>
         </DialogTitle>
 
-        <DialogContent sx={{ pt: 3 }}>
-          {error && (
-            <Alert severity="error" sx={{ mb: 3 }}>
-              {error}
-            </Alert>
-          )}
-          <form onSubmit={handleSubmit}>
-            <Paper elevation={0} sx={{ p: 2, mb: 3, border: '1px solid', borderColor: 'divider' }}>
-              <Typography variant="subtitle1" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'primary.main' }}>
-                <GroupAddIcon fontSize="small" />
-                Team Information
-              </Typography>
-              <TextField
-                label="Team Name"
-                fullWidth
-                value={teamName}
-                onChange={(e) => setTeamName(e.target.value)}
-                required
-                sx={{ mt: 2 }}
-                placeholder="Enter team name"
-              />
-            </Paper>
+        <form onSubmit={handleSubmit}>
+          <DialogContent sx={{ px: 2.5, pt: 2.5, pb: 1.5 }}>
+            {error && (
+              <Alert severity="error" sx={{ mb: 2, borderRadius: 1.5 }} onClose={() => setError(null)}>
+                {error}
+              </Alert>
+            )}
 
-            <Paper elevation={0} sx={{ p: 2, mb: 3, border: '1px solid', borderColor: 'divider' }}>
-              <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                <Typography variant="subtitle1" sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'primary.main' }}>
-                  <GroupAddIcon fontSize="small" />
-                  Team Members
-                  <Tooltip title="Add team members and assign their roles">
-                    <InfoOutlinedIcon fontSize="small" sx={{ color: 'text.secondary', cursor: 'help' }} />
-                  </Tooltip>
+            <Typography
+              variant="caption"
+              sx={{
+                display: 'block',
+                mb: 1,
+                fontWeight: 700,
+                color: alpha(BRAND, 0.55),
+                textTransform: 'uppercase',
+                letterSpacing: 0.6,
+              }}
+            >
+              Team details
+            </Typography>
+            <TextField
+              label="Team Name"
+              fullWidth
+              value={teamName}
+              onChange={(e) => setTeamName(e.target.value)}
+              required
+              size="small"
+              placeholder="Enter team name"
+              sx={{ mb: 2.5 }}
+            />
+
+            <Box display="flex" alignItems="center" justifyContent="space-between" mb={1.5}>
+              <Box display="flex" alignItems="center" gap={1}>
+                <PeopleIcon sx={{ color: BRAND, fontSize: 20 }} />
+                <Typography fontWeight={700} sx={{ color: BRAND }}>
+                  Members
                 </Typography>
-                <Tooltip title="Add Team Member">
-                  <IconButton onClick={handleAddUserRole} color="primary" size="small">
-                    <AddIcon />
-                  </IconButton>
-                </Tooltip>
               </Box>
+              <Chip
+                size="small"
+                label={`${filledCount} assigned`}
+                sx={{
+                  height: 24,
+                  fontWeight: 700,
+                  fontSize: '0.7rem',
+                  color: '#fff',
+                  background: BRAND_GRADIENT,
+                }}
+              />
+            </Box>
 
-              <Stack spacing={2}>
-                {userRoles.map((userRole, index) => (
-                  <Paper 
-                    key={index} 
-                    elevation={0} 
-                    sx={{ 
-                      p: 2, 
-                      border: '1px solid', 
-                      borderColor: 'divider',
-                      borderRadius: 1,
+            <Stack
+              spacing={1.25}
+              sx={{
+                maxHeight: 320,
+                overflowY: 'auto',
+                pr: 0.5,
+                mb: 1.5,
+                '&::-webkit-scrollbar': { width: 5 },
+                '&::-webkit-scrollbar-thumb': {
+                  background: alpha(BRAND, 0.25),
+                  borderRadius: 8,
+                },
+              }}
+            >
+              {userRoles.map((userRole, index) => {
+                const selectedUser = users.find((u) => u.user_id.toString() === String(userRole.userId));
+                return (
+                  <Box
+                    key={index}
+                    sx={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 2 
+                      gap: 1.25,
+                      p: 1.25,
+                      borderRadius: 1.5,
+                      border: `1px solid ${alpha(BRAND, 0.12)}`,
+                      bgcolor: alpha(BRAND, 0.02),
                     }}
                   >
-                    <Chip 
-                      label={`Member ${index + 1}`} 
-                      size="small" 
-                      sx={{ minWidth: 80 }}
-                    />
-                    <FormControl fullWidth>
-                      <InputLabel>Select User</InputLabel>
+                    <Avatar
+                      sx={{
+                        width: 32,
+                        height: 32,
+                        flexShrink: 0,
+                        background: selectedUser ? BRAND_GRADIENT : alpha(BRAND, 0.1),
+                        color: selectedUser ? '#fff' : BRAND,
+                        fontSize: 12,
+                        fontWeight: 700,
+                      }}
+                    >
+                      {selectedUser ? (
+                        selectedUser.full_name
+                          .split(' ')
+                          .filter(Boolean)
+                          .map((n) => n[0])
+                          .join('')
+                          .toUpperCase()
+                          .slice(0, 2)
+                      ) : (
+                        <PersonIcon sx={{ fontSize: 16 }} />
+                      )}
+                    </Avatar>
+
+                    <FormControl fullWidth size="small">
+                      <InputLabel>User</InputLabel>
                       <Select
                         value={userRole.userId}
                         onChange={(e) => handleUserRoleChange(index, 'userId', e.target.value)}
-                        input={<OutlinedInput label="Select User" />}
-                        size="small"
+                        input={<OutlinedInput label="User" />}
                       >
                         {users.map((user) => (
-                          <MenuItem key={user.user_id} value={user.user_id}>
+                          <MenuItem key={user.user_id} value={user.user_id.toString()}>
                             {user.full_name}
                           </MenuItem>
                         ))}
                       </Select>
                     </FormControl>
 
-                    <FormControl fullWidth>
-                      <InputLabel>Select Role</InputLabel>
+                    <FormControl fullWidth size="small" sx={{ maxWidth: 160 }}>
+                      <InputLabel>Role</InputLabel>
                       <Select
                         value={userRole.roleId}
                         onChange={(e) => handleUserRoleChange(index, 'roleId', e.target.value)}
-                        input={<OutlinedInput label="Select Role" />}
-                        size="small"
+                        input={<OutlinedInput label="Role" />}
                       >
                         {roles.map((role) => (
-                          <MenuItem key={role.role_id} value={role.role_id}>
+                          <MenuItem key={role.role_id} value={role.role_id.toString()}>
                             {role.role_desc}
                           </MenuItem>
                         ))}
                       </Select>
                     </FormControl>
 
-                    <Tooltip title="Remove Member">
+                    <Tooltip title="Remove member">
                       <span>
-                        <IconButton 
-                          onClick={() => handleRemoveUserRole(index)} 
-                          color="error" 
+                        <IconButton
+                          onClick={() => handleRemoveUserRole(index)}
                           disabled={userRoles.length === 1}
                           size="small"
+                          sx={{
+                            color: 'error.main',
+                            border: `1px solid ${alpha('#d32f2f', 0.25)}`,
+                            borderRadius: 1.5,
+                            '&:hover': { bgcolor: alpha('#d32f2f', 0.06) },
+                          }}
                         >
-                          <RemoveIcon />
+                          <DeleteOutlineIcon fontSize="small" />
                         </IconButton>
                       </span>
                     </Tooltip>
-                  </Paper>
-                ))}
-              </Stack>
-            </Paper>
-          </form>
-        </DialogContent>
+                  </Box>
+                );
+              })}
+            </Stack>
 
-        <DialogActions sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider' }}>
-          <Button 
-            onClick={onClose} 
-            color="inherit" 
-            variant="outlined"
-            startIcon={<RemoveIcon />}
+            <Divider sx={{ mb: 1.5, borderColor: alpha(BRAND, 0.08) }} />
+
+            <Button
+              fullWidth
+              type="button"
+              onClick={handleAddUserRole}
+              startIcon={<AddIcon />}
+              variant="outlined"
+              sx={{
+                textTransform: 'none',
+                fontWeight: 600,
+                color: BRAND,
+                borderColor: alpha(BRAND, 0.25),
+                '&:hover': {
+                  borderColor: BRAND,
+                  bgcolor: alpha(BRAND, 0.04),
+                },
+              }}
+            >
+              Add member
+            </Button>
+          </DialogContent>
+
+          <DialogActions
+            sx={{
+              px: 2.5,
+              py: 2,
+              gap: 1,
+              borderTop: `1px solid ${alpha(BRAND, 0.08)}`,
+            }}
           >
-            Cancel
-          </Button>
-          <Button 
-            onClick={handleSubmit} 
-            color="primary" 
-            variant="contained"
-            startIcon={<GroupAddIcon />}
-          >
-            Create Team
-          </Button>
-        </DialogActions>
+            <Button
+              onClick={handleClose}
+              disabled={loading}
+              sx={{ textTransform: 'none', fontWeight: 600, color: BRAND }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={loading}
+              variant="contained"
+              startIcon={loading ? <CircularProgress size={18} color="inherit" /> : <GroupAddIcon />}
+              sx={{
+                textTransform: 'none',
+                fontWeight: 700,
+                px: 2.5,
+                background: BRAND_GRADIENT,
+                boxShadow: 'none',
+                '&:hover': {
+                  background: BRAND_GRADIENT,
+                  filter: 'brightness(1.05)',
+                  boxShadow: 'none',
+                },
+              }}
+            >
+              {loading ? 'Creating…' : 'Create Team'}
+            </Button>
+          </DialogActions>
+        </form>
       </Dialog>
 
       <Snackbar
@@ -275,9 +435,9 @@ const AddTeamDialog: React.FC<AddTeamDialogProps> = ({ open, onClose, onTeamCrea
         onClose={() => setSuccessMessage(null)}
         anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
-        <Alert 
-          onClose={() => setSuccessMessage(null)} 
-          severity="success" 
+        <Alert
+          onClose={() => setSuccessMessage(null)}
+          severity="success"
           variant="filled"
           sx={{ width: '100%' }}
         >

@@ -983,6 +983,30 @@ exports.markItemsForRecheck = async (req, res) => {
           }
         }
 
+        // Prefer Counter transaction length/width (stored in feet). Client payload may
+        // carry system inventory length in inches from reconciliation screens.
+        if (item.transaction_id) {
+          try {
+            const counterAttrs = await pool.query(
+              `SELECT width, length, form, grade, size, finish, ext_finish, mill, heat, type, location
+               FROM transactions
+               WHERE transaction_id = $1 AND role = 'Counter'`,
+              [item.transaction_id]
+            );
+            if (counterAttrs.rows[0]) {
+              const c = counterAttrs.rows[0];
+              if (c.length != null && String(c.length).trim() !== '') {
+                item.length = c.length;
+              }
+              if (c.width != null && String(c.width).trim() !== '') {
+                item.width = c.width;
+              }
+            }
+          } catch (attrsErr) {
+            console.warn('Could not load Counter length for marked item:', attrsErr.message);
+          }
+        }
+
         // Check existing checker_sku_item rows for this Counter transaction + section
         let existingPending = null;
         let existingAwaitingApprove = null;

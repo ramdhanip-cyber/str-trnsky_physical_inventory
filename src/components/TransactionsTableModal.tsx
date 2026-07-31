@@ -227,6 +227,8 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [noMaterialConfirmOpen, setNoMaterialConfirmOpen] = useState(false);
+  const [submittingAll, setSubmittingAll] = useState(false);
   const [columnsMenuAnchor, setColumnsMenuAnchor] = useState<null | HTMLElement>(null);
   const [columnsMenuPosition, setColumnsMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const toggleableColumnIds = COLUMNS.filter((c) => !c.alwaysVisible).map((c) => c.id);
@@ -357,11 +359,23 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
   };
 
   const handleSubmitAll = async () => {
+    if (data.length === 0) {
+      setNoMaterialConfirmOpen(true);
+      return;
+    }
+    await completeAndSubmit();
+  };
+
+  const completeAndSubmit = async () => {
     try {
-      onSubmitAll();
+      setSubmittingAll(true);
       await onCompleteLocation();
+      onSubmitAll();
     } catch (error) {
       console.error("Error completing location:", error);
+    } finally {
+      setSubmittingAll(false);
+      setNoMaterialConfirmOpen(false);
     }
   };
 
@@ -982,6 +996,41 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
         </Dialog>
 
         <Dialog
+          open={noMaterialConfirmOpen}
+          onClose={() => !submittingAll && setNoMaterialConfirmOpen(false)}
+          maxWidth="sm"
+          fullWidth
+        >
+          <DialogTitle sx={{ fontWeight: 700 }}>
+            Close location with no items?
+          </DialogTitle>
+          <DialogContent>
+            <Typography variant="body1">
+              Are you sure you want to close this location without any items recorded?
+              This will be recorded as <strong>No Material</strong>.
+            </Typography>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button
+              onClick={() => setNoMaterialConfirmOpen(false)}
+              disabled={submittingAll}
+              sx={{ textTransform: "none", fontWeight: 600 }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={completeAndSubmit}
+              disabled={submittingAll}
+              sx={{ textTransform: "none", fontWeight: 600 }}
+            >
+              {submittingAll ? "Submitting..." : "Yes"}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        <Dialog
           open={deleteConfirmOpen}
           onClose={handleDeleteCancel}
           maxWidth="xs"
@@ -1055,10 +1104,10 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
             <Button
               variant="contained"
               onClick={handleSubmitAll}
-              disabled={data.length === 0}
+              disabled={submittingAll}
               sx={{ borderRadius: 2, textTransform: "none", fontWeight: 600, px: 3 }}
             >
-              Submit all transactions
+              {submittingAll ? "Submitting..." : "Submit all transactions"}
             </Button>
           </Box>
         </FooterBar>

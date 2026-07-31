@@ -58,7 +58,11 @@ import {
   ViewColumn,
   CheckCircle,
   DoneAll,
-  Warning
+  Warning,
+  Close,
+  Groups,
+  Inbox,
+  Layers
 } from '@mui/icons-material';
 import Checkbox from '@mui/material/Checkbox';
 import FormControlLabel from '@mui/material/FormControlLabel';
@@ -78,6 +82,8 @@ interface Section {
   status: string;
   team_name?: string; // Team assigned to count this section
   checker_assigned?: string;
+  assigned_at?: string;
+  competed_at?: string;
 }
 
 /** Format date as MM-DD-YYYY for display on Counter Review page */
@@ -740,6 +746,7 @@ const CountReviewPage = () => {
   const [approveAllDialogOpen, setApproveAllDialogOpen] = useState(false);
   const [unrecheckedDialogOpen, setUnrecheckedDialogOpen] = useState(false);
   const [unrecheckedItems, setUnrecheckedItems] = useState<MarkedItemInfo[]>([]);
+  const [noMaterialDialogOpen, setNoMaterialDialogOpen] = useState(false);
   const [checkingRecheckStatus, setCheckingRecheckStatus] = useState(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' | 'warning' }>({ open: false, message: '', severity: 'success' });
   const [columnsMenuAnchor, setColumnsMenuAnchor] = useState<null | HTMLElement>(null);
@@ -861,7 +868,7 @@ const CountReviewPage = () => {
     );
   };
 
-  /** Refresh marked items and return those still awaiting checker verification */
+  /** Refresh marked items and return those still awaiting approval (not reconciler_approved) */
   const getUnrecheckedMarkedItems = async (): Promise<MarkedItemInfo[]> => {
     if (!location_id) return [];
     try {
@@ -870,7 +877,7 @@ const CountReviewPage = () => {
 
       const byTx = new Map<number, MarkedItemInfo>();
       const bySku = new Map<string, MarkedItemInfo>();
-      const unrechecked: MarkedItemInfo[] = [];
+      const pendingApproval: MarkedItemInfo[] = [];
 
       (response.data.items || []).forEach((item: MarkedItemInfo) => {
         const normalized: MarkedItemInfo = {
@@ -890,14 +897,14 @@ const CountReviewPage = () => {
         if (!existing || shouldPreferMarkedItem(normalized, existing)) {
           bySku.set(skuKey, normalized);
         }
-        if (!normalized.verified) {
-          unrechecked.push(normalized);
+        if (!normalized.reconciler_approved) {
+          pendingApproval.push(normalized);
         }
       });
 
       setMarkedItemsByTx(byTx);
       setMarkedItemsBySku(bySku);
-      return unrechecked;
+      return pendingApproval;
     } catch (error) {
       console.error('Error checking unrechecked marked items:', error);
       return [];
@@ -1122,7 +1129,7 @@ const CountReviewPage = () => {
       return;
     }
 
-    // Block reconcile if any marked-for-recheck items are still awaiting checker
+    // Block reconcile if any marked-for-recheck items are still awaiting approval
     const pending = await getUnrecheckedMarkedItems();
     if (pending.length > 0) {
       setReconcileDialogOpen(false);
@@ -1262,6 +1269,108 @@ const CountReviewPage = () => {
     }
   };
 
+
+  const getRecheckStatusLabel = (item: MarkedItemInfo): string => {
+    if (!item.verified) return 'Awaiting checker';
+    if (!item.reconciler_approved) return 'Awaiting approve';
+    return 'Approved';
+  };
+
+  const handleExportMarkedRechecks = async () => {
+    handleMenuClose();
+    if (!location_id) return;
+    try {
+      setExporting(true);
+      const response = await servicesAPI.getMarkedItemsForChecking(location_id);
+      const items: MarkedItemInfo[] = response.data?.success ? (response.data.items || []) : [];
+      if (items.length === 0) {
+        setSnackbar({
+          open: true,
+          message: 'No marked recheck items to export.',
+          severity: 'info',
+        });
+        return;
+      }
+
+      const data = items.map((item) => {
+        const tx =
+          item.transaction_id != null
+            ? allTransactions.find((t) => Number(t.transaction_id) === Number(item.transaction_id))
+            : undefined;
+        const section = sections.find(
+          (s) => Number(s.section_id) === Number(item.section_id ?? tx?.section_id)
+        );
+        const counterQty =
+          tx?.count_type === 'bundle'
+            ? tx.bundles?.reduce(
+                (total, bundle) => total + (bundle.num_of_bundle * bundle.bundle_count),
+                0
+              ) ?? tx.qty
+            : (tx?.qty ?? item.counted_qty ?? '');
+        const checkerQty =
+          item.checker_qty ?? item.checker_count ?? item.counted_qty ?? '';
+
+        return {
+          'Tag No':
+            tx?.sys_tag_no != null && String(tx.sys_tag_no).trim() !== ''
+              ? tx.sys_tag_no
+              : '–',
+          'Transaction ID': item.transaction_id ?? '',
+          'Form': item.form || tx?.form || '',
+          'Grade': item.grade || tx?.grade || '',
+          'Size': item.size || tx?.size || '',
+          'Finish': item.finish || tx?.finish || '',
+          'Ext Finish': item.ext_finish || tx?.ext_finish || '',
+          'Width': item.width ?? tx?.width ?? '',
+          'Length': item.length ?? tx?.length ?? '',
+          'Mill': item.mill || tx?.mill || '',
+          'Heat': item.heat || tx?.heat || '',
+          'Type': item.type || tx?.type || '',
+          'Location': item.location || tx?.location || '',
+          'Section': section?.section_desc || '',
+          'Counter Qty': counterQty,
+          'Checker Qty': checkerQty,
+          'Checker Form': item.checker_form || '',
+          'Checker Grade': item.checker_grade || '',
+          'Checker Size': item.checker_size || '',
+          'Checker Finish': item.checker_finish || '',
+          'Checker Ext Finish': item.checker_ext_finish || '',
+          'Checker Width': item.checker_width || '',
+          'Checker Length': item.checker_length || '',
+          'Checker Mill': item.checker_mill || '',
+          'Checker Heat': item.checker_heat || '',
+          'Checker Type': item.checker_type || '',
+          'Checker Location': item.checker_location || '',
+          'Verified': item.verified ? 'Yes' : 'No',
+          'Reconciler Approved': item.reconciler_approved ? 'Yes' : 'No',
+          'Recheck Status': getRecheckStatusLabel(item),
+          'Team': tx?.team_name || '',
+          'Counted By': tx?.counted_by || '',
+        };
+      });
+
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Marked Rechecks');
+      const fileName = `Marked_Rechecks_Location_${location_id}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      setSnackbar({
+        open: true,
+        message: `Exported ${items.length} marked recheck item(s).`,
+        severity: 'success',
+      });
+    } catch (error) {
+      console.error('Error exporting marked rechecks:', error);
+      setSnackbar({
+        open: true,
+        message: 'Failed to export marked recheck items. Please try again.',
+        severity: 'error',
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const handleConsolidate = () => {
     handleMenuClose();
     consolidateItems();
@@ -1355,11 +1464,20 @@ const CountReviewPage = () => {
   };
 
   const totalItems = filteredTransactions.length;
-  const totalPieces = filteredTransactions.reduce((sum, t) => {
-    return sum + (t.count_type === 'bundle'
-      ? (t.bundles?.reduce((s, b) => s + (b.num_of_bundle * b.bundle_count), 0) || 0)
-      : (t.qty || 0));
-  }, 0);
+  const NO_MATERIAL_STATUSES = new Set(['Count Completed', 'Assigned Checker', 'Completed']);
+  const noMaterialSections = loading.transactions
+    ? []
+    : sections.filter((section) => {
+        if (sectionFilter !== 'all' && String(section.section_id) !== String(sectionFilter)) {
+          return false;
+        }
+        if (!NO_MATERIAL_STATUSES.has(section.status)) {
+          return false;
+        }
+        return !allTransactions.some(
+          (t) => Number(t.section_id) === Number(section.section_id)
+        );
+      });
   const markedCount = filteredTransactions.filter((t) => Boolean(resolveMarkedInfo(t))).length;
   const pendingApproveCount = filteredTransactions.filter((t) => {
     const info = resolveMarkedInfo(t);
@@ -1498,6 +1616,13 @@ const CountReviewPage = () => {
                 <ListItemIcon>{exporting ? <CircularProgress size={20} /> : <Download fontSize="small" />}</ListItemIcon>
                 <ListItemText primary={exporting ? 'Exporting...' : 'Download Count'} secondary="Excel" />
               </MenuItem>
+              <MenuItem onClick={handleExportMarkedRechecks} disabled={exporting}>
+                <ListItemIcon><Warning fontSize="small" color="warning" /></ListItemIcon>
+                <ListItemText
+                  primary="Export Marked Rechecks"
+                  secondary={markedCount > 0 ? `${markedCount} marked item(s)` : 'Items marked for recheck'}
+                />
+              </MenuItem>
               <MenuItem onClick={handleConsolidate} disabled={exporting}>
                 <ListItemIcon><Merge fontSize="small" /></ListItemIcon>
                 <ListItemText primary="Consolidate & Download" secondary="Grouped by product" />
@@ -1573,9 +1698,9 @@ const CountReviewPage = () => {
           <Grid item xs={6} sm={3}>
             <StatCard>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                <Avatar sx={{ width: 40, height: 40, bgcolor: alpha(theme.palette.secondary.main, 0.1), color: theme.palette.secondary.main }}><Numbers fontSize="small" /></Avatar>
+                <Avatar sx={{ width: 40, height: 40, bgcolor: alpha('#6366f1', 0.1), color: '#6366f1' }}><Numbers fontSize="small" /></Avatar>
                 <Box>
-                  <Typography variant="h4" fontWeight={700} color="secondary">{totalItems}</Typography>
+                  <Typography variant="h4" fontWeight={700} sx={{ color: '#6366f1' }}>{totalItems}</Typography>
                   <Typography variant="body2" color="text.secondary">Transactions</Typography>
                 </Box>
               </Box>
@@ -1584,10 +1709,25 @@ const CountReviewPage = () => {
           <Grid item xs={6} sm={3}>
             <StatCard>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                <Avatar sx={{ width: 40, height: 40, bgcolor: alpha(theme.palette.success.main, 0.1), color: theme.palette.success.main }}><ListAlt fontSize="small" /></Avatar>
+                <Avatar sx={{ width: 40, height: 40, bgcolor: alpha(theme.palette.warning.main, 0.1), color: theme.palette.warning.main }}><ListAlt fontSize="small" /></Avatar>
                 <Box>
-                  <Typography variant="h4" fontWeight={700} sx={{ color: theme.palette.success.main }}>{totalPieces}</Typography>
-                  <Typography variant="body2" color="text.secondary">Total pieces</Typography>
+                  <Typography
+                    variant="h4"
+                    fontWeight={700}
+                    onClick={() => !loading.transactions && setNoMaterialDialogOpen(true)}
+                    sx={{
+                      color: theme.palette.warning.main,
+                      cursor: loading.transactions ? 'default' : 'pointer',
+                      textDecoration: loading.transactions ? 'none' : 'underline',
+                      textUnderlineOffset: 4,
+                      width: 'fit-content',
+                      '&:hover': loading.transactions ? undefined : { opacity: 0.8 },
+                    }}
+                    title="View No Material sections"
+                  >
+                    {loading.transactions ? '…' : noMaterialSections.length}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">No Material sections</Typography>
                 </Box>
               </Box>
             </StatCard>
@@ -1783,6 +1923,254 @@ const CountReviewPage = () => {
             color="warning"
           >
             Yes, Proceed
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+
+      <Dialog
+        open={noMaterialDialogOpen}
+        onClose={() => setNoMaterialDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            boxShadow: `0 24px 80px ${alpha(theme.palette.common.black, 0.18)}`,
+            border: `1px solid ${alpha(theme.palette.warning.main, 0.2)}`,
+            overflow: 'hidden',
+          },
+        }}
+      >
+        <Box
+          sx={{
+            px: 3,
+            py: 2.5,
+            background: `linear-gradient(135deg, ${theme.palette.warning.dark} 0%, ${theme.palette.warning.main} 55%, ${alpha(theme.palette.warning.light, 0.95)} 100%)`,
+            color: theme.palette.warning.contrastText,
+            position: 'relative',
+            overflow: 'hidden',
+            '&::after': {
+              content: '""',
+              position: 'absolute',
+              top: -24,
+              right: -24,
+              width: 120,
+              height: 120,
+              borderRadius: '50%',
+              background: alpha(theme.palette.common.white, 0.12),
+            },
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, position: 'relative', zIndex: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.75 }}>
+              <Avatar
+                sx={{
+                  width: 48,
+                  height: 48,
+                  bgcolor: alpha(theme.palette.common.white, 0.2),
+                  color: 'inherit',
+                  border: `1px solid ${alpha(theme.palette.common.white, 0.35)}`,
+                }}
+              >
+                <Inbox />
+              </Avatar>
+              <Box>
+                <Typography variant="h6" fontWeight={800} sx={{ letterSpacing: '-0.02em', lineHeight: 1.2 }}>
+                  No Material sections
+                </Typography>
+                <Typography variant="body2" sx={{ opacity: 0.92, mt: 0.35 }}>
+                  Closed with zero items recorded
+                </Typography>
+              </Box>
+            </Box>
+            <IconButton
+              size="small"
+              onClick={() => setNoMaterialDialogOpen(false)}
+              sx={{
+                color: 'inherit',
+                bgcolor: alpha(theme.palette.common.white, 0.15),
+                '&:hover': { bgcolor: alpha(theme.palette.common.white, 0.28) },
+              }}
+            >
+              <Close fontSize="small" />
+            </IconButton>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1, mt: 2, flexWrap: 'wrap', position: 'relative', zIndex: 1 }}>
+            <Chip
+              icon={<Layers sx={{ color: 'inherit !important' }} />}
+              label={`${noMaterialSections.length} section${noMaterialSections.length === 1 ? '' : 's'}`}
+              size="small"
+              sx={{
+                bgcolor: alpha(theme.palette.common.white, 0.22),
+                color: 'inherit',
+                fontWeight: 700,
+                border: `1px solid ${alpha(theme.palette.common.white, 0.3)}`,
+                '& .MuiChip-icon': { color: 'inherit' },
+              }}
+            />
+            <Chip
+              icon={<LocationOn sx={{ color: 'inherit !important' }} />}
+              label={`Location ${location_id}`}
+              size="small"
+              sx={{
+                bgcolor: alpha(theme.palette.common.white, 0.16),
+                color: 'inherit',
+                fontWeight: 600,
+                border: `1px solid ${alpha(theme.palette.common.white, 0.25)}`,
+              }}
+            />
+          </Box>
+        </Box>
+
+        <DialogContent sx={{ px: 3, py: 2.5, bgcolor: alpha(theme.palette.warning.main, 0.03) }}>
+          <Box
+            sx={{
+              mb: 2,
+              p: 1.5,
+              borderRadius: 2,
+              bgcolor: alpha(theme.palette.warning.main, 0.08),
+              borderLeft: `4px solid ${theme.palette.warning.main}`,
+            }}
+          >
+            <Typography variant="body2" color="text.secondary">
+              Counters closed these sections without recording inventory. They are treated as{' '}
+              <strong>No Material</strong> for reconciliation review.
+            </Typography>
+          </Box>
+
+          {noMaterialSections.length === 0 ? (
+            <Box
+              sx={{
+                py: 5,
+                px: 2,
+                textAlign: 'center',
+                borderRadius: 2.5,
+                border: `1px dashed ${alpha(theme.palette.divider, 0.8)}`,
+                bgcolor: theme.palette.background.paper,
+              }}
+            >
+              <Avatar
+                sx={{
+                  width: 56,
+                  height: 56,
+                  mx: 'auto',
+                  mb: 1.5,
+                  bgcolor: alpha(theme.palette.success.main, 0.12),
+                  color: theme.palette.success.main,
+                }}
+              >
+                <CheckCircle />
+              </Avatar>
+              <Typography variant="subtitle1" fontWeight={700}>
+                No empty sections
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 320, mx: 'auto' }}>
+                Every completed section in this view has at least one counted item.
+              </Typography>
+            </Box>
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, maxHeight: 380, overflowY: 'auto', pr: 0.5 }}>
+              {noMaterialSections.map((section, index) => (
+                <Paper
+                  key={section.section_id}
+                  elevation={0}
+                  sx={{
+                    p: 1.75,
+                    borderRadius: 2.5,
+                    bgcolor: theme.palette.background.paper,
+                    border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1.75,
+                    transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+                    '&:hover': {
+                      borderColor: alpha(theme.palette.warning.main, 0.45),
+                      boxShadow: `0 6px 20px ${alpha(theme.palette.warning.main, 0.1)}`,
+                    },
+                  }}
+                >
+                  <Avatar
+                    sx={{
+                      width: 42,
+                      height: 42,
+                      fontWeight: 800,
+                      fontSize: '0.85rem',
+                      bgcolor: alpha(theme.palette.warning.main, 0.12),
+                      color: theme.palette.warning.dark,
+                      border: `1px solid ${alpha(theme.palette.warning.main, 0.25)}`,
+                    }}
+                  >
+                    {index + 1}
+                  </Avatar>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                      <Typography variant="subtitle1" fontWeight={800} sx={{ letterSpacing: '-0.01em' }}>
+                        {section.section_desc || `Section ${section.section_id}`}
+                      </Typography>
+                      <Chip
+                        label="No Material"
+                        size="small"
+                        sx={{
+                          height: 22,
+                          fontWeight: 700,
+                          fontSize: '0.7rem',
+                          bgcolor: alpha(theme.palette.warning.main, 0.12),
+                          color: theme.palette.warning.dark,
+                          border: `1px solid ${alpha(theme.palette.warning.main, 0.35)}`,
+                        }}
+                      />
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 0.75, flexWrap: 'wrap' }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Groups sx={{ fontSize: 16, color: 'text.secondary' }} />
+                        <Typography variant="body2" color="text.secondary" fontWeight={500}>
+                          {section.team_name || 'Unassigned team'}
+                        </Typography>
+                      </Box>
+                      {(section.competed_at || section.assigned_at) && (
+                        <Typography variant="caption" color="text.disabled">
+                          {section.competed_at
+                            ? `Completed ${formatDateMMDDYYYY(section.competed_at)}`
+                            : `Assigned ${formatDateMMDDYYYY(section.assigned_at!)}`}
+                        </Typography>
+                      )}
+                    </Box>
+                  </Box>
+                  <Chip
+                    label={section.status}
+                    size="small"
+                    variant="outlined"
+                    color="warning"
+                    sx={{ fontWeight: 600, borderRadius: 1.5, flexShrink: 0 }}
+                  />
+                </Paper>
+              ))}
+            </Box>
+          )}
+        </DialogContent>
+
+        <DialogActions
+          sx={{
+            px: 3,
+            py: 2,
+            borderTop: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+            bgcolor: theme.palette.background.paper,
+          }}
+        >
+          <Button
+            variant="contained"
+            onClick={() => setNoMaterialDialogOpen(false)}
+            sx={{
+              borderRadius: 2,
+              textTransform: 'none',
+              fontWeight: 700,
+              px: 3,
+              bgcolor: theme.palette.warning.main,
+              '&:hover': { bgcolor: theme.palette.warning.dark },
+            }}
+          >
+            Close
           </Button>
         </DialogActions>
       </Dialog>
@@ -2044,13 +2432,13 @@ const CountReviewPage = () => {
       >
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1.5, pb: 1 }}>
           <Warning color="warning" />
-          Not all items are rechecked
+          Items waiting to be approved
         </DialogTitle>
         <DialogContent>
           <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
             {unrecheckedItems.length} item{unrecheckedItems.length === 1 ? '' : 's'} marked for recheck
-            {unrecheckedItems.length === 1 ? ' has' : ' have'} not been verified by the checker yet.
-            Complete checker verification before running reconciliation.
+            {unrecheckedItems.length === 1 ? ' is' : ' are'} still waiting to be approved.
+            Approve these items before running reconciliation.
           </Alert>
           <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2, maxHeight: 360 }}>
             <Table size="small" stickyHeader>
@@ -2079,7 +2467,12 @@ const CountReviewPage = () => {
                     <TableCell>{item.location || '—'}</TableCell>
                     <TableCell align="right">{item.counted_qty ?? '—'}</TableCell>
                     <TableCell>
-                      <Chip label="Awaiting checker" size="small" color="warning" sx={{ fontWeight: 600 }} />
+                      <Chip
+                        label={getRecheckStatusLabel(item)}
+                        size="small"
+                        color={item.verified ? 'info' : 'warning'}
+                        sx={{ fontWeight: 600 }}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}

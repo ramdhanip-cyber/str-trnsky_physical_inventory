@@ -368,6 +368,7 @@ const CounterPage: React.FC = () => {
   const [openTableModal, setOpenTableModal] = useState(false);
   const [tagRecordsDialogOpen, setTagRecordsDialogOpen] = useState(false);
   const [tagRecordsList, setTagRecordsList] = useState<TagRecord[]>([]);
+  const [tagFetchTarget, setTagFetchTarget] = useState<'main' | 'attachment'>('main');
   const [error, setError] = useState<string | null>(null);
   const [validationWarnings, setValidationWarnings] = useState<{ [key: string]: string }>({});
   const [extFinishSegments, setExtFinishSegments] = useState<string[]>(['']);
@@ -376,13 +377,27 @@ const CounterPage: React.FC = () => {
   // Attachment items: counted with this item but reconciled as separate products
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [attachmentDialogOpen, setAttachmentDialogOpen] = useState(false);
-  const emptyAttachmentForm = { form: '', grade: '', size: '', finish: '', extFinishes: [] as string[], quantity: '' };
+  const emptyAttachmentForm = {
+    sysTag: '',
+    form: '',
+    grade: '',
+    size: '',
+    finish: '',
+    extFinishes: [] as string[],
+    quantity: '',
+  };
   const [attachmentForm, setAttachmentForm] = useState(emptyAttachmentForm);
   const [attGradeOptions, setAttGradeOptions] = useState<string[]>([]);
   const [attSizeOptions, setAttSizeOptions] = useState<string[]>([]);
   const [attFinishOptions, setAttFinishOptions] = useState<string[]>([]);
   const [attExtFinishOptions, setAttExtFinishOptions] = useState<string[]>([]);
-  const [attLoading, setAttLoading] = useState({ grade: false, size: false, finish: false, extFinish: false });
+  const [attLoading, setAttLoading] = useState({
+    grade: false,
+    size: false,
+    finish: false,
+    extFinish: false,
+    tagFetch: false,
+  });
   
   // Field navigation refs
   const fieldRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
@@ -1253,8 +1268,8 @@ const CounterPage: React.FC = () => {
     });
   };
 
-  const attachmentFieldOrder: Array<'form' | 'grade' | 'size' | 'finish' | 'extFinishes' | 'quantity'> = [
-    'form', 'grade', 'size', 'finish', 'extFinishes', 'quantity'
+  const attachmentFieldOrder: Array<'sysTag' | 'form' | 'grade' | 'size' | 'finish' | 'extFinishes' | 'quantity'> = [
+    'sysTag', 'form', 'grade', 'size', 'finish', 'extFinishes', 'quantity'
   ];
   const attachmentFieldsAllowSpaces = ['finish', 'extFinishes'];
 
@@ -1268,14 +1283,81 @@ const CounterPage: React.FC = () => {
     }
   };
 
+  const applyTagRecordToAttachment = (data: TagRecord) => {
+    const finishVal = (data.finish ?? '').toString().trim();
+    const extFinishVal = (data.ext_finish ?? '').toString().trim();
+    setAttachmentForm((prev) => ({
+      ...prev,
+      form: data.form ?? prev.form,
+      grade: data.grade ?? prev.grade,
+      size: data.size ?? prev.size,
+      finish: finishVal !== '' ? finishVal : ' ',
+      extFinishes:
+        extFinishVal && extFinishVal !== ' '
+          ? [extFinishVal]
+          : extFinishVal === ' '
+            ? [' ']
+            : [],
+    }));
+  };
+
+  const fetchAttachmentBySystemTagNo = async () => {
+    const tag = attachmentForm.sysTag.trim();
+    if (!tag) {
+      setSnackbar({ open: true, message: 'Please enter System Tag No', severity: 'error' });
+      return;
+    }
+    setAttLoading((prev) => ({ ...prev, tagFetch: true }));
+    try {
+      const response = await servicesAPI.getProductByTag(tag);
+      if (response.data?.multiple && response.data?.Records?.length) {
+        setTagFetchTarget('attachment');
+        setTagRecordsList(response.data.Records);
+        setTagRecordsDialogOpen(true);
+        setSnackbar({ open: true, message: 'Multiple records found. Please select one.', severity: 'success' });
+        return;
+      }
+      const data = response.data?.Data;
+      if (!data) {
+        setSnackbar({
+          open: true,
+          message: response.data?.message || 'No record found for this tag number',
+          severity: 'error',
+        });
+        return;
+      }
+      applyTagRecordToAttachment(data);
+      setSnackbar({
+        open: true,
+        message: 'Form, Grade, Size, Finish, and Extended Finish populated from System Tag No',
+        severity: 'success',
+      });
+      setTimeout(() => focusAttachmentField('quantity'), 50);
+    } catch (err) {
+      console.error('Attachment fetch by tag error:', err);
+      const errMsg =
+        (err as { response?: { data?: { error?: string; message?: string } } })?.response?.data?.error ||
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        'Failed to fetch by tag';
+      setSnackbar({ open: true, message: errMsg, severity: 'error' });
+    } finally {
+      setAttLoading((prev) => ({ ...prev, tagFetch: false }));
+    }
+  };
+
   const handleAttachmentKeyPress = (
-    fieldName: 'form' | 'grade' | 'size' | 'finish' | 'extFinishes' | 'quantity',
+    fieldName: 'sysTag' | 'form' | 'grade' | 'size' | 'finish' | 'extFinishes' | 'quantity',
     event: React.KeyboardEvent,
     currentValue?: string | string[]
   ) => {
     if (event.key !== 'Enter' && event.key !== 'Tab') return;
     event.preventDefault();
     event.stopPropagation();
+
+    if (fieldName === 'sysTag' && event.key === 'Enter') {
+      fetchAttachmentBySystemTagNo();
+      return;
+    }
 
     let valueToUse =
       typeof currentValue === 'string'
@@ -1569,6 +1651,7 @@ const CounterPage: React.FC = () => {
     try {
       const response = await servicesAPI.getProductByTag(tag);
       if (response.data?.multiple && response.data?.Records?.length) {
+        setTagFetchTarget('main');
         setTagRecordsList(response.data.Records);
         setTagRecordsDialogOpen(true);
         setSnackbar({ open: true, message: `Multiple records found. Please select one.`, severity: 'success' });
@@ -1597,6 +1680,18 @@ const CounterPage: React.FC = () => {
   };
 
   const handleSelectTagRecord = (record: TagRecord) => {
+    if (tagFetchTarget === 'attachment') {
+      applyTagRecordToAttachment(record);
+      setTagRecordsDialogOpen(false);
+      setTagRecordsList([]);
+      setSnackbar({
+        open: true,
+        message: 'Form, Grade, Size, Finish, and Extended Finish populated from selected record',
+        severity: 'success',
+      });
+      setTimeout(() => focusAttachmentField('quantity'), 50);
+      return;
+    }
     applyTagRecordToForm(record);
     setTagRecordsDialogOpen(false);
     setTagRecordsList([]);
@@ -1824,12 +1919,6 @@ const CounterPage: React.FC = () => {
       await servicesAPI.completeAssignedLocation(location_id || '', section_id || '', {
         status: "Completed"
       });
-      
-      setSnackbar({
-        open: true,
-        message: "Location marked as completed!",
-        severity: "success"
-      });
     } catch (error) {
       console.error("Error updating location status:", error);
       setSnackbar({
@@ -1837,6 +1926,7 @@ const CounterPage: React.FC = () => {
         message: "Failed to complete location",
         severity: "error"
       });
+      throw error;
     }
   };
 
@@ -2925,7 +3015,11 @@ const CounterPage: React.FC = () => {
         fullWidth
         PaperProps={{ sx: { borderRadius: 2 } }}
       >
-        <DialogTitle>Multiple records for this System Tag – select one</DialogTitle>
+        <DialogTitle>
+          {tagFetchTarget === 'attachment'
+            ? 'Multiple records for this System Tag – select one for attachment'
+            : 'Multiple records for this System Tag – select one'}
+        </DialogTitle>
         <DialogContent>
           <TableContainer component={Paper} variant="outlined" sx={{ mt: 1, maxHeight: 440 }}>
             <Table size="small" stickyHeader>
@@ -2936,13 +3030,17 @@ const CounterPage: React.FC = () => {
                   <TableCell>Size</TableCell>
                   <TableCell>Finish</TableCell>
                   <TableCell>Ext Finish</TableCell>
-                  <TableCell>Width</TableCell>
-                  <TableCell>Length</TableCell>
-                  <TableCell>Mill</TableCell>
-                  <TableCell>Heat</TableCell>
-                  <TableCell>Location</TableCell>
-                  <TableCell>Type</TableCell>
-                  <TableCell>Quality</TableCell>
+                  {tagFetchTarget === 'main' && (
+                    <>
+                      <TableCell>Width</TableCell>
+                      <TableCell>Length</TableCell>
+                      <TableCell>Mill</TableCell>
+                      <TableCell>Heat</TableCell>
+                      <TableCell>Location</TableCell>
+                      <TableCell>Type</TableCell>
+                      <TableCell>Quality</TableCell>
+                    </>
+                  )}
                   <TableCell align="right">Action</TableCell>
                 </TableRow>
               </TableHead>
@@ -2954,13 +3052,17 @@ const CounterPage: React.FC = () => {
                     <TableCell>{rec.size}</TableCell>
                     <TableCell>{rec.finish}</TableCell>
                     <TableCell>{rec.ext_finish}</TableCell>
-                    <TableCell>{rec.width}</TableCell>
-                    <TableCell>{rec.length}</TableCell>
-                    <TableCell>{rec.mill}</TableCell>
-                    <TableCell>{rec.heat}</TableCell>
-                    <TableCell>{rec.location}</TableCell>
-                    <TableCell>{rec.type_display ?? rec.type ?? rec.inventory_type ?? ''}</TableCell>
-                    <TableCell>{rec.quality}</TableCell>
+                    {tagFetchTarget === 'main' && (
+                      <>
+                        <TableCell>{rec.width}</TableCell>
+                        <TableCell>{rec.length}</TableCell>
+                        <TableCell>{rec.mill}</TableCell>
+                        <TableCell>{rec.heat}</TableCell>
+                        <TableCell>{rec.location}</TableCell>
+                        <TableCell>{rec.type_display ?? rec.type ?? rec.inventory_type ?? ''}</TableCell>
+                        <TableCell>{rec.quality}</TableCell>
+                      </>
+                    )}
                     <TableCell align="right">
                       <Button size="small" variant="contained" onClick={() => handleSelectTagRecord(rec)}>
                         Select
@@ -2996,6 +3098,34 @@ const CounterPage: React.FC = () => {
         </DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
+            <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
+              <TextField
+                label="System Tag No"
+                fullWidth
+                value={attachmentForm.sysTag}
+                onChange={(e) => setAttachmentForm((prev) => ({ ...prev, sysTag: e.target.value }))}
+                placeholder="Enter tag number and click Fetch"
+                disabled={attLoading.tagFetch}
+                inputProps={{ 'data-attachment-field': 'sysTag' }}
+                onKeyDown={(e) => handleAttachmentKeyPress('sysTag', e, attachmentForm.sysTag)}
+                InputProps={{
+                  endAdornment: attLoading.tagFetch ? (
+                    <InputAdornment position="end">
+                      <CircularProgress color="inherit" size={20} />
+                    </InputAdornment>
+                  ) : undefined,
+                }}
+              />
+              <Button
+                type="button"
+                variant="outlined"
+                onClick={fetchAttachmentBySystemTagNo}
+                disabled={attLoading.tagFetch || !attachmentForm.sysTag.trim()}
+                sx={{ minWidth: 100, mt: 1 }}
+              >
+                {attLoading.tagFetch ? 'Fetching...' : 'Fetch'}
+              </Button>
+            </Box>
             <Autocomplete
               freeSolo
               options={formOptions}
@@ -3171,9 +3301,12 @@ const CounterPage: React.FC = () => {
         onClose={() => setOpenTableModal(false)}
         data={submittedData}
         onSubmitAll={async () => {
+          const isNoMaterial = submittedData.length === 0;
           setSnackbar({
             open: true,
-            message: "All transactions submitted successfully! Redirecting to counter home...",
+            message: isNoMaterial
+              ? "Location closed as No Material. Redirecting to counter home..."
+              : "All transactions submitted successfully! Redirecting to counter home...",
             severity: "success",
           });
           // Refresh the data after submitting all

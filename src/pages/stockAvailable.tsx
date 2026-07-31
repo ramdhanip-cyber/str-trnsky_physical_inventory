@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Box,
   Paper,
@@ -20,7 +20,6 @@ import {
   IconButton,
   Chip,
   Grid,
-  useTheme,
   alpha,
   InputAdornment,
   Tooltip,
@@ -31,7 +30,10 @@ import {
   Checkbox,
   FormControlLabel,
   Alert,
-  Skeleton
+  Skeleton,
+  Avatar,
+  Card,
+  CardContent,
 } from "@mui/material";
 import {
   Search,
@@ -39,9 +41,39 @@ import {
   Refresh,
   Settings,
   Inventory,
-  FilterList
+  FilterList,
+  Warehouse,
+  Scale,
+  AttachMoney,
+  Tag,
 } from "@mui/icons-material";
 import { servicesAPI } from '../config/api';
+
+const BRAND = '#0C2C48';
+const BRAND_GRADIENT = 'linear-gradient(135deg, #0C2C48 0%, #1E5A8A 100%)';
+const ITEMS_GRADIENT = 'linear-gradient(135deg, #0C2C48 0%, #1E5A8A 100%)';
+const QTY_GRADIENT = 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)';
+const WEIGHT_GRADIENT = 'linear-gradient(135deg, #4776E6 0%, #8E54E9 100%)';
+const VALUE_GRADIENT = 'linear-gradient(135deg, #fc4a1a 0%, #f7b733 100%)';
+
+const SKEU_BG = '#e8eef4';
+const SKEU_LIGHT = '#ffffff';
+const SKEU_DARK = '#c5d0db';
+const skeuRaised = (size = 7) =>
+  `${size}px ${size}px ${size * 2}px ${SKEU_DARK}, -${size}px -${size}px ${size * 2}px ${SKEU_LIGHT}`;
+const skeuInset = (size = 4) =>
+  `inset ${size}px ${size}px ${size * 2}px ${SKEU_DARK}, inset -${size}px -${size}px ${size * 2}px ${SKEU_LIGHT}`;
+
+const insetFieldSx = {
+  height: 40,
+  borderRadius: 3,
+  background: SKEU_BG,
+  boxShadow: skeuInset(4),
+  '& fieldset': { border: 'none' },
+  '&.Mui-focused': {
+    boxShadow: `${skeuInset(4)}, 0 0 0 2px ${alpha(BRAND, 0.18)}`,
+  },
+};
 
 interface StockItem {
   prd_cmpy_id: string;
@@ -93,7 +125,6 @@ interface UserPreferences {
 }
 
 const StockAvailable: React.FC = () => {
-  const theme = useTheme();
   const [stockItems, setStockItems] = useState<StockItem[]>([]);
   const [filteredItems, setFilteredItems] = useState<StockItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -378,132 +409,281 @@ const StockAvailable: React.FC = () => {
 
 
 
+  const summary = useMemo(() => {
+    const totalQty = filteredItems.reduce((s, i) => s + (Number(i.prd_ohd_qty) || 0), 0);
+    const totalWeight = filteredItems.reduce((s, i) => s + (Number(i.prd_ohd_mat_cst) || 0), 0);
+    const totalValue = filteredItems.reduce((s, i) => s + (Number(i.prd_ohd_mat_val) || 0), 0);
+    const warehouses = new Set(filteredItems.map((i) => i.prd_whs).filter(Boolean)).size;
+    return { totalQty, totalWeight, totalValue, warehouses, rows: filteredItems.length };
+  }, [filteredItems]);
+
+  const activeFilterCount = Object.values(filters).filter((value) => value !== '').length;
+
   if (loading) {
     return (
-      <Box sx={{ p: 3 }}>
-        <Skeleton variant="rectangular" width="100%" height={120} sx={{ mb: 3, borderRadius: 2 }} />
-        <Grid container spacing={3}>
-          {[...Array(6)].map((_, index) => (
-            <Grid item xs={12} sm={6} md={4} key={index}>
-              <Skeleton variant="rectangular" width="100%" height={180} sx={{ borderRadius: 2 }} />
+      <Box sx={{ p: 3, bgcolor: SKEU_BG, minHeight: 'calc(100vh - 112px)' }}>
+        <Skeleton variant="rectangular" width="100%" height={120} sx={{ mb: 3, borderRadius: '20px' }} />
+        <Grid container spacing={2.5} sx={{ mb: 3 }}>
+          {[...Array(4)].map((_, index) => (
+            <Grid item xs={12} sm={6} md={3} key={index}>
+              <Skeleton variant="rectangular" width="100%" height={96} sx={{ borderRadius: '18px' }} />
             </Grid>
           ))}
         </Grid>
+        <Skeleton variant="rectangular" width="100%" height={140} sx={{ mb: 3, borderRadius: '18px' }} />
+        <Skeleton variant="rectangular" width="100%" height={420} sx={{ borderRadius: '18px' }} />
       </Box>
     );
   }
 
   return (
-    <Box sx={{ p: 3 }}>
-      {/* Header */}
-      <Paper sx={{ 
-        p: 3, 
-        mb: 3, 
-        borderRadius: 3,
-        background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.05)}, ${alpha(theme.palette.secondary.main, 0.05)})`,
-        boxShadow: '0 4px 20px rgba(0,0,0,0.05)'
-      }}>
-        <Box sx={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center',
-          flexDirection: { xs: 'column', sm: 'row' },
-          gap: 2
-        }}>
-          <Box sx={{ textAlign: { xs: 'center', sm: 'left' } }}>
-            <Typography variant="h4" sx={{ 
-              fontWeight: 700, 
-              display: 'flex', 
-              alignItems: 'center',
-              justifyContent: { xs: 'center', sm: 'flex-start' }
-            }}>
-              <Inventory sx={{ 
-                mr: 2, 
-                fontSize: 40,
-                color: theme.palette.primary.main 
-              }} />
-              Stock Available
-            </Typography>
-            <Typography variant="subtitle1" color="text.secondary" sx={{ mt: 1 }}>
-              View and manage your inventory stock levels
-            </Typography>
+    <Box sx={{ p: 3, bgcolor: SKEU_BG, minHeight: 'calc(100vh - 112px)' }}>
+      {/* Hero */}
+      <Box
+        sx={{
+          position: 'relative',
+          overflow: 'hidden',
+          borderRadius: '20px',
+          mb: 3,
+          px: { xs: 2.5, sm: 4 },
+          py: { xs: 3, sm: 3.5 },
+          background: BRAND_GRADIENT,
+          color: '#fff',
+          boxShadow: '0 14px 40px 0 rgba(12,44,72,0.30)',
+        }}
+      >
+        <Box sx={{ position: 'absolute', top: -60, right: -40, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.06)' }} />
+        <Box sx={{ position: 'absolute', bottom: -80, right: 130, width: 180, height: 180, borderRadius: '50%', background: 'rgba(255,255,255,0.04)' }} />
+
+        <Box
+          sx={{
+            position: 'relative',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: { xs: 'flex-start', sm: 'center' },
+            flexDirection: { xs: 'column', sm: 'row' },
+            gap: 2.5,
+          }}
+        >
+          <Box display="flex" alignItems="center" gap={2}>
+            <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.15)', width: 56, height: 56 }}>
+              <Inventory sx={{ fontSize: 30, color: '#fff' }} />
+            </Avatar>
+            <Box>
+              <Typography variant="h4" fontWeight={800} sx={{ letterSpacing: '-0.5px', lineHeight: 1.15 }}>
+                Stock Available
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.75)', mt: 0.5 }}>
+                Browse on-hand inventory with multi-column filters, sorting, and saved preferences
+              </Typography>
+            </Box>
           </Box>
-          
-          <Box sx={{ display: 'flex', gap: 1 }}>
+
+          <Box
+            sx={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              height: 40,
+              px: '4px',
+              gap: '4px',
+              borderRadius: '12px',
+              background: 'rgba(255,255,255,0.12)',
+              boxShadow: 'inset 2px 2px 5px rgba(0,0,0,0.15)',
+            }}
+          >
             <Tooltip title="Column Settings">
               <IconButton
+                size="small"
                 onClick={() => setOpenColumnDialog(true)}
-                sx={{
-                  backgroundColor: alpha(theme.palette.action.hover, 0.1),
-                  borderRadius: 2
-                }}
+                sx={{ color: '#fff', width: 32, height: 32, borderRadius: 1.5, '&:hover': { bgcolor: 'rgba(255,255,255,0.18)' } }}
               >
-                <ViewColumn />
+                <ViewColumn fontSize="small" />
               </IconButton>
             </Tooltip>
-            
             <Tooltip title="User Preferences">
               <IconButton
+                size="small"
                 onClick={() => setOpenPreferencesDialog(true)}
-                sx={{
-                  backgroundColor: alpha(theme.palette.action.hover, 0.1),
-                  borderRadius: 2
-                }}
+                sx={{ color: '#fff', width: 32, height: 32, borderRadius: 1.5, '&:hover': { bgcolor: 'rgba(255,255,255,0.18)' } }}
               >
-                <Settings />
+                <Settings fontSize="small" />
               </IconButton>
             </Tooltip>
-            
             <Tooltip title="Refresh">
               <IconButton
+                size="small"
                 onClick={fetchStockData}
-                sx={{
-                  backgroundColor: alpha(theme.palette.action.hover, 0.1),
-                  borderRadius: 2
-                }}
+                sx={{ color: '#fff', width: 32, height: 32, borderRadius: 1.5, bgcolor: 'rgba(255,255,255,0.18)', '&:hover': { bgcolor: 'rgba(255,255,255,0.28)' } }}
               >
-                <Refresh />
+                <Refresh fontSize="small" />
               </IconButton>
             </Tooltip>
           </Box>
         </Box>
-      </Paper>
+      </Box>
+
+      {/* Stats */}
+      <Grid container spacing={2.5} sx={{ mb: 3 }}>
+        {(
+          [
+            { label: 'Matching Rows', value: summary.rows.toLocaleString(), grad: ITEMS_GRADIENT, icon: <Tag /> },
+            { label: 'Total Pieces', value: summary.totalQty.toLocaleString(), grad: QTY_GRADIENT, icon: <Inventory /> },
+            { label: 'Total Weight', value: summary.totalWeight.toLocaleString(undefined, { maximumFractionDigits: 1 }), grad: WEIGHT_GRADIENT, icon: <Scale /> },
+            { label: 'Total Value', value: `$${summary.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, grad: VALUE_GRADIENT, icon: <AttachMoney /> },
+          ] as const
+        ).map((stat) => (
+          <Grid item xs={12} sm={6} md={3} key={stat.label}>
+            <Card
+              elevation={0}
+              sx={{
+                borderRadius: '18px',
+                border: 'none',
+                background: `linear-gradient(145deg, ${SKEU_LIGHT} 0%, ${SKEU_BG} 100%)`,
+                boxShadow: skeuRaised(8),
+                height: '100%',
+                transition: 'box-shadow 0.18s ease, transform 0.18s ease',
+                '&:hover': { transform: 'translateY(-2px)', boxShadow: skeuRaised(10) },
+              }}
+            >
+              <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 2.25, '&:last-child': { pb: 2.25 } }}>
+                <Box>
+                  <Typography
+                    variant="h5"
+                    fontWeight={800}
+                    sx={{ color: BRAND, lineHeight: 1.15, textShadow: '1px 1px 0 rgba(255,255,255,0.8)' }}
+                  >
+                    {stat.value}
+                  </Typography>
+                  <Typography variant="body2" sx={{ mt: 0.5, color: alpha(BRAND, 0.55), fontWeight: 700 }}>
+                    {stat.label}
+                  </Typography>
+                </Box>
+                <Avatar
+                  sx={{
+                    width: 48,
+                    height: 48,
+                    background: stat.grad,
+                    color: '#fff',
+                    boxShadow: `3px 3px 8px ${SKEU_DARK}, inset 0 1px 0 ${alpha('#fff', 0.28)}`,
+                  }}
+                >
+                  {stat.icon}
+                </Avatar>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+
+      {summary.warehouses > 0 && (
+        <Paper
+          elevation={0}
+          sx={{
+            mb: 3,
+            p: 2,
+            borderRadius: '16px',
+            border: 'none',
+            background: `linear-gradient(145deg, ${SKEU_LIGHT} 0%, ${SKEU_BG} 100%)`,
+            boxShadow: skeuRaised(6),
+            display: 'flex',
+            alignItems: 'center',
+            gap: 2,
+            flexWrap: 'wrap',
+          }}
+        >
+          <Avatar sx={{ background: BRAND_GRADIENT, width: 40, height: 40 }}>
+            <Warehouse fontSize="small" />
+          </Avatar>
+          <Box flex={1} minWidth={200}>
+            <Typography variant="caption" sx={{ color: alpha(BRAND, 0.55), fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+              Coverage
+            </Typography>
+            <Typography fontWeight={800} sx={{ color: BRAND }}>
+              {summary.warehouses} warehouse{summary.warehouses === 1 ? '' : 's'} in current view
+              <Typography component="span" variant="body2" sx={{ color: alpha(BRAND, 0.6), fontWeight: 600 }}>
+                {' '}— {stockItems.length.toLocaleString()} total loaded lines
+              </Typography>
+            </Typography>
+          </Box>
+        </Paper>
+      )}
 
       {/* Filters */}
-      <Paper sx={{ p: 3, mb: 3, borderRadius: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+      <Paper
+        elevation={0}
+        sx={{
+          p: 2.5,
+          mb: 3,
+          borderRadius: '18px',
+          border: 'none',
+          background: `linear-gradient(145deg, ${SKEU_LIGHT} 0%, ${SKEU_BG} 100%)`,
+          boxShadow: skeuRaised(8),
+        }}
+      >
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1.5 }}>
+          <Typography variant="h6" sx={{ fontWeight: 800, color: BRAND }}>
             Filters
           </Typography>
-          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-            <Chip 
-              label={`${Object.values(filters).filter(value => value !== '').length} active`}
-              color="primary"
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Chip
+              label={`${activeFilterCount} active`}
               size="small"
-              variant={Object.values(filters).filter(value => value !== '').length > 0 ? "filled" : "outlined"}
+              sx={{
+                fontWeight: 700,
+                ...(activeFilterCount > 0
+                  ? {
+                      color: '#fff',
+                      background: BRAND_GRADIENT,
+                      boxShadow: `2px 2px 5px ${SKEU_DARK}`,
+                    }
+                  : {
+                      color: BRAND,
+                      background: `linear-gradient(145deg, ${SKEU_LIGHT}, ${SKEU_BG})`,
+                      boxShadow: skeuRaised(3),
+                      border: 'none',
+                    }),
+              }}
             />
             <Button
-              variant="outlined"
               size="small"
               onClick={() => setOpenFilterDialog(true)}
               startIcon={<FilterList />}
-              sx={{ borderRadius: 2 }}
+              sx={{
+                textTransform: 'none',
+                fontWeight: 700,
+                color: BRAND,
+                borderRadius: 2.5,
+                height: 36,
+                px: 1.5,
+                background: `linear-gradient(145deg, ${SKEU_LIGHT}, ${SKEU_BG})`,
+                boxShadow: skeuRaised(3),
+                '&:hover': { background: `linear-gradient(145deg, ${SKEU_LIGHT}, ${SKEU_BG})` },
+              }}
             >
-              Advanced Filters
+              Advanced
             </Button>
             <Button
-              variant="outlined"
               size="small"
               onClick={clearAllFilters}
-              disabled={Object.values(filters).filter(value => value !== '').length === 0}
-              sx={{ borderRadius: 2 }}
+              disabled={activeFilterCount === 0}
+              sx={{
+                textTransform: 'none',
+                fontWeight: 700,
+                color: BRAND,
+                borderRadius: 2.5,
+                height: 36,
+                px: 1.5,
+                background: `linear-gradient(145deg, ${SKEU_LIGHT}, ${SKEU_BG})`,
+                boxShadow: skeuRaised(3),
+                '&:hover': { background: `linear-gradient(145deg, ${SKEU_LIGHT}, ${SKEU_BG})` },
+                '&.Mui-disabled': { boxShadow: 'none', opacity: 0.5 },
+              }}
             >
               Clear All
             </Button>
           </Box>
         </Box>
 
-        {/* Quick Filters Row */}
         <Grid container spacing={2} alignItems="center">
           <Grid item xs={12} md={4}>
             <TextField
@@ -512,26 +692,26 @@ const StockAvailable: React.FC = () => {
               size="small"
               placeholder="Search stock items..."
               value={filters.search}
-              onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+              onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <Search color="action" />
+                    <Search sx={{ color: alpha(BRAND, 0.5) }} />
                   </InputAdornment>
                 ),
-                sx: { borderRadius: 2 }
+                sx: insetFieldSx,
               }}
             />
           </Grid>
-          
+
           <Grid item xs={12} md={2}>
             <FormControl fullWidth size="small">
-              <InputLabel>Company</InputLabel>
+              <InputLabel sx={{ color: alpha(BRAND, 0.55), '&.Mui-focused': { color: BRAND } }}>Company</InputLabel>
               <Select
                 value={filters.company}
-                onChange={(e) => setFilters(prev => ({ ...prev, company: e.target.value }))}
+                onChange={(e) => setFilters((prev) => ({ ...prev, company: e.target.value }))}
                 label="Company"
-                sx={{ borderRadius: 2 }}
+                sx={insetFieldSx}
               >
                 <MenuItem value="">All Companies</MenuItem>
                 {uniqueValues.companies.map((company) => (
@@ -542,15 +722,15 @@ const StockAvailable: React.FC = () => {
               </Select>
             </FormControl>
           </Grid>
-          
+
           <Grid item xs={12} md={2}>
             <FormControl fullWidth size="small">
-              <InputLabel>Branch</InputLabel>
+              <InputLabel sx={{ color: alpha(BRAND, 0.55), '&.Mui-focused': { color: BRAND } }}>Branch</InputLabel>
               <Select
                 value={filters.branch}
-                onChange={(e) => setFilters(prev => ({ ...prev, branch: e.target.value }))}
+                onChange={(e) => setFilters((prev) => ({ ...prev, branch: e.target.value }))}
                 label="Branch"
-                sx={{ borderRadius: 2 }}
+                sx={insetFieldSx}
               >
                 <MenuItem value="">All Branches</MenuItem>
                 {uniqueValues.branches.map((branch) => (
@@ -561,15 +741,15 @@ const StockAvailable: React.FC = () => {
               </Select>
             </FormControl>
           </Grid>
-          
+
           <Grid item xs={12} md={2}>
             <FormControl fullWidth size="small">
-              <InputLabel>Warehouse</InputLabel>
+              <InputLabel sx={{ color: alpha(BRAND, 0.55), '&.Mui-focused': { color: BRAND } }}>Warehouse</InputLabel>
               <Select
                 value={filters.warehouse}
-                onChange={(e) => setFilters(prev => ({ ...prev, warehouse: e.target.value }))}
+                onChange={(e) => setFilters((prev) => ({ ...prev, warehouse: e.target.value }))}
                 label="Warehouse"
-                sx={{ borderRadius: 2 }}
+                sx={insetFieldSx}
               >
                 <MenuItem value="">All Warehouses</MenuItem>
                 {uniqueValues.warehouses.map((warehouse) => (
@@ -580,17 +760,26 @@ const StockAvailable: React.FC = () => {
               </Select>
             </FormControl>
           </Grid>
-          
+
           <Grid item xs={12} md={2}>
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-              <Typography variant="body2" color="text.secondary" sx={{ mr: 2 }}>
-                {filteredItems.length} items
+            <Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', md: 'flex-end' }, alignItems: 'center', gap: 1.5 }}>
+              <Typography variant="body2" sx={{ color: alpha(BRAND, 0.55), fontWeight: 700 }}>
+                {filteredItems.length.toLocaleString()} items
               </Typography>
               <Button
-                variant="outlined"
                 size="small"
                 onClick={resetToDefaults}
-                sx={{ borderRadius: 2 }}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 700,
+                  color: '#fff',
+                  borderRadius: 2.5,
+                  height: 36,
+                  px: 1.75,
+                  background: BRAND_GRADIENT,
+                  boxShadow: `2px 2px 5px ${SKEU_DARK}`,
+                  '&:hover': { background: BRAND_GRADIENT, filter: 'brightness(1.05)' },
+                }}
               >
                 Reset
               </Button>
@@ -598,20 +787,43 @@ const StockAvailable: React.FC = () => {
           </Grid>
         </Grid>
 
-        {/* Active Filters Display */}
-        {Object.values(filters).filter(value => value !== '').length > 0 && (
+        {activeFilterCount > 0 && (
           <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
             {Object.entries(filters).map(([key, value]) => {
               if (value && key !== 'search') {
-                const column = columns.find(col => col.id === key);
+                const column = columns.find((col) => col.id === key);
                 return (
                   <Chip
                     key={key}
                     label={`${column?.label || key}: ${value}`}
-                    onDelete={() => setFilters(prev => ({ ...prev, [key]: '' }))}
-                    color="primary"
-                    variant="outlined"
+                    onDelete={() => setFilters((prev) => ({ ...prev, [key]: '' }))}
                     size="small"
+                    sx={{
+                      fontWeight: 600,
+                      color: BRAND,
+                      background: `linear-gradient(145deg, ${SKEU_LIGHT}, ${SKEU_BG})`,
+                      boxShadow: skeuRaised(3),
+                      border: 'none',
+                      '& .MuiChip-deleteIcon': { color: alpha(BRAND, 0.55) },
+                    }}
+                  />
+                );
+              }
+              if (value && key === 'search') {
+                return (
+                  <Chip
+                    key={key}
+                    label={`Search: "${value}"`}
+                    onDelete={() => setFilters((prev) => ({ ...prev, search: '' }))}
+                    size="small"
+                    sx={{
+                      fontWeight: 600,
+                      color: BRAND,
+                      background: `linear-gradient(145deg, ${SKEU_LIGHT}, ${SKEU_BG})`,
+                      boxShadow: skeuRaised(3),
+                      border: 'none',
+                      '& .MuiChip-deleteIcon': { color: alpha(BRAND, 0.55) },
+                    }}
                   />
                 );
               }
@@ -621,28 +833,37 @@ const StockAvailable: React.FC = () => {
         )}
       </Paper>
 
-      {/* Error Alert */}
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
+        <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>
           {error}
         </Alert>
       )}
 
       {/* Stock Table */}
-      <Paper sx={{ borderRadius: 3, overflow: 'hidden' }}>
+      <Paper
+        elevation={0}
+        sx={{
+          borderRadius: '18px',
+          overflow: 'hidden',
+          border: 'none',
+          background: `linear-gradient(145deg, ${SKEU_LIGHT} 0%, ${SKEU_BG} 100%)`,
+          boxShadow: skeuRaised(8),
+        }}
+      >
         <TableContainer sx={{ maxHeight: 600 }}>
           <Table stickyHeader>
             <TableHead>
               <TableRow>
-                {columns.filter(col => col.visible).map((column) => (
+                {columns.filter((col) => col.visible).map((column) => (
                   <TableCell
                     key={column.id}
                     align={column.align || 'left'}
                     style={{ minWidth: column.minWidth }}
                     sx={{
-                      backgroundColor: theme.palette.background.paper,
-                      fontWeight: 600,
-                      borderBottom: `2px solid ${theme.palette.divider}`
+                      background: alpha(BRAND, 0.06),
+                      fontWeight: 700,
+                      color: BRAND,
+                      borderBottom: `2px solid ${alpha(BRAND, 0.12)}`,
                     }}
                   >
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -651,14 +872,19 @@ const StockAvailable: React.FC = () => {
                           active={Boolean(getSortDirection(column.id))}
                           direction={getSortDirection(column.id) || 'asc'}
                           onClick={() => handleSort(column.id)}
-                          sx={{ minWidth: 'auto' }}
+                          sx={{
+                            minWidth: 'auto',
+                            color: `${BRAND} !important`,
+                            '&.Mui-active': { color: `${BRAND} !important` },
+                            '& .MuiTableSortLabel-icon': { color: `${BRAND} !important` },
+                          }}
                         >
                           {column.label}
                         </TableSortLabel>
                       ) : (
                         column.label
                       )}
-                      
+
                       {getSortPriority(column.id) && (
                         <Chip
                           label={getSortPriority(column.id)}
@@ -667,8 +893,9 @@ const StockAvailable: React.FC = () => {
                             minWidth: 20,
                             height: 20,
                             fontSize: '0.75rem',
-                            backgroundColor: theme.palette.primary.main,
-                            color: 'white'
+                            background: BRAND_GRADIENT,
+                            color: 'white',
+                            fontWeight: 700,
                           }}
                         />
                       )}
@@ -686,12 +913,15 @@ const StockAvailable: React.FC = () => {
                     hover
                     sx={{
                       '&:nth-of-type(odd)': {
-                        backgroundColor: alpha(theme.palette.action.hover, 0.02)
-                      }
+                        backgroundColor: alpha(BRAND, 0.02),
+                      },
+                      '&:hover': {
+                        backgroundColor: `${alpha(BRAND, 0.05)} !important`,
+                      },
                     }}
                   >
-                    {columns.filter(col => col.visible).map((column) => (
-                      <TableCell key={column.id} align={column.align || 'left'}>
+                    {columns.filter((col) => col.visible).map((column) => (
+                      <TableCell key={column.id} align={column.align || 'left'} sx={{ color: alpha(BRAND, 0.9) }}>
                         {column.format ? column.format(item[column.id]) : String(item[column.id] || '')}
                       </TableCell>
                     ))}
@@ -700,7 +930,7 @@ const StockAvailable: React.FC = () => {
             </TableBody>
           </Table>
         </TableContainer>
-        
+
         <TablePagination
           rowsPerPageOptions={[10, 25, 50, 100]}
           component="div"
@@ -712,6 +942,11 @@ const StockAvailable: React.FC = () => {
             setRowsPerPage(parseInt(event.target.value, 10));
             setPage(0);
           }}
+          sx={{
+            borderTop: `1px solid ${alpha(BRAND, 0.08)}`,
+            color: BRAND,
+            '.MuiTablePagination-selectLabel, .MuiTablePagination-displayedRows': { fontWeight: 600 },
+          }}
         />
       </Paper>
 
@@ -721,14 +956,15 @@ const StockAvailable: React.FC = () => {
         onClose={() => setOpenColumnDialog(false)}
         maxWidth="md"
         fullWidth
+        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
       >
-        <DialogTitle>
+        <DialogTitle sx={{ background: BRAND_GRADIENT, color: '#fff' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <ViewColumn />
             Column Visibility
           </Box>
         </DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ bgcolor: SKEU_BG }}>
           <Grid container spacing={2} sx={{ mt: 1 }}>
             {columns.map((column) => (
               <Grid item xs={12} sm={6} md={4} key={column.id}>
@@ -737,16 +973,23 @@ const StockAvailable: React.FC = () => {
                     <Checkbox
                       checked={column.visible}
                       onChange={() => toggleColumnVisibility(column.id)}
+                      sx={{ color: alpha(BRAND, 0.4), '&.Mui-checked': { color: BRAND } }}
                     />
                   }
-                  label={column.label}
+                  label={<Typography sx={{ color: BRAND, fontWeight: 600, fontSize: '0.875rem' }}>{column.label}</Typography>}
                 />
               </Grid>
             ))}
           </Grid>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOpenColumnDialog(false)}>Close</Button>
+        <DialogActions sx={{ bgcolor: SKEU_BG, px: 3, pb: 2 }}>
+          <Button
+            onClick={() => setOpenColumnDialog(false)}
+            variant="contained"
+            sx={{ background: BRAND_GRADIENT, textTransform: 'none', fontWeight: 700, boxShadow: skeuRaised(4), '&:hover': { background: BRAND_GRADIENT, opacity: 0.92 } }}
+          >
+            Close
+          </Button>
         </DialogActions>
       </Dialog>
 
@@ -756,14 +999,15 @@ const StockAvailable: React.FC = () => {
         onClose={() => setOpenFilterDialog(false)}
         maxWidth="lg"
         fullWidth
+        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
       >
-        <DialogTitle>
+        <DialogTitle sx={{ background: BRAND_GRADIENT, color: '#fff' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <FilterList />
             Advanced Filters
           </Box>
         </DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ bgcolor: SKEU_BG }}>
           <Grid container spacing={3} sx={{ mt: 1 }}>
             {/* Form Filter */}
             <Grid item xs={12} sm={6} md={4}>
@@ -1054,9 +1298,17 @@ const StockAvailable: React.FC = () => {
             </Grid>
           </Grid>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={clearAllFilters}>Clear All</Button>
-          <Button onClick={() => setOpenFilterDialog(false)}>Close</Button>
+        <DialogActions sx={{ bgcolor: SKEU_BG, px: 3, pb: 2, gap: 1 }}>
+          <Button onClick={clearAllFilters} sx={{ textTransform: 'none', fontWeight: 700, color: BRAND }}>
+            Clear All
+          </Button>
+          <Button
+            onClick={() => setOpenFilterDialog(false)}
+            variant="contained"
+            sx={{ background: BRAND_GRADIENT, textTransform: 'none', fontWeight: 700, boxShadow: skeuRaised(4), '&:hover': { background: BRAND_GRADIENT, opacity: 0.92 } }}
+          >
+            Apply
+          </Button>
         </DialogActions>
       </Dialog>
 
@@ -1066,15 +1318,16 @@ const StockAvailable: React.FC = () => {
         onClose={() => setOpenPreferencesDialog(false)}
         maxWidth="md"
         fullWidth
+        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
       >
-        <DialogTitle>
+        <DialogTitle sx={{ background: BRAND_GRADIENT, color: '#fff' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Settings />
             User Preferences
           </Box>
         </DialogTitle>
-        <DialogContent>
-          <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>
+        <DialogContent sx={{ bgcolor: SKEU_BG }}>
+          <Typography variant="h6" sx={{ mt: 2, mb: 1, color: BRAND, fontWeight: 800 }}>
             Default Filters
           </Typography>
           <Grid container spacing={2}>
@@ -1142,13 +1395,17 @@ const StockAvailable: React.FC = () => {
             </Grid>
           </Grid>
           
-          <Typography variant="h6" sx={{ mt: 3, mb: 1 }}>
+          <Typography variant="h6" sx={{ mt: 3, mb: 1, color: BRAND, fontWeight: 800 }}>
             Default Sort Order
           </Typography>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             {userPreferences.sortOrder.map((sort, index) => (
               <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <Chip label={index + 1} size="small" />
+                <Chip
+                  label={index + 1}
+                  size="small"
+                  sx={{ background: BRAND_GRADIENT, color: '#fff', fontWeight: 700 }}
+                />
                 <FormControl size="small" sx={{ minWidth: 150 }}>
                   <Select
                     value={sort.key}
@@ -1184,9 +1441,17 @@ const StockAvailable: React.FC = () => {
             ))}
           </Box>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOpenPreferencesDialog(false)}>Cancel</Button>
-          <Button onClick={savePreferences} variant="contained">Save Preferences</Button>
+        <DialogActions sx={{ bgcolor: SKEU_BG, px: 3, pb: 2, gap: 1 }}>
+          <Button onClick={() => setOpenPreferencesDialog(false)} sx={{ textTransform: 'none', fontWeight: 700, color: BRAND }}>
+            Cancel
+          </Button>
+          <Button
+            onClick={savePreferences}
+            variant="contained"
+            sx={{ background: BRAND_GRADIENT, textTransform: 'none', fontWeight: 700, boxShadow: skeuRaised(4), '&:hover': { background: BRAND_GRADIENT, opacity: 0.92 } }}
+          >
+            Save Preferences
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

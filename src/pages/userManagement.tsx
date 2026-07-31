@@ -43,12 +43,16 @@ import {
   PersonAdd as PersonAddIcon,
   Visibility as VisibilityIcon,
   VisibilityOff as VisibilityOffIcon,
-  Badge as BadgeIcon
+  Badge as BadgeIcon,
+  Close as CloseIcon,
 } from "@mui/icons-material";
-import { styled } from '@mui/material/styles';
+import { styled, alpha } from '@mui/material/styles';
 
 // Brand + design tokens
+const BRAND = '#0C2C48';
 const BRAND_GRADIENT = 'linear-gradient(135deg, #0C2C48 0%, #1E5A8A 100%)';
+const SHOWING_GRADIENT = 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)';
+const MODE_GRADIENT = 'linear-gradient(135deg, #4776E6 0%, #8E54E9 100%)';
 
 const AVATAR_GRADIENTS = [
   'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
@@ -64,6 +68,15 @@ const AVATAR_GRADIENTS = [
 const getAvatarGradient = (seed: number) =>
   AVATAR_GRADIENTS[Math.abs(seed) % AVATAR_GRADIENTS.length];
 
+/** Soft clay surface for skeuomorphic depth */
+const SKEU_BG = '#e8eef4';
+const SKEU_LIGHT = '#ffffff';
+const SKEU_DARK = '#c5d0db';
+const skeuRaised = (size = 7) =>
+  `${size}px ${size}px ${size * 2}px ${SKEU_DARK}, -${size}px -${size}px ${size * 2}px ${SKEU_LIGHT}`;
+const skeuInset = (size = 4) =>
+  `inset ${size}px ${size}px ${size * 2}px ${SKEU_DARK}, inset -${size}px -${size}px ${size * 2}px ${SKEU_LIGHT}`;
+
 // Styled components for better customization
 const StyledCard = styled(Card)(() => ({
   borderRadius: '16px',
@@ -76,15 +89,25 @@ const StyledCard = styled(Card)(() => ({
 }));
 
 const StatCard = styled(Card)(() => ({
-  borderRadius: '16px',
-  border: '1px solid rgba(12,44,72,0.06)',
-  boxShadow: '0 6px 24px 0 rgba(12,44,72,0.05)',
+  borderRadius: '18px',
+  border: 'none',
+  background: `linear-gradient(145deg, ${SKEU_LIGHT} 0%, ${SKEU_BG} 100%)`,
+  boxShadow: skeuRaised(8),
   height: '100%',
-  transition: 'transform 0.25s ease, box-shadow 0.25s ease',
+  transition: 'box-shadow 0.18s ease, transform 0.18s ease',
   '&:hover': {
-    transform: 'translateY(-3px)',
-    boxShadow: '0 14px 32px 0 rgba(12,44,72,0.12)'
-  }
+    transform: 'translateY(-2px)',
+    boxShadow: skeuRaised(10),
+  },
+}));
+
+const FilterBar = styled(Paper)(() => ({
+  padding: '16px 20px',
+  borderRadius: '18px',
+  border: 'none',
+  background: `linear-gradient(145deg, ${SKEU_LIGHT} 0%, ${SKEU_BG} 100%)`,
+  boxShadow: skeuRaised(8),
+  marginBottom: 24,
 }));
 
 const StyledTableRow = styled(TableRow)(({ theme }) => ({
@@ -363,7 +386,7 @@ const UserManagement: React.FC = () => {
   };
 
   return (
-    <Box sx={{ p: isMobile ? 2 : 3 }}>
+    <Box sx={{ p: isMobile ? 2 : 3, bgcolor: SKEU_BG, minHeight: 'calc(100vh - 112px)' }}>
       {/* Hero Header */}
       <Box
         sx={{
@@ -460,34 +483,58 @@ const UserManagement: React.FC = () => {
         </Box>
       </Box>
 
-      {/* Stats Strip */}
-      <Grid container spacing={2} sx={{ mb: 3 }}>
+      {/* Stats Strip — skeuomorphic */}
+      <Grid container spacing={2.5} sx={{ mb: 3 }}>
         <Grid item xs={12} sm={4}>
-          <StatCard>
-            <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Avatar sx={{ background: BRAND_GRADIENT, width: 48, height: 48 }}>
+          <StatCard elevation={0}>
+            <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 2.25, '&:last-child': { pb: 2.25 } }}>
+              <Avatar
+                sx={{
+                  background: BRAND_GRADIENT,
+                  width: 48,
+                  height: 48,
+                  boxShadow: `3px 3px 8px ${SKEU_DARK}, inset 0 1px 0 ${alpha('#fff', 0.28)}`,
+                }}
+              >
                 <PeopleIcon />
               </Avatar>
               <Box>
-                <Typography variant="h5" fontWeight={800} sx={{ color: theme.palette.primary.main, lineHeight: 1 }}>
+                <Typography
+                  variant="h5"
+                  fontWeight={800}
+                  sx={{ color: BRAND, lineHeight: 1, textShadow: '1px 1px 0 rgba(255,255,255,0.8)' }}
+                >
                   {users.length.toLocaleString()}
                 </Typography>
-                <Typography variant="body2" color="text.secondary">Total Users</Typography>
+                <Typography variant="body2" sx={{ mt: 0.5, color: alpha(BRAND, 0.55), fontWeight: 700 }}>
+                  Total Users
+                </Typography>
               </Box>
             </CardContent>
           </StatCard>
         </Grid>
         <Grid item xs={12} sm={4}>
-          <StatCard>
-            <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Avatar sx={{ background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)', width: 48, height: 48 }}>
+          <StatCard elevation={0}>
+            <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 2.25, '&:last-child': { pb: 2.25 } }}>
+              <Avatar
+                sx={{
+                  background: SHOWING_GRADIENT,
+                  width: 48,
+                  height: 48,
+                  boxShadow: `3px 3px 8px ${SKEU_DARK}, inset 0 1px 0 ${alpha('#fff', 0.28)}`,
+                }}
+              >
                 <SearchIcon />
               </Avatar>
               <Box>
-                <Typography variant="h5" fontWeight={800} sx={{ color: theme.palette.primary.main, lineHeight: 1 }}>
+                <Typography
+                  variant="h5"
+                  fontWeight={800}
+                  sx={{ color: BRAND, lineHeight: 1, textShadow: '1px 1px 0 rgba(255,255,255,0.8)' }}
+                >
                   {filteredUsers.length.toLocaleString()}
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
+                <Typography variant="body2" sx={{ mt: 0.5, color: alpha(BRAND, 0.55), fontWeight: 700 }}>
                   {searchTerm ? 'Matching Search' : 'Currently Showing'}
                 </Typography>
               </Box>
@@ -495,53 +542,73 @@ const UserManagement: React.FC = () => {
           </StatCard>
         </Grid>
         <Grid item xs={12} sm={4}>
-          <StatCard>
-            <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Avatar sx={{ background: 'linear-gradient(135deg, #4776E6 0%, #8E54E9 100%)', width: 48, height: 48 }}>
+          <StatCard elevation={0}>
+            <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 2.25, '&:last-child': { pb: 2.25 } }}>
+              <Avatar
+                sx={{
+                  background: MODE_GRADIENT,
+                  width: 48,
+                  height: 48,
+                  boxShadow: `3px 3px 8px ${SKEU_DARK}, inset 0 1px 0 ${alpha('#fff', 0.28)}`,
+                }}
+              >
                 <BadgeIcon />
               </Avatar>
               <Box>
-                <Typography variant="h6" fontWeight={800} sx={{ color: theme.palette.primary.main, lineHeight: 1.1 }}>
+                <Typography
+                  variant="h6"
+                  fontWeight={800}
+                  sx={{ color: BRAND, lineHeight: 1.1, textShadow: '1px 1px 0 rgba(255,255,255,0.8)' }}
+                >
                   {searchTerm ? 'Filtered' : 'All Records'}
                 </Typography>
-                <Typography variant="body2" color="text.secondary">Search Mode</Typography>
+                <Typography variant="body2" sx={{ mt: 0.5, color: alpha(BRAND, 0.55), fontWeight: 700 }}>
+                  Search Mode
+                </Typography>
               </Box>
             </CardContent>
           </StatCard>
         </Grid>
       </Grid>
 
-      {/* Search */}
-      <StyledCard sx={{ mb: 3 }}>
-        <CardContent sx={{ py: 2 }}>
-          <TextField
-            fullWidth
-            variant="outlined"
-            size="small"
-            placeholder="Search by name or username..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon color="action" />
-                </InputAdornment>
-              ),
-              endAdornment: searchTerm ? (
-                <InputAdornment position="end">
-                  <IconButton size="small" onClick={() => setSearchTerm('')}>
-                    <ClearIcon fontSize="small" />
-                  </IconButton>
-                </InputAdornment>
-              ) : null,
-              sx: {
-                backgroundColor: theme.palette.background.paper,
-                borderRadius: '12px'
-              }
-            }}
-          />
-        </CardContent>
-      </StyledCard>
+      {/* Search — skeuomorphic, constrained width */}
+      <FilterBar elevation={0}>
+        <TextField
+          variant="outlined"
+          size="small"
+          placeholder="Search by name or username..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          sx={{
+            width: '100%',
+            maxWidth: { xs: '100%', sm: 360, md: 400 },
+          }}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon sx={{ color: alpha(BRAND, 0.5) }} />
+              </InputAdornment>
+            ),
+            endAdornment: searchTerm ? (
+              <InputAdornment position="end">
+                <IconButton size="small" onClick={() => setSearchTerm('')}>
+                  <ClearIcon fontSize="small" />
+                </IconButton>
+              </InputAdornment>
+            ) : null,
+            sx: {
+              height: 40,
+              borderRadius: 3,
+              background: SKEU_BG,
+              boxShadow: skeuInset(4),
+              '& fieldset': { border: 'none' },
+              '&.Mui-focused': {
+                boxShadow: `${skeuInset(4)}, 0 0 0 2px ${alpha(BRAND, 0.18)}`,
+              },
+            },
+          }}
+        />
+      </FilterBar>
 
       {/* Users Table */}
       <StyledCard>
@@ -791,64 +858,137 @@ const UserManagement: React.FC = () => {
       {/* Add User Dialog */}
       <Dialog
         open={openDialog}
-        onClose={() => setOpenDialog(false)}
+        onClose={() => {
+          setOpenDialog(false);
+          resetForm();
+        }}
         maxWidth="sm"
         fullWidth
         PaperProps={{
           sx: {
-            borderRadius: '12px'
-          }
+            borderRadius: 2,
+            overflow: 'hidden',
+            boxShadow: '0 16px 48px rgba(12,44,72,0.2)',
+          },
         }}
       >
-        <DialogTitle sx={{
-          fontWeight: "bold",
-          bgcolor: theme.palette.grey[100],
-          borderBottom: `1px solid ${theme.palette.divider}`
-        }}>
-          <Box display="flex" alignItems="center">
-            <PersonAddIcon sx={{ mr: 1, color: theme.palette.primary.main }} />
-            Create New User
+        <DialogTitle
+          sx={{
+            background: BRAND_GRADIENT,
+            color: '#fff',
+            py: 2,
+            px: 2.5,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1.5,
+          }}
+        >
+          <Avatar
+            sx={{
+              width: 40,
+              height: 40,
+              bgcolor: 'rgba(255,255,255,0.16)',
+              border: '1px solid rgba(255,255,255,0.25)',
+            }}
+          >
+            <PersonAddIcon sx={{ fontSize: 20 }} />
+          </Avatar>
+          <Box flex={1} minWidth={0}>
+            <Typography variant="h6" fontWeight={700} sx={{ lineHeight: 1.2 }}>
+              Create New User
+            </Typography>
+            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.72)' }}>
+              Add login credentials for a new inventory user
+            </Typography>
           </Box>
+          <IconButton
+            onClick={() => {
+              setOpenDialog(false);
+              resetForm();
+            }}
+            size="small"
+            sx={{
+              color: '#fff',
+              bgcolor: 'rgba(255,255,255,0.12)',
+              '&:hover': { bgcolor: 'rgba(255,255,255,0.22)' },
+            }}
+          >
+            <CloseIcon fontSize="small" />
+          </IconButton>
         </DialogTitle>
-        <DialogContent dividers sx={{ pt: 2 }}>
+
+        <DialogContent sx={{ px: 2.5, pt: 2.5, pb: 1.5 }}>
+          <Typography
+            variant="caption"
+            sx={{
+              display: 'block',
+              mb: 1.5,
+              fontWeight: 700,
+              color: alpha(BRAND, 0.55),
+              textTransform: 'uppercase',
+              letterSpacing: 0.6,
+            }}
+          >
+            Account details
+          </Typography>
+
           <Grid container spacing={2}>
             <Grid item xs={12}>
               <TextField
                 fullWidth
-                label="Username *"
+                label="Username"
                 variant="outlined"
                 size="small"
+                required
                 value={newUser.user_name}
                 onChange={(e) => setNewUser({ ...newUser, user_name: e.target.value })}
                 error={!!errors.user_name}
                 helperText={errors.user_name}
-                sx={{ mb: 1 }}
               />
             </Grid>
             <Grid item xs={12}>
               <TextField
                 fullWidth
-                label="Full Name *"
+                label="Full Name"
                 variant="outlined"
                 size="small"
+                required
                 value={newUser.full_name}
                 onChange={(e) => setNewUser({ ...newUser, full_name: e.target.value })}
                 error={!!errors.full_name}
                 helperText={errors.full_name}
-                sx={{ mb: 1 }}
               />
             </Grid>
+
+            <Grid item xs={12}>
+              <Typography
+                variant="caption"
+                sx={{
+                  display: 'block',
+                  mb: 1.5,
+                  mt: 0.5,
+                  fontWeight: 700,
+                  color: alpha(BRAND, 0.55),
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.6,
+                }}
+              >
+                Security
+              </Typography>
+            </Grid>
+
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
-                label="Password *"
+                label="Password"
                 variant="outlined"
                 size="small"
-                type={showPassword ? "text" : "password"}
+                required
+                type={showPassword ? 'text' : 'password'}
                 value={newUser.password}
                 onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
                 error={!!errors.password}
-                helperText={errors.password}
+                helperText={errors.password || 'Minimum 6 characters'}
                 InputProps={{
                   endAdornment: (
                     <InputAdornment position="end">
@@ -856,48 +996,65 @@ const UserManagement: React.FC = () => {
                         onClick={() => setShowPassword(!showPassword)}
                         edge="end"
                         size="small"
+                        aria-label="Toggle password visibility"
                       >
                         {showPassword ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
                       </IconButton>
                     </InputAdornment>
                   ),
                 }}
-                sx={{ mb: 1 }}
               />
             </Grid>
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
-                label="Confirm Password *"
+                label="Confirm Password"
                 variant="outlined"
                 size="small"
-                type={showPassword ? "text" : "password"}
+                required
+                type={showPassword ? 'text' : 'password'}
                 value={newUser.confirmPassword}
                 onChange={(e) => setNewUser({ ...newUser, confirmPassword: e.target.value })}
                 error={!!errors.confirmPassword}
                 helperText={errors.confirmPassword}
-                sx={{ mb: 1 }}
               />
             </Grid>
           </Grid>
         </DialogContent>
-        <DialogActions sx={{ p: 2, borderTop: `1px solid ${theme.palette.divider}` }}>
+
+        <DialogActions
+          sx={{
+            px: 2.5,
+            py: 2,
+            gap: 1,
+            borderTop: `1px solid ${alpha(BRAND, 0.08)}`,
+          }}
+        >
           <Button
             onClick={() => {
               setOpenDialog(false);
               resetForm();
             }}
-            color="inherit"
-            sx={{ borderRadius: '8px' }}
+            sx={{ textTransform: 'none', fontWeight: 600, color: BRAND }}
           >
             Cancel
           </Button>
           <Button
             onClick={handleCreateUser}
             variant="contained"
-            color="primary"
-            startIcon={<CheckCircleIcon />}
-            sx={{ borderRadius: '8px' }}
+            startIcon={<PersonAddIcon />}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 700,
+              px: 2.5,
+              background: BRAND_GRADIENT,
+              boxShadow: 'none',
+              '&:hover': {
+                background: BRAND_GRADIENT,
+                filter: 'brightness(1.05)',
+                boxShadow: 'none',
+              },
+            }}
           >
             Create User
           </Button>

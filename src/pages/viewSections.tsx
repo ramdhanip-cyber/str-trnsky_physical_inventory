@@ -29,7 +29,8 @@ import {
   Alert,
   AlertTitle,
   Tabs,
-  Tab
+  Tab,
+  alpha,
 } from "@mui/material";
 import { servicesAPI } from "../config/api";
 import {
@@ -45,11 +46,59 @@ import {
   Info as InfoIcon,
   Sort as SortIcon,
   Group as GroupIcon,
-  Download as DownloadIcon
+  Download as DownloadIcon,
+  Layers as LayersIcon,
 } from "@mui/icons-material";
 import { format } from "date-fns";
 import { visuallyHidden } from '@mui/utils';
 import * as XLSX from "xlsx";
+
+const BRAND = '#0C2C48';
+const BRAND_GRADIENT = 'linear-gradient(135deg, #0C2C48 0%, #1E5A8A 100%)';
+const SKEU_BG = '#e8eef4';
+const SKEU_LIGHT = '#ffffff';
+const SKEU_DARK = '#c5d0db';
+const skeuRaised = (size = 7) =>
+  `${size}px ${size}px ${size * 2}px ${SKEU_DARK}, -${size}px -${size}px ${size * 2}px ${SKEU_LIGHT}`;
+const skeuInset = (size = 4) =>
+  `inset ${size}px ${size}px ${size * 2}px ${SKEU_DARK}, inset -${size}px -${size}px ${size * 2}px ${SKEU_LIGHT}`;
+const skeuPressed = `inset 3px 3px 7px ${SKEU_DARK}, inset -2px -2px 5px ${SKEU_LIGHT}`;
+
+const skeuIconSx = (grad: string) => ({
+  width: 32,
+  height: 32,
+  background: grad,
+  color: '#fff',
+  border: `1px solid ${alpha('#fff', 0.35)}`,
+  boxShadow: `
+    3px 4px 8px ${alpha('#000', 0.18)},
+    inset 0 2px 3px ${alpha('#fff', 0.4)},
+    inset 0 -2px 4px ${alpha('#000', 0.18)}
+  `,
+  '& .MuiSvgIcon-root': {
+    fontSize: 16,
+    filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.25))',
+  },
+});
+
+const skeuBtnSx = {
+  textTransform: 'none' as const,
+  fontWeight: 700,
+  borderRadius: '12px',
+  height: 40,
+  px: 2,
+  border: 'none',
+  background: `linear-gradient(145deg, ${SKEU_LIGHT} 0%, ${SKEU_BG} 100%)`,
+  boxShadow: skeuRaised(4),
+  color: BRAND,
+  '&:hover': {
+    background: `linear-gradient(145deg, ${SKEU_LIGHT} 0%, ${SKEU_BG} 100%)`,
+    boxShadow: skeuRaised(5),
+  },
+  '&:active': {
+    boxShadow: skeuPressed,
+  },
+};
 
 interface Section {
   section_id: string;
@@ -560,112 +609,207 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="xl">
-      <DialogTitle>
-        <Box display="flex" justifyContent="space-between" alignItems="center">
-          <Box>
-            <Typography variant="h5" fontWeight="bold">
+    <Dialog
+      open={open}
+      onClose={onClose}
+      fullWidth
+      maxWidth="xl"
+      PaperProps={{
+        sx: {
+          borderRadius: 3,
+          overflow: 'hidden',
+          background: SKEU_BG,
+          boxShadow: '0 24px 64px rgba(12,44,72,0.28)',
+        },
+      }}
+    >
+      <DialogTitle
+        sx={{
+          background: BRAND_GRADIENT,
+          color: '#fff',
+          py: 2.25,
+          px: 2.5,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1.5,
+        }}
+      >
+        <Avatar
+          sx={{
+            width: 44,
+            height: 44,
+            bgcolor: 'rgba(255,255,255,0.16)',
+            border: '1px solid rgba(255,255,255,0.28)',
+            boxShadow: `inset 0 1px 0 ${alpha('#fff', 0.35)}, 2px 3px 8px rgba(0,0,0,0.25)`,
+          }}
+        >
+          <LayersIcon />
+        </Avatar>
+        <Box flex={1} minWidth={0}>
+          <Box display="flex" alignItems="center" gap={1}>
+            <Typography variant="h5" fontWeight={800} sx={{ lineHeight: 1.15 }}>
               Sections Management
-              <Chip label={sections.length} size="small" sx={{ ml: 1 }} />
             </Typography>
-            <Typography variant="subtitle1" color="textSecondary">
-              {warehouse} • {location_desc} • {branch}
-            </Typography>
+            <Chip
+              label={sections.length}
+              size="small"
+              sx={{
+                height: 24,
+                fontWeight: 800,
+                color: BRAND,
+                bgcolor: '#fff',
+                boxShadow: `2px 2px 5px rgba(0,0,0,0.18), inset 0 1px 0 ${alpha('#fff', 0.8)}`,
+              }}
+            />
           </Box>
-          <Box display="flex" alignItems="center">
-            <Tooltip title="More options">
-              <IconButton onClick={handleMenuOpen} color="inherit">
-                <MoreVertIcon />
-              </IconButton>
-            </Tooltip>
-            <Menu
-              anchorEl={anchorEl}
-              open={Boolean(anchorEl)}
-              onClose={handleMenuClose}
-            >
-              <MenuItem onClick={() => { handleRefresh(); handleMenuClose(); }}>
-                <RefreshIcon sx={{ mr: 1 }} /> Refresh Data
-              </MenuItem>
-              <MenuItem onClick={() => { handleExportSections(); handleMenuClose(); }}>
-                <DownloadIcon sx={{ mr: 1 }} /> Export Sections
-              </MenuItem>
-              <MenuItem onClick={handleMenuClose}>
-                Filter Sections
-              </MenuItem>
-              <MenuItem onClick={handleMenuClose}>
-                <SortIcon sx={{ mr: 1 }} /> Sort Options
-              </MenuItem>
-            </Menu>
-            <IconButton onClick={onClose} color="inherit">
-              <CloseIcon />
-            </IconButton>
-          </Box>
+          <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.75)', mt: 0.35, fontWeight: 600 }}>
+            {warehouse} · {location_desc} · {branch}
+          </Typography>
         </Box>
+        <Tooltip title="More options">
+          <IconButton
+            onClick={handleMenuOpen}
+            size="small"
+            sx={{
+              color: '#fff',
+              bgcolor: 'rgba(255,255,255,0.12)',
+              boxShadow: `inset 0 1px 0 ${alpha('#fff', 0.25)}`,
+              '&:hover': { bgcolor: 'rgba(255,255,255,0.2)' },
+            }}
+          >
+            <MoreVertIcon />
+          </IconButton>
+        </Tooltip>
+        <Menu
+          anchorEl={anchorEl}
+          open={Boolean(anchorEl)}
+          onClose={handleMenuClose}
+          slotProps={{
+            paper: {
+              sx: {
+                mt: 1,
+                borderRadius: 2,
+                background: `linear-gradient(145deg, ${SKEU_LIGHT}, ${SKEU_BG})`,
+                boxShadow: skeuRaised(6),
+                minWidth: 200,
+              },
+            },
+          }}
+        >
+          <MenuItem onClick={() => { handleRefresh(); handleMenuClose(); }}>
+            <RefreshIcon sx={{ mr: 1, color: BRAND }} /> Refresh Data
+          </MenuItem>
+          <MenuItem onClick={() => { handleExportSections(); handleMenuClose(); }}>
+            <DownloadIcon sx={{ mr: 1, color: BRAND }} /> Export Sections
+          </MenuItem>
+          <MenuItem onClick={handleMenuClose}>
+            Filter Sections
+          </MenuItem>
+          <MenuItem onClick={handleMenuClose}>
+            <SortIcon sx={{ mr: 1, color: BRAND }} /> Sort Options
+          </MenuItem>
+        </Menu>
+        <IconButton
+          onClick={onClose}
+          size="small"
+          sx={{
+            color: '#fff',
+            bgcolor: 'rgba(255,255,255,0.12)',
+            '&:hover': { bgcolor: 'rgba(255,255,255,0.22)' },
+          }}
+        >
+          <CloseIcon />
+        </IconButton>
       </DialogTitle>
-      
-      <Divider />
-      
-      <DialogContent sx={{ pt: 2 }}>
-        <Grid container spacing={3}>
-          {/* Status Summary */}
+
+      <DialogContent sx={{ pt: 2.5, px: 2.5, bgcolor: SKEU_BG }}>
+        <Grid container spacing={2.5}>
           <Grid item xs={12}>
-            <Box display="flex" justifyContent="space-between" mb={2}>
-              <Box display="flex" alignItems="center" gap={2}>
-                <Typography variant="h6" color="primary">
+            <Box
+              sx={{
+                p: 1.75,
+                borderRadius: '16px',
+                background: `linear-gradient(145deg, ${SKEU_LIGHT} 0%, ${SKEU_BG} 100%)`,
+                boxShadow: skeuRaised(6),
+              }}
+            >
+              <Box
+                display="flex"
+                justifyContent="space-between"
+                alignItems={{ xs: 'stretch', md: 'center' }}
+                flexDirection={{ xs: 'column', md: 'row' }}
+                gap={1.5}
+              >
+                <Typography variant="subtitle1" fontWeight={800} sx={{ color: BRAND }}>
                   Assignment Summary
                 </Typography>
+                <Tabs
+                  value={activeTab}
+                  onChange={(_e, newValue) => setActiveTab(newValue)}
+                  aria-label="section view tabs"
+                  variant="scrollable"
+                  scrollButtons="auto"
+                  sx={{
+                    minHeight: 40,
+                    '& .MuiTabs-indicator': {
+                      height: 3,
+                      borderRadius: '3px 3px 0 0',
+                      background: BRAND_GRADIENT,
+                    },
+                    '& .MuiTab-root': {
+                      textTransform: 'none',
+                      fontWeight: 700,
+                      minHeight: 40,
+                      color: alpha(BRAND, 0.5),
+                      '&.Mui-selected': { color: BRAND },
+                    },
+                  }}
+                >
+                  <Tab label="All" icon={<GroupIcon fontSize="small" />} iconPosition="start" />
+                  <Tab
+                    label="In Progress"
+                    icon={
+                      <Badge badgeContent={getStatusCount('In Progress')} color="primary">
+                        <CircularProgress size={14} />
+                      </Badge>
+                    }
+                    iconPosition="start"
+                  />
+                  <Tab
+                    label="Count Completed"
+                    icon={
+                      <Badge badgeContent={getStatusCount('Count Completed')} color="default">
+                        <CheckCircleIcon fontSize="small" />
+                      </Badge>
+                    }
+                    iconPosition="start"
+                  />
+                  <Tab
+                    label="Assigned Checker"
+                    icon={
+                      <Badge badgeContent={getStatusCount('Assigned Checker')} color="default">
+                        <AssignmentIcon fontSize="small" />
+                      </Badge>
+                    }
+                    iconPosition="start"
+                  />
+                  <Tab
+                    label="Completed"
+                    icon={
+                      <Badge badgeContent={getStatusCount('Completed')} color="success">
+                        <CheckCircleIcon fontSize="small" />
+                      </Badge>
+                    }
+                    iconPosition="start"
+                  />
+                </Tabs>
               </Box>
-              <Tabs
-                value={activeTab}
-                onChange={(_e, newValue) => setActiveTab(newValue)}
-                aria-label="section view tabs"
-                sx={{ borderBottom: 1, borderColor: 'divider' }}
-              >
-                <Tab label="All" icon={<GroupIcon />} iconPosition="start" />
-                <Tab 
-                  label="In Progress" 
-                  icon={
-                    <Badge badgeContent={getStatusCount('In Progress')} color="primary">
-                      <CircularProgress size={16} />
-                    </Badge>
-                  } 
-                  iconPosition="start" 
-                />
-                <Tab 
-                  label="Count Completed" 
-                  icon={
-                    <Badge badgeContent={getStatusCount('Count Completed')} color="default">
-                      <CheckCircleIcon />
-                    </Badge>
-                  } 
-                  iconPosition="start" 
-                />
-                <Tab 
-                  label="Assigned Checker" 
-                  icon={
-                    <Badge badgeContent={getStatusCount('Assigned Checker')} color="default">
-                      <AssignmentIcon />
-                    </Badge>
-                  } 
-                  iconPosition="start" 
-                />
-                <Tab 
-                  label="Completed" 
-                  icon={
-                    <Badge badgeContent={getStatusCount('Completed')} color="success">
-                      <CheckCircleIcon />
-                    </Badge>
-                  } 
-                  iconPosition="start" 
-                />
-              </Tabs>
             </Box>
           </Grid>
 
-          {/* Alerts */}
           {error && (
             <Grid item xs={12}>
-              <Alert severity="error" onClose={() => setError(null)}>
+              <Alert severity="error" onClose={() => setError(null)} sx={{ borderRadius: 2, boxShadow: skeuRaised(3) }}>
                 <AlertTitle>Error</AlertTitle>
                 {error}
               </Alert>
@@ -673,42 +817,75 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
           )}
           {success && (
             <Grid item xs={12}>
-              <Alert severity="success" onClose={() => setSuccess(null)}>
+              <Alert severity="success" onClose={() => setSuccess(null)} sx={{ borderRadius: 2, boxShadow: skeuRaised(3) }}>
                 <AlertTitle>Success</AlertTitle>
                 {success}
               </Alert>
             </Grid>
           )}
 
-          {/* Search and Filters */}
           <Grid item xs={12}>
-            <Box display="flex" alignItems="center" gap={2}>
+            <Box
+              sx={{
+                p: 1.5,
+                borderRadius: '16px',
+                background: `linear-gradient(145deg, ${SKEU_LIGHT} 0%, ${SKEU_BG} 100%)`,
+                boxShadow: skeuRaised(6),
+              }}
+            >
               <TextField
                 fullWidth
+                size="small"
                 label="Search Sections"
                 variant="outlined"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 InputProps={{
-                  startAdornment: <SearchIcon color="action" sx={{ mr: 1 }} />
+                  startAdornment: <SearchIcon sx={{ mr: 1, color: alpha(BRAND, 0.5) }} />,
+                  sx: {
+                    height: 42,
+                    borderRadius: 3,
+                    background: SKEU_BG,
+                    boxShadow: skeuInset(4),
+                    '& fieldset': { border: 'none' },
+                    '&.Mui-focused': {
+                      boxShadow: `${skeuInset(4)}, 0 0 0 2px ${alpha(BRAND, 0.18)}`,
+                    },
+                  },
                 }}
               />
             </Box>
           </Grid>
 
-          {/* Sections Table */}
           <Grid item xs={12}>
-            <Paper elevation={3} sx={{ overflow: 'hidden', borderRadius: 2 }}>
-              <TableContainer>
-                <Table>
+            <Paper
+              elevation={0}
+              sx={{
+                overflow: 'hidden',
+                borderRadius: '16px',
+                border: 'none',
+                background: `linear-gradient(145deg, ${SKEU_LIGHT} 0%, ${SKEU_BG} 100%)`,
+                boxShadow: skeuRaised(8),
+              }}
+            >
+              <TableContainer sx={{ maxHeight: 480 }}>
+                <Table stickyHeader>
                   <TableHead>
-                    <TableRow sx={{ backgroundColor: 'primary.main' }}>
-                      <TableCell sx={{ color: 'common.white' }}>
+                    <TableRow>
+                      <TableCell
+                        sx={{
+                          background: BRAND_GRADIENT,
+                          color: '#fff',
+                          fontWeight: 800,
+                          borderBottom: 'none',
+                          boxShadow: `inset 0 1px 0 ${alpha('#fff', 0.2)}`,
+                        }}
+                      >
                         <Box display="flex" alignItems="center">
                           Section Name
                           <Tooltip title="Sort">
-                            <IconButton 
-                              size="small" 
+                            <IconButton
+                              size="small"
                               sx={{ color: 'inherit', ml: 1 }}
                               onClick={() => handleSort('section_desc')}
                             >
@@ -722,71 +899,93 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
                           </Tooltip>
                         </Box>
                       </TableCell>
-                      <TableCell sx={{ color: 'common.white' }}>Assigned Team</TableCell>
-                      <TableCell sx={{ color: 'common.white' }}>Status</TableCell>
-                      <TableCell sx={{ color: 'common.white' }}>Assigned At</TableCell>
-                      <TableCell sx={{ color: 'common.white' }} align="right">Actions</TableCell>
+                      <TableCell sx={{ background: BRAND_GRADIENT, color: '#fff', fontWeight: 800, borderBottom: 'none' }}>
+                        Assigned Team
+                      </TableCell>
+                      <TableCell sx={{ background: BRAND_GRADIENT, color: '#fff', fontWeight: 800, borderBottom: 'none' }}>
+                        Status
+                      </TableCell>
+                      <TableCell sx={{ background: BRAND_GRADIENT, color: '#fff', fontWeight: 800, borderBottom: 'none' }}>
+                        Assigned At
+                      </TableCell>
+                      <TableCell sx={{ background: BRAND_GRADIENT, color: '#fff', fontWeight: 800, borderBottom: 'none' }} align="right">
+                        Actions
+                      </TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {loading ? (
                       <TableRow>
                         <TableCell colSpan={5} align="center" sx={{ py: 4 }}>
-                          <CircularProgress />
-                          <Typography sx={{ mt: 1 }}>Loading sections...</Typography>
+                          <CircularProgress sx={{ color: BRAND }} />
+                          <Typography sx={{ mt: 1, color: alpha(BRAND, 0.6), fontWeight: 600 }}>
+                            Loading sections…
+                          </Typography>
                         </TableCell>
                       </TableRow>
                     ) : sortedSections.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={5} align="center" sx={{ py: 4 }}>
-                          <Typography color="textSecondary">
+                          <Typography sx={{ color: alpha(BRAND, 0.55), fontWeight: 600 }}>
                             {searchQuery ? 'No matching sections found' : 'No sections available'}
                           </Typography>
                         </TableCell>
                       </TableRow>
                     ) : (
                       sortedSections.map((section) => {
-                        console.log('Processing section:', section);
                         const assignment = getAssignedTeamInfo(section.section_id);
                         const isAssigned = Boolean(assignment);
-                        console.log('Section assignment result:', assignment, 'isAssigned:', isAssigned);
-                        
+
                         return (
-                          <TableRow key={section.section_id} hover>
+                          <TableRow
+                            key={section.section_id}
+                            hover
+                            sx={{
+                              '&:nth-of-type(odd)': { bgcolor: alpha(BRAND, 0.02) },
+                              '&:hover': { bgcolor: `${alpha(BRAND, 0.05)} !important` },
+                            }}
+                          >
                             <TableCell>
-                              <Typography fontWeight="medium">{section.section_desc}</Typography>
+                              <Typography fontWeight={700} sx={{ color: BRAND }}>
+                                {section.section_desc}
+                              </Typography>
                               {section.created_at && (
-                                <Typography variant="caption" color="textSecondary">
+                                <Typography variant="caption" sx={{ color: alpha(BRAND, 0.5), fontWeight: 600 }}>
                                   Created: {format(new Date(section.created_at), 'MMM dd, yyyy')}
                                 </Typography>
                               )}
                             </TableCell>
                             <TableCell>
                               {assignment ? (
-                                <Box display="flex" alignItems="center" gap={1}>
-                                  <Avatar sx={{ width: 24, height: 24, bgcolor: 'success.main' }}>
-                                    <AssignmentIcon fontSize="small" />
+                                <Box display="flex" alignItems="center" gap={1.25}>
+                                  <Avatar sx={skeuIconSx('linear-gradient(145deg, #11998e 0%, #38ef7d 100%)')}>
+                                    <AssignmentIcon />
                                   </Avatar>
                                   <Box>
-                                    <Typography variant="body2" fontWeight="medium" color="success.main">
+                                    <Typography variant="body2" fontWeight={700} sx={{ color: '#0f766e' }}>
                                       {assignment.team_name}
                                     </Typography>
-                                    <Typography variant="caption" color="textSecondary">
+                                    <Typography variant="caption" sx={{ color: alpha(BRAND, 0.5), fontWeight: 600 }}>
                                       Assigned: {format(new Date(assignment.assigned_at), 'MMM dd, yyyy HH:mm')}
                                     </Typography>
                                     {assignment.team_details?.tag_from && assignment.team_details?.tag_to && (
-                                      <Typography variant="caption" color="textSecondary" display="block">
+                                      <Typography variant="caption" display="block" sx={{ color: alpha(BRAND, 0.5) }}>
                                         Tags: {assignment.team_details.tag_from} → {assignment.team_details.tag_to}
                                       </Typography>
                                     )}
                                   </Box>
                                 </Box>
                               ) : (
-                                <Box display="flex" alignItems="center" gap={1}>
-                                  <Avatar sx={{ width: 24, height: 24, bgcolor: 'grey.300' }}>
-                                    <AssignmentIcon fontSize="small" color="disabled" />
+                                <Box display="flex" alignItems="center" gap={1.25}>
+                                  <Avatar
+                                    sx={{
+                                      ...skeuIconSx(`linear-gradient(145deg, ${SKEU_LIGHT}, ${SKEU_DARK})`),
+                                      color: alpha(BRAND, 0.45),
+                                    }}
+                                  >
+                                    <AssignmentIcon />
                                   </Avatar>
-                                  <Typography variant="body2" color="textSecondary">
+                                  <Typography variant="body2" sx={{ color: alpha(BRAND, 0.5), fontWeight: 600 }}>
                                     Not assigned
                                   </Typography>
                                 </Box>
@@ -799,39 +998,53 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
                                   color={statusColors[assignment?.status || 'In Progress'] as 'default' | 'primary' | 'success' | 'error'}
                                   size="small"
                                   icon={statusIcons[assignment?.status || 'In Progress']}
-                                  sx={{ textTransform: 'capitalize' }}
+                                  sx={{
+                                    textTransform: 'capitalize',
+                                    fontWeight: 700,
+                                    boxShadow: `2px 2px 5px ${SKEU_DARK}, inset 0 1px 0 ${alpha('#fff', 0.25)}`,
+                                  }}
                                 />
                               ) : (
                                 <Chip
                                   label="Available for assignment"
-                                  color="default"
                                   size="small"
                                   variant="outlined"
                                   icon={<InfoIcon fontSize="small" />}
+                                  sx={{
+                                    fontWeight: 600,
+                                    color: BRAND,
+                                    borderColor: alpha(BRAND, 0.25),
+                                    background: SKEU_BG,
+                                    boxShadow: skeuInset(2),
+                                  }}
                                 />
                               )}
                             </TableCell>
                             <TableCell>
                               {isAssigned ? (
-                                <Typography variant="body2">
+                                <Typography variant="body2" fontWeight={600} sx={{ color: BRAND }}>
                                   {format(new Date(assignment?.assigned_at || new Date()), 'MMM dd, yyyy HH:mm')}
                                 </Typography>
                               ) : (
-                                <Typography variant="body2" color="textSecondary">
-                                  -
+                                <Typography variant="body2" sx={{ color: alpha(BRAND, 0.45) }}>
+                                  —
                                 </Typography>
                               )}
                             </TableCell>
                             <TableCell align="right">
-                              <Box display="flex" justifyContent="flex-end" gap={1}>
+                              <Box display="flex" justifyContent="flex-end" gap={0.75}>
                                 {isAssigned ? (
                                   <Tooltip title={`Already assigned to ${assignment?.team_name}. Cannot reassign.`}>
                                     <span>
                                       <IconButton
-                                        color="success"
                                         disabled
                                         size="small"
-                                        sx={{ opacity: 0.6 }}
+                                        sx={{
+                                          color: '#fff',
+                                          background: 'linear-gradient(145deg, #11998e 0%, #38ef7d 100%)',
+                                          boxShadow: skeuRaised(2),
+                                          opacity: 0.55,
+                                        }}
                                       >
                                         <CheckCircleIcon fontSize="small" />
                                       </IconButton>
@@ -840,9 +1053,18 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
                                 ) : (
                                   <Tooltip title="Assign Team">
                                     <IconButton
-                                      color="primary"
                                       onClick={() => handleAssignTeam(section.section_id)}
                                       size="small"
+                                      sx={{
+                                        color: '#fff',
+                                        background: BRAND_GRADIENT,
+                                        boxShadow: `
+                                          2px 3px 6px ${alpha('#000', 0.2)},
+                                          inset 0 1px 0 ${alpha('#fff', 0.35)}
+                                        `,
+                                        '&:hover': { background: BRAND_GRADIENT, filter: 'brightness(1.05)' },
+                                        '&:active': { boxShadow: skeuPressed },
+                                      }}
                                     >
                                       <PersonAddIcon fontSize="small" />
                                     </IconButton>
@@ -851,19 +1073,21 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
                                 {isAssigned && assignment && (
                                   <Tooltip title="Unassign Team">
                                     <IconButton
-                                      color="warning"
-                                      onClick={() => {
-                                        console.log("=== UNASSIGN BUTTON CLICKED ===");
-                                        console.log("Section ID:", section.section_id);
-                                        console.log("Is Assigned:", isAssigned);
-                                        console.log("Assignment:", assignment);
-                                        handleUnassignTeam(section.section_id);
-                                      }}
+                                      onClick={() => handleUnassignTeam(section.section_id)}
                                       disabled={unassigning === section.section_id || loading}
                                       size="small"
+                                      sx={{
+                                        color: '#fff',
+                                        background: 'linear-gradient(145deg, #fc4a1a 0%, #f7b733 100%)',
+                                        boxShadow: `
+                                          2px 3px 6px ${alpha('#000', 0.2)},
+                                          inset 0 1px 0 ${alpha('#fff', 0.35)}
+                                        `,
+                                        '&:hover': { filter: 'brightness(1.05)' },
+                                      }}
                                     >
                                       {unassigning === section.section_id ? (
-                                        <CircularProgress size={20} />
+                                        <CircularProgress size={16} color="inherit" />
                                       ) : (
                                         <PersonRemoveIcon fontSize="small" />
                                       )}
@@ -872,13 +1096,21 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
                                 )}
                                 <Tooltip title="Delete Section">
                                   <IconButton
-                                    color="error"
                                     onClick={() => handleDeleteSection(section.section_id)}
                                     disabled={deleting === section.section_id}
                                     size="small"
+                                    sx={{
+                                      color: '#fff',
+                                      background: 'linear-gradient(145deg, #eb3349 0%, #f45c43 100%)',
+                                      boxShadow: `
+                                        2px 3px 6px ${alpha('#000', 0.2)},
+                                        inset 0 1px 0 ${alpha('#fff', 0.35)}
+                                      `,
+                                      '&:hover': { filter: 'brightness(1.05)' },
+                                    }}
                                   >
                                     {deleting === section.section_id ? (
-                                      <CircularProgress size={20} />
+                                      <CircularProgress size={16} color="inherit" />
                                     ) : (
                                       <DeleteIcon fontSize="small" />
                                     )}
@@ -897,37 +1129,61 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
           </Grid>
         </Grid>
       </DialogContent>
-      
-      <Divider />
-      
-      <DialogActions sx={{ justifyContent: 'space-between', px: 3, py: 2 }}>
+
+      <DialogActions
+        sx={{
+          justifyContent: 'space-between',
+          px: 2.5,
+          py: 2,
+          bgcolor: SKEU_BG,
+          borderTop: `1px solid ${alpha(BRAND, 0.08)}`,
+          gap: 1.5,
+          flexWrap: 'wrap',
+        }}
+      >
         <Box>
-          <Typography variant="body2" color="textSecondary">
+          <Typography variant="body2" sx={{ color: alpha(BRAND, 0.55), fontWeight: 700 }}>
             Showing {sortedSections.length} of {sections.length} sections
           </Typography>
           {sortConfig && (
-            <Typography variant="caption" color="textSecondary">
+            <Typography variant="caption" sx={{ color: alpha(BRAND, 0.45), fontWeight: 600 }}>
               Sorted by: {sortConfig.key} ({sortConfig.direction})
             </Typography>
           )}
         </Box>
-        <Box display="flex" gap={1}>
+        <Box display="flex" gap={1} flexWrap="wrap">
           <Button
             onClick={handleExportSections}
-            variant="contained"
-            color="success"
             startIcon={<DownloadIcon />}
+            sx={{
+              ...skeuBtnSx,
+              color: '#fff',
+              background: 'linear-gradient(145deg, #11998e 0%, #38ef7d 100%)',
+              '&:hover': {
+                background: 'linear-gradient(145deg, #11998e 0%, #38ef7d 100%)',
+                filter: 'brightness(1.05)',
+                boxShadow: skeuRaised(5),
+              },
+            }}
           >
             Export
           </Button>
-          <Button 
-            onClick={handleRefresh} 
-            variant="outlined" 
-            startIcon={<RefreshIcon />}
-          >
+          <Button onClick={handleRefresh} startIcon={<RefreshIcon />} sx={skeuBtnSx}>
             Refresh
           </Button>
-          <Button onClick={onClose} variant="contained" color="primary">
+          <Button
+            onClick={onClose}
+            sx={{
+              ...skeuBtnSx,
+              color: '#fff',
+              background: BRAND_GRADIENT,
+              '&:hover': {
+                background: BRAND_GRADIENT,
+                filter: 'brightness(1.05)',
+                boxShadow: skeuRaised(5),
+              },
+            }}
+          >
             Close
           </Button>
         </Box>
