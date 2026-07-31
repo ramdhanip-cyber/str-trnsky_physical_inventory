@@ -1907,6 +1907,100 @@ exports.removeFromRecheck = async (req, res) => {
 };
 
 
+// getReconciliationReportByAll - groups by Form, Grade, Size, Finish, Ext. Finish, Width, Length, Location
+exports.getReconciliationReportByAll = async (req, res) => {
+  try {
+    const location_desc = req.body.location_desc || req.query.location_desc || req.params.location_desc;
+
+    if (!location_desc) {
+      return res.status(400).json({ success: false, error: "location_desc is required" });
+    }
+
+    // Resolve location_desc -> location_id
+    const checklocqry = `SELECT location_id FROM st_locations WHERE location_desc = $1`;
+    const checklocqryres = await pool.query(checklocqry, [location_desc]);
+
+    if (checklocqryres.rows.length === 0) {
+      return res.status(404).json({ success: false, error: "location_desc not found" });
+    }
+
+    const location_id = checklocqryres.rows[0].location_id;
+
+    const query = `
+      SELECT
+          TRIM(item->>'form')       AS form,
+          TRIM(item->>'grade')      AS grade,
+          TRIM(item->>'size')       AS size,
+          TRIM(item->>'finish')     AS finish,
+          TRIM(item->>'ext_finish') AS ext_finish,
+          ROUND(COALESCE((item->>'width')::numeric, 0), 4)  AS width,
+          ROUND(COALESCE((item->>'length')::numeric, 0), 4) AS length,
+          TRIM(item->>'location')   AS location,
+
+          ROUND(SUM((item->>'system_qty')::numeric), 3)  AS total_system_qty,
+          ROUND(SUM((item->>'counted_qty')::numeric), 3) AS total_counted_qty,
+          ROUND(SUM((item->>'system_qty')::numeric) - SUM((item->>'counted_qty')::numeric), 3) AS variance_qty,
+
+          ROUND(SUM((item->>'weight')::numeric), 3) AS OhdTons,
+
+          ROUND(
+              (
+                  SUM((item->>'weight')::numeric)
+                  / NULLIF(SUM((item->>'system_qty')::numeric), 0)
+              ) * SUM((item->>'counted_qty')::numeric),
+              3
+          ) AS CountTons,
+
+          ROUND(
+              (
+                  (
+                      SUM((item->>'weight')::numeric)
+                      / NULLIF(SUM((item->>'system_qty')::numeric), 0)
+                  ) * SUM((item->>'counted_qty')::numeric)
+              )
+              - SUM((item->>'weight')::numeric),
+              3
+          ) AS VarTons,
+
+          ROUND(SUM(COALESCE((item->>'prd_ohd_mat_cst')::numeric, 0)), 3) AS prd_ohd_mat_cst,
+          ROUND(SUM(COALESCE((item->>'prd_ohd_mat_val')::numeric, 0)), 3) AS prd_ohd_mat_val
+
+      FROM reconciliation_records,
+      jsonb_array_elements(items_data) AS item
+
+      WHERE location_id = $1
+
+      GROUP BY
+          TRIM(item->>'form'),
+          TRIM(item->>'grade'),
+          TRIM(item->>'size'),
+          TRIM(item->>'finish'),
+          TRIM(item->>'ext_finish'),
+          ROUND(COALESCE((item->>'width')::numeric, 0), 4),
+          ROUND(COALESCE((item->>'length')::numeric, 0), 4),
+          TRIM(item->>'location')
+
+      ORDER BY form, grade, size, finish, ext_finish, width, length, location;
+    `;
+
+    const result = await pool.query(query, [location_id]);
+
+    return res.json({
+      success: true,
+      data: result.rows,
+    });
+
+  } catch (error) {
+    console.error('Error generating reconciliation report by all:', error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to generate reconciliation report by all",
+      details: error.message
+    });
+  }
+};
+
+
 // getReport
 exports.getReconciliationReport = async (req, res) => {
   try {
@@ -1997,4 +2091,6 @@ exports.getReconciliationReport = async (req, res) => {
     });
   }
 };
+
+
 

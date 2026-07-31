@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { 
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TableFooter,
-  Paper, Typography, Card, CardContent, IconButton, Box, Button, TextField, InputAdornment,
+Typography, Card, CardContent, IconButton, Box, Button, TextField, InputAdornment,
   Checkbox, ListItemText, Menu, MenuItem, Divider, Chip, Grid, alpha
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -176,7 +176,7 @@ const ReconciliationReportView: React.FC = () => {
   const filteredReportData = useMemo(() => {
     if (!searchTerm.trim()) return reportData;
     const term = searchTerm.toLowerCase();
-    return reportData.filter((row: any) => 
+    return reportData.filter((row: any) =>
       (row.form && String(row.form).toLowerCase().includes(term)) ||
       (row.size && String(row.size).toLowerCase().includes(term))
     );
@@ -472,7 +472,7 @@ const ReconciliationReportView: React.FC = () => {
           borderBottom: '1px solid #e2e8f0'
         }}>
           <TextField
-            placeholder="Search by Form or Size..."
+            placeholder="Search by Form, Grade, Size, Finish, Location..."
             size="small"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}

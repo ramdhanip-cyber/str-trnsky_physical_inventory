@@ -13,6 +13,7 @@ router.delete('/reconciliation-records/:record_id', authMiddleware, reconciliati
 
 //getReport
 router.post('/reconcile/getreport', authMiddleware, reconciliationController.getReconciliationReport);
+router.post('/reconcile/getreportbyall', authMiddleware, reconciliationController.getReconciliationReportByAll);
 
 
 // Recheck routes
