@@ -17,6 +17,8 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import LayersIcon from '@mui/icons-material/Layers';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import * as XLSX from 'xlsx';
 
 interface ColumnDef {
@@ -28,6 +30,17 @@ interface ColumnDef {
 }
 
 const REPORT_COLUMNS: ColumnDef[] = [
+  {
+    id: 'sys_tag_no',
+    label: 'Sys Tag No',
+    align: 'left',
+    getDisplayValue: (row) => (
+      <Typography variant="body2" color="#334155" sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+        {row.sys_tag_no || '—'}
+      </Typography>
+    ),
+    getExcelValue: (row) => row.sys_tag_no
+  },
   {
     id: 'form',
     label: 'Form',
@@ -125,6 +138,103 @@ const REPORT_COLUMNS: ColumnDef[] = [
     ),
     getExcelValue: (row) => row.location
   },
+  {
+    id: 'mill',
+    label: 'Mill',
+    align: 'left',
+    getDisplayValue: (row) => (
+      <Typography variant="body2" color="#334155">
+        {row.mill || '—'}
+      </Typography>
+    ),
+    getExcelValue: (row) => row.mill
+  },
+  {
+    id: 'heat',
+    label: 'Heat',
+    align: 'left',
+    getDisplayValue: (row) => (
+      <Typography variant="body2" color="#334155">
+        {row.heat || '—'}
+      </Typography>
+    ),
+    getExcelValue: (row) => row.heat
+  },
+  {
+    id: 'branch',
+    label: 'Branch',
+    align: 'left',
+    getDisplayValue: (row) => (
+      <Typography variant="body2" color="#334155">
+        {row.branch || '—'}
+      </Typography>
+    ),
+    getExcelValue: (row) => row.branch
+  },
+  {
+    id: 'warehouse',
+    label: 'Warehouse',
+    align: 'left',
+    getDisplayValue: (row) => (
+      <Typography variant="body2" color="#334155">
+        {row.warehouse || '—'}
+      </Typography>
+    ),
+    getExcelValue: (row) => row.warehouse
+  },
+  {
+    id: 'inv_type',
+    label: 'Inv Type',
+    align: 'left',
+    getDisplayValue: (row) => (
+      <Typography variant="body2" color="#334155">
+        {row.inv_type || '—'}
+      </Typography>
+    ),
+    getExcelValue: (row) => row.inv_type
+  },
+  {
+    id: 'inv_quality',
+    label: 'Inv Quality',
+    align: 'left',
+    getDisplayValue: (row) => (
+      <Typography variant="body2" color="#334155">
+        {row.inv_quality || '—'}
+      </Typography>
+    ),
+    getExcelValue: (row) => row.inv_quality
+  },
+  {
+    id: 'status',
+    label: 'Status',
+    align: 'left',
+    getDisplayValue: (row) => {
+      const val = row.status || '';
+      const colorMap: Record<string, { bg: string; color: string; border: string }> = {
+        'Match': { bg: '#ecfdf5', color: '#047857', border: '#a7f3d0' },
+        'Over Count': { bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' },
+        'Under Count': { bg: '#fff1f2', color: '#be123c', border: '#fecdd3' },
+        'No Match': { bg: '#fefce8', color: '#a16207', border: '#fde68a' },
+      };
+      const style = colorMap[val] || { bg: '#f8fafc', color: '#475569', border: '#e2e8f0' };
+      return (
+        <Chip
+          label={val || '—'}
+          size="small"
+          sx={{
+            fontWeight: 600,
+            fontSize: '0.75rem',
+            bgcolor: style.bg,
+            color: style.color,
+            border: `1px solid ${style.border}`,
+            borderRadius: '6px'
+          }}
+        />
+      );
+    },
+    getExcelValue: (row) => row.status
+  },
+
   {
     id: 'total_system_qty',
     label: 'System Qty',
@@ -243,7 +353,9 @@ const REPORT_COLUMNS: ColumnDef[] = [
   }
 ];
 
-const TEXT_LABEL_COLS = ['grade', 'size', 'finish', 'ext_finish', 'width', 'length', 'location'];
+const TEXT_LABEL_COLS = ['sys_tag_no', 'grade', 'size', 'finish', 'ext_finish', 'width', 'length', 'location', 'mill', 'heat', 'branch', 'warehouse', 'inv_type', 'inv_quality', 'status'];
+
+
 
 const ReconciliationReportByAllView: React.FC = () => {
   const location = useLocation();
@@ -257,20 +369,41 @@ const ReconciliationReportByAllView: React.FC = () => {
     Object.fromEntries(REPORT_COLUMNS.map((col) => [col.id, true]))
   );
   const [columnMenuAnchor, setColumnMenuAnchor] = useState<null | HTMLElement>(null);
+  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
 
   const activeColumns = REPORT_COLUMNS.filter((col) => visibleColumns[col.id]);
   const visibleCount = activeColumns.length;
+
+  const toggleRowExpand = (index: number) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
 
   const filteredReportData = useMemo(() => {
     if (!searchTerm.trim()) return reportData;
     const term = searchTerm.toLowerCase();
     return reportData.filter((row: any) =>
-      (row.form       && String(row.form).toLowerCase().includes(term)) ||
-      (row.grade      && String(row.grade).toLowerCase().includes(term)) ||
-      (row.size       && String(row.size).toLowerCase().includes(term)) ||
-      (row.finish     && String(row.finish).toLowerCase().includes(term)) ||
-      (row.ext_finish && String(row.ext_finish).toLowerCase().includes(term)) ||
-      (row.location   && String(row.location).toLowerCase().includes(term))
+      (row.form        && String(row.form).toLowerCase().includes(term)) ||
+      (row.grade       && String(row.grade).toLowerCase().includes(term)) ||
+      (row.size        && String(row.size).toLowerCase().includes(term)) ||
+      (row.finish      && String(row.finish).toLowerCase().includes(term)) ||
+      (row.ext_finish  && String(row.ext_finish).toLowerCase().includes(term)) ||
+      (row.location    && String(row.location).toLowerCase().includes(term)) ||
+      (row.mill        && String(row.mill).toLowerCase().includes(term)) ||
+      (row.heat        && String(row.heat).toLowerCase().includes(term)) ||
+      (row.branch      && String(row.branch).toLowerCase().includes(term)) ||
+      (row.warehouse   && String(row.warehouse).toLowerCase().includes(term)) ||
+      (row.inv_type    && String(row.inv_type).toLowerCase().includes(term)) ||
+      (row.inv_quality && String(row.inv_quality).toLowerCase().includes(term)) ||
+      (row.status      && String(row.status).toLowerCase().includes(term)) ||
+      (row.sys_tag_no  && String(row.sys_tag_no).toLowerCase().includes(term))
     );
   }, [reportData, searchTerm]);
 
@@ -345,6 +478,21 @@ const ReconciliationReportByAllView: React.FC = () => {
     XLSX.writeFile(workbook, `Reconciliation_ReportByAll_${locationName.replace(/\s+/g, '_')}.xlsx`);
   };
 
+  // Helper: get child items array from row
+  const getChildItems = (row: any): any[] => {
+    const items = row.system_combined_items;
+    if (!items) return [];
+    if (Array.isArray(items)) return items;
+    // If it's a string (JSON), parse it
+    if (typeof items === 'string') {
+      try { return JSON.parse(items); } catch { return []; }
+    }
+    return [];
+  };
+
+  // Total columns including the expand button column
+  const totalColSpan = activeColumns.length + 1;
+
   return (
     <Box sx={{ height: 'calc(100vh - 112px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', maxWidth: '1440px', margin: '0 auto' }}>
       {/* Header */}
@@ -369,7 +517,7 @@ const ReconciliationReportByAllView: React.FC = () => {
                 />
               </Box>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-                Detailed inventory breakdown by Form, Grade, Size, Finish, Ext. Finish, Width, Length & Location
+                Detailed inventory breakdown by Form, Grade, Size, Finish, Ext. Finish, Width, Length, Location, Mill, Heat, Branch, Warehouse, Inv Type, Inv Quality, Status &amp; Sys Tag No
               </Typography>
             </Box>
           </Box>
@@ -440,7 +588,7 @@ const ReconciliationReportByAllView: React.FC = () => {
         {/* Toolbar */}
         <Box sx={{ flexShrink: 0, p: 1.5, px: 2.5, display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center', justifyContent: 'space-between', bgcolor: '#ffffff', borderBottom: '1px solid #e2e8f0' }}>
           <TextField
-            placeholder="Search by Form, Grade, Size, Finish, Location..."
+            placeholder="Search by Form, Grade, Size, Finish, Location, Mill, Heat, Status..."
             size="small"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -507,6 +655,14 @@ const ReconciliationReportByAllView: React.FC = () => {
           <Table stickyHeader sx={{ minWidth: 900 }} aria-label="reconciliation report by all table">
             <TableHead>
               <TableRow>
+                {/* Expand/Collapse header cell */}
+                <TableCell
+                  sx={{
+                    fontWeight: 700, bgcolor: '#0C2C48', color: '#ffffff', py: 1.75, px: 1,
+                    fontSize: '0.825rem', borderBottom: 'none', whiteSpace: 'nowrap',
+                    top: 0, zIndex: 10, width: 48, minWidth: 48
+                  }}
+                />
                 {activeColumns.map((col) => (
                   <TableCell key={col.id} align={col.align} sx={{ fontWeight: 700, bgcolor: '#0C2C48', color: '#ffffff', py: 1.75, px: 2, fontSize: '0.825rem', letterSpacing: '0.04em', textTransform: 'uppercase', borderBottom: 'none', whiteSpace: 'nowrap', top: 0, zIndex: 10 }}>
                     {col.label}
@@ -517,24 +673,153 @@ const ReconciliationReportByAllView: React.FC = () => {
             <TableBody>
               {activeColumns.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={REPORT_COLUMNS.length} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={totalColSpan} align="center" sx={{ py: 8 }}>
                     <Typography variant="h6" fontWeight={600} color="text.secondary" gutterBottom>All columns are currently hidden</Typography>
                     <Button variant="outlined" size="small" startIcon={<RestartAltIcon />} onClick={handleSelectAllColumns} sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 600 }}>Show All Columns</Button>
                   </TableCell>
                 </TableRow>
               ) : filteredReportData.length > 0 ? (
-                filteredReportData.map((row: any, index: number) => (
-                  <TableRow key={index} sx={{ bgcolor: index % 2 === 0 ? '#ffffff' : '#f8fafc', '&:hover': { bgcolor: '#f1f5f9' }, transition: 'background-color 0.15s ease' }}>
-                    {activeColumns.map((col) => (
-                      <TableCell key={col.id} align={col.align} sx={{ py: 1.5, px: 2, borderBottom: '1px solid #f1f5f9' }}>
-                        {col.getDisplayValue(row)}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))
+                filteredReportData.map((row: any, index: number) => {
+                  const childItems = getChildItems(row);
+                  const hasChildren = childItems.length > 1;
+                  const isExpanded = expandedRows.has(index);
+
+                  return (
+                    <React.Fragment key={index}>
+                      {/* Parent Row */}
+                      <TableRow
+                        sx={{
+                          bgcolor: index % 2 === 0 ? '#ffffff' : '#f8fafc',
+                          '&:hover': { bgcolor: '#f1f5f9' },
+                          transition: 'background-color 0.15s ease',
+                          ...(isExpanded && {
+                            bgcolor: '#eef2ff !important',
+                            borderLeft: '3px solid #6366f1',
+                          })
+                        }}
+                      >
+                        {/* Expand/Collapse button */}
+                        <TableCell sx={{ py: 1, px: 1, borderBottom: '1px solid #f1f5f9', width: 48, minWidth: 48 }}>
+                          {hasChildren && (
+                            <IconButton
+                              size="small"
+                              onClick={() => toggleRowExpand(index)}
+                              sx={{
+                                width: 30, height: 30,
+                                bgcolor: isExpanded ? '#6366f1' : '#e2e8f0',
+                                color: isExpanded ? '#ffffff' : '#475569',
+                                '&:hover': {
+                                  bgcolor: isExpanded ? '#4f46e5' : '#cbd5e1',
+                                },
+                                transition: 'all 0.2s ease',
+                                boxShadow: isExpanded ? '0 2px 8px rgba(99,102,241,0.35)' : 'none',
+                              }}
+                            >
+                              {isExpanded ? <KeyboardArrowUpIcon fontSize="small" /> : <KeyboardArrowDownIcon fontSize="small" />}
+                            </IconButton>
+                          )}
+                        </TableCell>
+                        {activeColumns.map((col) => (
+                          <TableCell key={col.id} align={col.align} sx={{ py: 1.5, px: 2, borderBottom: '1px solid #f1f5f9' }}>
+                            {col.getDisplayValue(row)}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+
+                      {/* Expanded child rows — rendered as regular table rows matching parent columns */}
+                      {hasChildren && isExpanded && childItems.map((child: any, ci: number) => (
+                        <TableRow
+                          key={`${index}-child-${ci}`}
+                          sx={{
+                            bgcolor: ci % 2 === 0 ? '#f5f3ff' : '#ede9fe',
+                            borderLeft: '3px solid #a78bfa',
+                            '&:hover': { bgcolor: '#e0e7ff' },
+                            transition: 'background-color 0.15s ease',
+                          }}
+                        >
+                          {/* Empty cell under expand column — show child index badge */}
+                          <TableCell sx={{ py: 1, px: 1, borderBottom: '1px solid #ddd6fe', width: 48, minWidth: 48 }}>
+                            <Box sx={{
+                              width: 22, height: 22, borderRadius: '50%',
+                              bgcolor: '#8b5cf6', color: '#fff',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontSize: '0.65rem', fontWeight: 700, mx: 'auto',
+                            }}>
+                              {ci + 1}
+                            </Box>
+                          </TableCell>
+                          {activeColumns.map((col) => {
+                            // Map parent column IDs to child data fields
+                            const childFieldMap: Record<string, string> = {
+                              form: 'form',
+                              grade: 'grade',
+                              size: 'size',
+                              finish: 'finish',
+                              ext_finish: 'ext_finish',
+                              width: 'width',
+                              length: 'length',
+                              location: 'location',
+                              mill: 'mill',
+                              heat: 'heat',
+                              inv_type: 'inv_type',
+                              inv_quality: 'inv_quality',
+                              sys_tag_no: 'sys_tag_no',
+                              total_system_qty: 'qty',
+                            };
+
+                            const childKey = childFieldMap[col.id];
+                            let cellContent: React.ReactNode = '—';
+
+                            if (childKey && child[childKey] != null && child[childKey] !== '') {
+                              const val = child[childKey];
+                              if (col.id === 'width' || col.id === 'length') {
+                                cellContent = Number(val) !== 0 ? Number(val).toFixed(4) : '—';
+                              } else if (col.id === 'form') {
+                                cellContent = (
+                                  <Chip
+                                    label={val || 'N/A'}
+                                    size="small"
+                                    sx={{
+                                      bgcolor: '#f3e8ff', color: '#7c3aed', fontWeight: 600,
+                                      fontSize: '0.75rem', borderRadius: '6px', border: '1px solid #ddd6fe'
+                                    }}
+                                  />
+                                );
+                              } else if (col.id === 'sys_tag_no') {
+                                cellContent = (
+                                  <Typography variant="body2" color="#334155" sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                                    {val}
+                                  </Typography>
+                                );
+                              } else if (col.id === 'total_system_qty') {
+                                cellContent = (
+                                  <Typography variant="body2" fontWeight={600} color="#4c1d95">
+                                    {val}
+                                  </Typography>
+                                );
+                              } else {
+                                cellContent = (
+                                  <Typography variant="body2" color="#475569" fontSize="0.85rem">
+                                    {val}
+                                  </Typography>
+                                );
+                              }
+                            }
+
+                            return (
+                              <TableCell key={col.id} align={col.align} sx={{ py: 1, px: 2, borderBottom: '1px solid #ddd6fe' }}>
+                                {cellContent}
+                              </TableCell>
+                            );
+                          })}
+                        </TableRow>
+                      ))}
+                    </React.Fragment>
+                  );
+                })
               ) : (
                 <TableRow>
-                  <TableCell colSpan={activeColumns.length} align="center" sx={{ py: 6 }}>
+                  <TableCell colSpan={totalColSpan} align="center" sx={{ py: 6 }}>
                     <Typography variant="body1" fontWeight={600} color="text.secondary">No matching record found for "{searchTerm}".</Typography>
                     <Button variant="text" size="small" onClick={() => setSearchTerm('')} sx={{ textTransform: 'none', mt: 1 }}>Clear Search Filter</Button>
                   </TableCell>
@@ -546,6 +831,8 @@ const ReconciliationReportByAllView: React.FC = () => {
             {filteredReportData.length > 0 && activeColumns.length > 0 && (
               <TableFooter sx={{ position: 'sticky', bottom: 0, zIndex: 5 }}>
                 <TableRow sx={{ borderTop: '2px solid #cbd5e1', bgcolor: '#f8fafc' }}>
+                  {/* Empty cell for expand column */}
+                  <TableCell sx={{ fontWeight: 700, py: 1.75, px: 1 }} />
                   {activeColumns.map((col) => {
                     if (col.id === 'form') {
                       return (<TableCell key={col.id} align={col.align} sx={{ fontWeight: 800, color: '#0C2C48', py: 1.75, px: 2 }}>TOTALS ({filteredReportData.length} items)</TableCell>);
