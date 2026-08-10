@@ -1100,18 +1100,45 @@ const CountReviewPage = () => {
       console.log('Loading transactions for sections:', sections.map(s => ({ id: s.section_id, name: s.section_desc })));
 
       for (const section of sections) {
-        const response = await servicesAPI.getReviewTransactionsForCounter(
-          location_id?.toString() || '',
-          section.section_id.toString()
-        );
+        const counterTagIds = new Set<string>();
 
-        // Add section_id to each transaction for proper matching
-        const transactionsWithSection = response.data.map((transaction: any) => ({
-          ...transaction,
-          section_id: section.section_id
-        }));
+        try {
+          const response = await servicesAPI.getReviewTransactionsForCounter(
+            location_id?.toString() || '',
+            section.section_id.toString()
+          );
 
-        allTransactionsData.push(...transactionsWithSection);
+          const transactionsWithSection = (Array.isArray(response.data) ? response.data : []).map((transaction: Transaction) => {
+            if (transaction.tag_id != null) counterTagIds.add(String(transaction.tag_id));
+            return {
+              ...transaction,
+              section_id: section.section_id,
+            };
+          });
+
+          allTransactionsData.push(...transactionsWithSection);
+        } catch (sectionErr) {
+          // Endpoint returns 404 when a section has no Counter transactions yet
+          console.warn(`No counter transactions for section ${section.section_id}`, sectionErr);
+        }
+
+        // Include Checker-only lines (e.g. items added on Checker page) so they appear in review
+        try {
+          const checkerResponse = await servicesAPI.getReviewTransactionsForChecker(
+            location_id?.toString() || '',
+            section.section_id.toString()
+          );
+          const checkerRows = Array.isArray(checkerResponse.data) ? checkerResponse.data : [];
+          const orphanedChecker = checkerRows
+            .filter((transaction: Transaction) => !counterTagIds.has(String(transaction.tag_id ?? '')))
+            .map((transaction: Transaction) => ({
+              ...transaction,
+              section_id: section.section_id,
+            }));
+          allTransactionsData.push(...orphanedChecker);
+        } catch (checkerErr) {
+          console.warn(`No checker transactions for section ${section.section_id}`, checkerErr);
+        }
       }
 
       console.log('Loaded transactions:', allTransactionsData);

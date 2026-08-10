@@ -2,15 +2,18 @@ import React, { useEffect, useState } from "react";
 import { 
   Box, Typography, Table, TableBody, TableCell, TableContainer, 
   TableHead, TableRow, Paper, CircularProgress, IconButton,
-  Collapse, Chip, Button, Alert, Badge, Avatar, useTheme
+  Collapse, Chip, Button, Alert, Badge, Avatar, useTheme,
+  Dialog, DialogTitle, DialogContent
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import { ArrowBack, Refresh, Edit, Check, Add, Close, Send, ExpandLess, ExpandMore, CompareArrows, FactCheck } from "@mui/icons-material";
 import { useNavigate, useParams } from "react-router-dom";
 import { green } from "@mui/material/colors";
 import EditTransactionDialog from "../components/EditTransactionDialog";
-import AddLineItemDialog from '../components/AddLineItemDialog';
+import CounterPage from './counter';
 import { servicesAPI } from '../config/api';
+
+const BRAND_GRADIENT = 'linear-gradient(135deg, #0C2C48 0%, #1E5A8A 100%)';
 
 const CHECKER_VERIFY_UI_PREFIX = 'checker-verify-ui-v1';
 
@@ -581,23 +584,13 @@ const Checker: React.FC = () => {
 
 
 
-  const handleAddNewLine = async (payload: Record<string, unknown>) => {
+  const handleAddLineSuccess = async () => {
     try {
-      const response = await servicesAPI.addLineItem(payload);
-      const result = response.data;
-      
-      if (result.success) {
-        // Refresh transactions
-        await fetchData();
-        
-        setSuccessMessage('New line item added successfully!');
-        setTimeout(() => setSuccessMessage(null), 3000);
-      } else {
-        setError(result.message || 'Failed to add new line item');
-      }
+      await fetchData();
+      setSuccessMessage('New line item added successfully!');
+      setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error) {
-      console.error("Error adding new line item:", error);
-      setError('Failed to add new line item');
+      console.error('Error refreshing after add line:', error);
     }
   };
 
@@ -1391,13 +1384,52 @@ const Checker: React.FC = () => {
         onRemoveBundle={removeBundle}
         isSaving={isSaving}
       />
-      <AddLineItemDialog
+      <Dialog
         open={addLineDialogOpen}
         onClose={() => setAddLineDialogOpen(false)}
-        onSubmit={handleAddNewLine}
-        locationId={location_id || ''}
-        teamId={team_id || ''}
-      />
+        fullWidth
+        maxWidth="lg"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            overflow: 'hidden',
+            maxHeight: '92vh',
+          },
+        }}
+      >
+        <DialogTitle
+          sx={{
+            background: BRAND_GRADIENT,
+            color: '#fff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            py: 1.5,
+            px: 2.5,
+          }}
+        >
+          <Typography variant="h6" sx={{ fontWeight: 700, color: '#fff' }}>
+            Add New Item
+          </Typography>
+          <IconButton
+            onClick={() => setAddLineDialogOpen(false)}
+            size="small"
+            sx={{ color: '#fff' }}
+            aria-label="Close"
+          >
+            <Close />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ p: 0, bgcolor: '#f8fafc' }}>
+          {addLineDialogOpen && (
+            <CounterPage
+              embedded
+              onEmbeddedSuccess={handleAddLineSuccess}
+              onEmbeddedCancel={() => setAddLineDialogOpen(false)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </Box>
   );
 };

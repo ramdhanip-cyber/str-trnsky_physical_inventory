@@ -312,7 +312,18 @@ interface TagRecord {
   type_display?: string;
 }
 
-const CounterPage: React.FC = () => {
+interface CounterPageProps {
+  /** When true, render form-only UI for use inside Checker (or other) dialogs */
+  embedded?: boolean;
+  onEmbeddedSuccess?: () => void;
+  onEmbeddedCancel?: () => void;
+}
+
+const CounterPage: React.FC<CounterPageProps> = ({
+  embedded = false,
+  onEmbeddedSuccess,
+  onEmbeddedCancel,
+}) => {
   const { location_id, section_id, team_id, user_id } = useParams<{
     location_id: string;
     section_id: string;
@@ -1770,8 +1781,11 @@ const CounterPage: React.FC = () => {
           undefined
       };
 
-      // Save the transaction
-      const response = await servicesAPI.createTransaction(payload);
+      // Checker add-item uses addLineItem (mirrors checker_sku_item); Counter uses createTransaction
+      const isChecker = String(selectedRole || '').toLowerCase() === 'checker';
+      const response = isChecker
+        ? await servicesAPI.addLineItem(payload)
+        : await servicesAPI.createTransaction(payload);
 
       if (!response.data.success) {
         const errorMessage = response.data.message || 'Failed to save transaction';
@@ -1781,8 +1795,8 @@ const CounterPage: React.FC = () => {
       // Get the transaction_id from the response and use it as tag_id
       const transactionId = response.data.transaction_id || response.data.id;
       
-      // Update the tag_id in the database to match transaction_id
-      if (transactionId) {
+      // Counter path: set tag_id = transaction_id. Checker addLineItem already assigns team tag.
+      if (!isChecker && transactionId) {
         try {
           await servicesAPI.updateTransactionTagId(transactionId, transactionId);
         } catch (error) {
@@ -1821,13 +1835,17 @@ const CounterPage: React.FC = () => {
             section_id: parseInt(section_id || "0"),
             role: selectedRole,
           };
-          const attResponse = await servicesAPI.createTransaction(attPayload);
-          const attId = attResponse.data.transaction_id || attResponse.data.id;
-          if (attId) {
-            try {
-              await servicesAPI.updateTransactionTagId(attId, attId);
-            } catch (err) {
-              console.error('Error updating attachment tag_id:', err);
+          if (isChecker) {
+            await servicesAPI.addLineItem(attPayload);
+          } else {
+            const attResponse = await servicesAPI.createTransaction(attPayload);
+            const attId = attResponse.data.transaction_id || attResponse.data.id;
+            if (attId) {
+              try {
+                await servicesAPI.updateTransactionTagId(attId, attId);
+              } catch (err) {
+                console.error('Error updating attachment tag_id:', err);
+              }
             }
           }
         } catch (err) {
@@ -1854,8 +1872,11 @@ const CounterPage: React.FC = () => {
       setValidationWarnings({});
       setError(null);
 
-      // Refresh the submitted transactions list
-      await refreshSubmittedTransactions();
+      if (embedded) {
+        onEmbeddedSuccess?.();
+      } else {
+        await refreshSubmittedTransactions();
+      }
 
     } catch (error) {
       console.error('Transaction submission error:', error);
@@ -1945,8 +1966,15 @@ const CounterPage: React.FC = () => {
   };
 
   return (
-    <Box sx={{ p: 3, maxWidth: 1800, margin: '0 auto', background: alpha('#0088FE', 0.01), minHeight: '100vh' }}>
-      {/* Header Section */}
+    <Box sx={{
+      p: embedded ? 1 : 3,
+      maxWidth: 1800,
+      margin: '0 auto',
+      background: embedded ? 'transparent' : alpha('#0088FE', 0.01),
+      minHeight: embedded ? 'auto' : '100vh',
+    }}>
+      {/* Header Section — full page only */}
+      {!embedded && (
       <Box sx={{ mb: 4 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
           <Box sx={{
@@ -1999,11 +2027,12 @@ const CounterPage: React.FC = () => {
           </Box>
         </Box>
       </Box>
+      )}
 
       {loading.general && <LinearProgress sx={{ mb: 2, borderRadius: '10px', height: 6 }} color="primary" />}
 
       {/* Main Form */}
-      <StyledCard sx={{ mb: 4 }}>
+      <StyledCard sx={{ mb: embedded ? 0 : 4, boxShadow: embedded ? 'none' : undefined, border: embedded ? 'none' : undefined }}>
         <SectionHeader>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Inventory2 sx={{ color: '#0088FE', fontSize: 24 }} />
@@ -2011,23 +2040,39 @@ const CounterPage: React.FC = () => {
               Item Details
             </Typography>
           </Box>
-          <Button
-            variant="outlined"
-            size="small"
-            onClick={handleClearForm}
-            startIcon={<ClearAll />}
-            sx={{
-              borderRadius: '8px',
-              borderColor: '#0088FE',
-              color: '#0088FE',
-              '&:hover': {
-                borderColor: '#0066CC',
-                background: alpha('#0088FE', 0.08)
-              }
-            }}
-          >
-            Clear form
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            {embedded && onEmbeddedCancel && (
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={onEmbeddedCancel}
+                sx={{
+                  borderRadius: '8px',
+                  borderColor: '#94a3b8',
+                  color: '#64748b',
+                }}
+              >
+                Close
+              </Button>
+            )}
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={handleClearForm}
+              startIcon={<ClearAll />}
+              sx={{
+                borderRadius: '8px',
+                borderColor: '#0088FE',
+                color: '#0088FE',
+                '&:hover': {
+                  borderColor: '#0066CC',
+                  background: alpha('#0088FE', 0.08)
+                }
+              }}
+            >
+              Clear form
+            </Button>
+          </Box>
         </SectionHeader>
         <CardContent sx={{ pt: 0 }}>
           {error && (
@@ -2861,9 +2906,10 @@ const CounterPage: React.FC = () => {
                         Saving...
                       </>
                     ) : (
-                      'Save Transaction'
+                      embedded ? 'Add Item' : 'Save Transaction'
                     )}
                   </StyledButton>
+                  {!embedded && (
                   <StyledButton
                     variant="outlined"
                     color="primary"
@@ -2887,6 +2933,7 @@ const CounterPage: React.FC = () => {
                   >
                     View History
                   </StyledButton>
+                  )}
                 </Box>
               </Grid>
             </Grid>

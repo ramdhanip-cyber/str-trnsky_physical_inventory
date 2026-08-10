@@ -4076,8 +4076,9 @@ exports.addLineItem = async (req, res) => {
       INSERT INTO transactions (
         tag_id, form, type, grade, size, finish, ext_finish, 
         width, length, remarks, count_type, qty,
-        counted_by, team_id, location_id, section_id, mill, heat, ad_cmts, sys_tag_no, role, location
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+        counted_by, team_id, location_id, section_id, mill, heat, ad_cmts, sys_tag_no, role, location,
+        page_number, serial_number
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
       RETURNING transaction_id
     `;
     
@@ -4103,7 +4104,9 @@ exports.addLineItem = async (req, res) => {
       req.body.ad_cmts,
       req.body.sys_tag_no,
       req.body.role,
-      req.body.location
+      req.body.location,
+      req.body.page_number || null,
+      req.body.serial_number || null
     ]);
 
     const transactionId = transactionResult.rows[0].transaction_id;
@@ -4141,7 +4144,51 @@ exports.addLineItem = async (req, res) => {
       bundles = bundleResult.rows;
     }
 
-    // Note: Removed checker_activity_logs insertion as requested
+    // 6. Checker page / Counter Review load from checker_sku_item — mirror new Checker lines there
+    let checkerSkuItemId = null;
+    if (String(req.body.role || '').toLowerCase() === 'checker') {
+      const qty = Number(req.body.qty) || 0;
+      const checkerSkuInsert = `
+        INSERT INTO checker_sku_item (
+          location_id, form, grade, size, finish, ext_finish, width, length,
+          mill, heat, system_qty, counted_qty, variance, status,
+          transaction_id, section_id, location, type, quality,
+          verified, verified_at, checker_count
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8,
+          $9, $10, $11, $12, $13, $14,
+          $15, $16, $17, $18, $19,
+          $20, CURRENT_TIMESTAMP, $21
+        )
+        RETURNING id
+      `;
+
+      const checkerSkuResult = await pool.query(checkerSkuInsert, [
+        req.body.location_id,
+        req.body.form || '',
+        req.body.grade || '',
+        req.body.size || '',
+        req.body.finish || '',
+        req.body.ext_finish || null,
+        req.body.width != null ? String(req.body.width) : null,
+        req.body.length != null ? String(req.body.length) : null,
+        req.body.mill || null,
+        req.body.heat || null,
+        0, // system_qty — checker-found item, no system baseline
+        qty,
+        qty, // variance vs system 0
+        'Checker Added',
+        transactionId, // link to Checker transaction for review display
+        req.body.section_id || null,
+        req.body.location || null,
+        req.body.type || null,
+        req.body.remarks || null,
+        true, // already counted by checker on create
+        qty,
+      ]);
+      checkerSkuItemId = checkerSkuResult.rows[0]?.id || null;
+      console.log('Created checker_sku_item for new Checker line:', checkerSkuItemId);
+    }
 
     await pool.query('COMMIT');
 
@@ -4149,6 +4196,7 @@ exports.addLineItem = async (req, res) => {
     res.status(201).json({
       success: true,
       id: transactionId,
+      checker_sku_item_id: checkerSkuItemId,
       bundles,
       tag_id: currentTag
     });

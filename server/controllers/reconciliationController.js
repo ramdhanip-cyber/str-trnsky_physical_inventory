@@ -327,9 +327,56 @@ exports.reconcileInventory = async (req, res) => {
     `;
 
     const transactionsResult = await pool.query(transactionsQuery, [location_id, transactionRole]);
-    const counterTransactions = transactionsResult.rows;
+    let counterTransactions = transactionsResult.rows.map((row) => ({
+      ...row,
+      count_source: transactionRole
+    }));
 
-    console.log(`${transactionRole} transactions count:`, counterTransactions.length);
+    // Counter reconciliation only: also include Checker "Add New Item" lines
+    // (checker_sku_item.status = 'Checker Added'). Normal Checker verifies are excluded.
+    if (String(transactionRole).toLowerCase() === 'counter') {
+      const checkerAddedSelectParts = [
+        includeTagNo ? 't.sys_tag_no' : 'MIN(t.sys_tag_no) as sys_tag_no',
+        't.form',
+        't.grade',
+        't.size',
+        't.finish',
+        't.ext_finish',
+        't.width',
+        't.length',
+        includeMill ? 't.mill' : 'MIN(t.mill) as mill',
+        includeHeat ? 't.heat' : 'MIN(t.heat) as heat',
+        includeLocation ? 't.location' : 'MIN(t.location) as location',
+        includeType ? 't.type' : 'MIN(t.type) as type',
+        'SUM(COALESCE(csi.checker_count, t.qty)) as counted_qty',
+        `'Checker Added' as count_source`
+      ];
+
+      const checkerAddedQuery = `
+        SELECT ${checkerAddedSelectParts.join(', ')}
+        FROM checker_sku_item csi
+        INNER JOIN transactions t ON t.transaction_id = csi.transaction_id
+        WHERE csi.location_id = $1
+          AND csi.status = 'Checker Added'
+          AND t.role = 'Checker'
+        GROUP BY ${counterGroupByParts.join(', ')}
+      `;
+
+      try {
+        const checkerAddedResult = await pool.query(checkerAddedQuery, [location_id]);
+        const checkerAddedRows = checkerAddedResult.rows || [];
+        console.log('Checker Added items included in Counter reconciliation:', checkerAddedRows.length);
+        if (checkerAddedRows.length > 0) {
+          console.log('Sample Checker Added row:', checkerAddedRows[0]);
+        }
+        counterTransactions = counterTransactions.concat(checkerAddedRows);
+      } catch (checkerAddedErr) {
+        console.error('Failed to load Checker Added items for Counter reconciliation:', checkerAddedErr);
+        // Continue with Counter-only counts rather than failing the whole reconcile
+      }
+    }
+
+    console.log(`${transactionRole} transactions count (after Checker Added merge):`, counterTransactions.length);
     if (counterTransactions.length > 0) {
       console.log(`Sample ${transactionRole} transaction:`, counterTransactions[0]);
     }
@@ -435,10 +482,12 @@ exports.reconcileInventory = async (req, res) => {
         counterMap[key] = [];
       }
       counterMap[key].push(transaction);
-      console.log(`Counter key: ${key}, qty: ${transaction.counted_qty}`);
+      console.log(`Counter key: ${key}, qty: ${transaction.counted_qty}, source: ${transaction.count_source || transactionRole}`);
     });
 
     console.log('Counter map keys:', Object.keys(counterMap).length);
+
+    const usedCounterKeys = new Set();
 
     // Transform and compare the data
     const transformedData = data.map(item => {
@@ -446,10 +495,19 @@ exports.reconcileInventory = async (req, res) => {
       console.log(`System key: ${key}`);
       const systemCombinedItems = systemCombinedMap[key] || [];
 
-      const counterTransactions = counterMap[key];
-      // Sum all counted quantities for this key (might have multiple entries due to different mill/heat)
-      const countedQty = counterTransactions ?
-        counterTransactions.reduce((sum, t) => sum + (parseInt(t.counted_qty) || 0), 0) : 0;
+      const matchedCounted = counterMap[key];
+      if (matchedCounted) {
+        usedCounterKeys.add(key);
+      }
+      // Sum all counted quantities for this key (Counter + Checker Added)
+      const countedQty = matchedCounted ?
+        matchedCounted.reduce((sum, t) => sum + (parseInt(t.counted_qty) || 0), 0) : 0;
+      const checkerAddedQty = matchedCounted
+        ? matchedCounted
+            .filter((t) => t.count_source === 'Checker Added')
+            .reduce((sum, t) => sum + (parseInt(t.counted_qty) || 0), 0)
+        : 0;
+      const includesCheckerAdded = checkerAddedQty > 0;
 
       const systemQty = parseInt(item.total_qty) || 0;
       const difference = countedQty - systemQty;
@@ -492,6 +550,8 @@ exports.reconcileInventory = async (req, res) => {
         system_qty: systemQty,
         total_qty: systemQty,
         counted_qty: countedQty,
+        checker_added_qty: checkerAddedQty,
+        includes_checker_added: includesCheckerAdded,
         difference: difference,
         variance: difference,
         status: status,
@@ -500,12 +560,59 @@ exports.reconcileInventory = async (req, res) => {
       };
     });
 
+    // Counted-only rows (Counter and/or Checker Added) that did not match any system item
+    Object.keys(counterMap).forEach((key) => {
+      if (usedCounterKeys.has(key)) return;
+      const matchedCounted = counterMap[key];
+      const first = matchedCounted[0] || {};
+      const countedQty = matchedCounted.reduce((sum, t) => sum + (parseInt(t.counted_qty) || 0), 0);
+      const checkerAddedQty = matchedCounted
+        .filter((t) => t.count_source === 'Checker Added')
+        .reduce((sum, t) => sum + (parseInt(t.counted_qty) || 0), 0);
+      if (countedQty <= 0) return;
+
+      transformedData.push({
+        sys_tag_no: first.sys_tag_no || null,
+        tag_no: first.sys_tag_no || null,
+        prd_tag_no: first.sys_tag_no || null,
+        form: first.form,
+        grade: first.grade,
+        size: first.size,
+        finish: first.finish,
+        ext_finish: first.ext_finish,
+        width: first.width,
+        length: first.length,
+        location: first.location,
+        mill: first.mill,
+        heat: first.heat,
+        weight: null,
+        inv_type: first.type || null,
+        inv_quality: null,
+        system_combined_count: 0,
+        system_combined_items: [],
+        max_sys_tag_no: first.sys_tag_no || null,
+        branch: branch,
+        warehouse: warehouse,
+        system_qty: 0,
+        total_qty: 0,
+        counted_qty: countedQty,
+        checker_added_qty: checkerAddedQty,
+        includes_checker_added: checkerAddedQty > 0,
+        difference: countedQty,
+        variance: countedQty,
+        status: 'Overcount',
+        prd_ohd_mat_val: null,
+        prd_ohd_mat_cst: null
+      });
+    });
+
     // Calculate summary statistics
     const matchedItems = transformedData.filter(item => item.status === 'Matched').length;
     const overcounts = transformedData.filter(item => item.status === 'Overcount').length;
     const undercounts = transformedData.filter(item => item.status === 'Undercount').length;
     const notCounted = transformedData.filter(item => item.status === 'Not Counted').length;
     const discrepancies = overcounts + undercounts;
+    const checkerAddedIncluded = transformedData.filter(item => item.includes_checker_added).length;
 
     const summary = {
       total_system_items: data.length,
@@ -517,6 +624,7 @@ exports.reconcileInventory = async (req, res) => {
       overcounts: overcounts,
       undercounts: undercounts,
       not_counted: notCounted,
+      checker_added_items: checkerAddedIncluded,
       branch: branch,
       warehouse: warehouse,
       location_id: location_id,
