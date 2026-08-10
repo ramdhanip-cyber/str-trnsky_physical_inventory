@@ -31,6 +31,7 @@ import StockAvailable from './pages/stockAvailable';
 // import CheckerHomeSky from "./pages/checkerHome_sky";
 import ReconciliationReport from "./pages/reconciliationReport";
 import ReconciliationReportView from "./pages/reconciliationReportView";
+import ReconciliationReportByAllView from "./pages/reconciliationReportByAllView";
 import { getAppBasePath } from "./config/appPath";
 
 // Define Theme
@@ -119,8 +120,10 @@ function App() {
                   <Route path="/login" element={<Navigate to={getDefaultRoute()} />} />
                   {/* route for reconciliation report */}
                   <Route path="/reports/reconciliation" element={<ReconciliationReport />} />
-                  {/* report page */}
+                  {/* report page - Form & Size */}
                   <Route path="/reports/reconciliation/view" element={<ReconciliationReportView />} />
+                  {/* report page - By All Fields */}
+                  <Route path="/reports/reconciliation/viewbyall" element={<ReconciliationReportByAllView />} />
                   {/* Redirect to role-appropriate page for any other routes */}
 
                   <Route path="*" element={<Navigate to={getDefaultRoute()} />} />

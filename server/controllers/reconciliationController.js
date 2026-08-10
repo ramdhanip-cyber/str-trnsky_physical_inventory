@@ -2015,6 +2015,145 @@ exports.removeFromRecheck = async (req, res) => {
 };
 
 
+// getReconciliationReportByAll - groups by Form, Grade, Size, Finish, Ext. Finish, Width, Length, Location
+exports.getReconciliationReportByAll = async (req, res) => {
+  try {
+    const location_desc = req.body.location_desc || req.query.location_desc || req.params.location_desc;
+
+    if (!location_desc) {
+      return res.status(400).json({ success: false, error: "location_desc is required" });
+    }
+
+    // Resolve location_desc -> location_id
+    const checklocqry = `SELECT location_id FROM st_locations WHERE location_desc = $1`;
+    const checklocqryres = await pool.query(checklocqry, [location_desc]);
+
+    if (checklocqryres.rows.length === 0) {
+      return res.status(404).json({ success: false, error: "location_desc not found" });
+    }
+
+    const location_id = checklocqryres.rows[0].location_id;
+
+    const query = `
+      SELECT
+          TRIM(item->>'form')                               AS form,
+          TRIM(item->>'grade')                              AS grade,
+          TRIM(item->>'size')                               AS size,
+          TRIM(item->>'finish')                             AS finish,
+          TRIM(item->>'ext_finish')                         AS ext_finish,
+          ROUND(COALESCE((item->>'width')::numeric, 0), 4)  AS width,
+          ROUND(COALESCE((item->>'length')::numeric, 0), 4) AS length,
+          TRIM(item->>'location')                           AS location,
+          TRIM(item->>'mill')                               AS mill,
+          TRIM(item->>'heat')                               AS heat,
+          TRIM(item->>'branch')                             AS branch,
+          TRIM(item->>'warehouse')                          AS warehouse,
+          TRIM(item->>'inv_type')                           AS inv_type,
+          TRIM(item->>'inv_quality')                        AS inv_quality,
+          TRIM(item->>'status')                             AS status,
+          TRIM(item->>'sys_tag_no')                         AS sys_tag_no,
+          TRIM(item->>'tag_no')                             AS tag_no,
+
+          -- Aggregations
+          ROUND(SUM((item->>'system_qty')::numeric), 3)     AS total_system_qty,
+          ROUND(SUM((item->>'counted_qty')::numeric), 3)    AS total_counted_qty,
+          ROUND(SUM((item->>'system_qty')::numeric) - SUM((item->>'counted_qty')::numeric), 3) AS variance_qty,
+
+          ROUND(SUM((item->>'weight')::numeric), 3)         AS OhdTons,
+
+          ROUND(
+              (
+                  SUM((item->>'weight')::numeric)
+                  / NULLIF(SUM((item->>'system_qty')::numeric), 0)
+              ) * SUM((item->>'counted_qty')::numeric),
+              3
+          ) AS CountTons,
+
+          ROUND(
+              (
+                  (
+                      SUM((item->>'weight')::numeric)
+                      / NULLIF(SUM((item->>'system_qty')::numeric), 0)
+                  ) * SUM((item->>'counted_qty')::numeric)
+              )
+              - SUM((item->>'weight')::numeric),
+              3
+          ) AS VarTons,
+
+          ROUND(SUM(COALESCE((item->>'prd_ohd_mat_cst')::numeric, 0)), 3) AS prd_ohd_mat_cst,
+          ROUND(SUM(COALESCE((item->>'prd_ohd_mat_val')::numeric, 0)), 3) AS prd_ohd_mat_val,
+
+          -- JSON array containing direct child properties without parent fallbacks
+          COALESCE(
+              jsonb_agg(
+                  DISTINCT jsonb_build_object(
+                      'qty',         comb->>'qty',
+                      'sys_tag_no',  comb->>'sys_tag_no',
+                      'form',        TRIM(comb->>'form'),
+                      'grade',       TRIM(comb->>'grade'),
+                      'size',        TRIM(comb->>'size'),
+                      'finish',      TRIM(comb->>'finish'),
+                      'ext_finish',  TRIM(comb->>'ext_finish'),
+                      'width',       CASE WHEN (comb->>'width') IS NOT NULL THEN ROUND((comb->>'width')::numeric, 4) ELSE NULL END,
+                      'length',      CASE WHEN (comb->>'length') IS NOT NULL THEN ROUND((comb->>'length')::numeric, 4) ELSE NULL END,
+                      'location',    TRIM(comb->>'location'),
+                      'mill',        TRIM(comb->>'mill'),
+                      'heat',        TRIM(comb->>'heat'),
+                      'inv_type',    TRIM(comb->>'inv_type'),
+                      'inv_quality', TRIM(comb->>'inv_quality')
+                  )
+              ) FILTER (WHERE comb IS NOT NULL),
+              '[]'::jsonb
+          ) AS system_combined_items
+
+      FROM reconciliation_records
+      CROSS JOIN LATERAL jsonb_array_elements(items_data) AS item
+      LEFT JOIN LATERAL jsonb_array_elements(item->'system_combined_items') AS comb ON TRUE
+
+      WHERE location_id = $1
+
+      GROUP BY
+          TRIM(item->>'form'),
+          TRIM(item->>'grade'),
+          TRIM(item->>'size'),
+          TRIM(item->>'finish'),
+          TRIM(item->>'ext_finish'),
+          ROUND(COALESCE((item->>'width')::numeric, 0), 4),
+          ROUND(COALESCE((item->>'length')::numeric, 0), 4),
+          TRIM(item->>'location'),
+          TRIM(item->>'mill'),
+          TRIM(item->>'heat'),
+          TRIM(item->>'branch'),
+          TRIM(item->>'warehouse'),
+          TRIM(item->>'inv_type'),
+          TRIM(item->>'inv_quality'),
+          TRIM(item->>'status'),
+          TRIM(item->>'sys_tag_no'),
+          TRIM(item->>'tag_no')
+
+      ORDER BY 
+          form, grade, size, finish, ext_finish, width, length, location, 
+          mill, heat, branch, warehouse, inv_type, inv_quality, status, sys_tag_no;
+    `;
+
+    const result = await pool.query(query, [location_id]);
+
+    return res.json({
+      success: true,
+      data: result.rows,
+    });
+
+  } catch (error) {
+    console.error('Error generating reconciliation report by all:', error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to generate reconciliation report by all",
+      details: error.message
+    });
+  }
+};
+
+
 // getReport
 exports.getReconciliationReport = async (req, res) => {
   try {
@@ -2073,7 +2212,9 @@ exports.getReconciliationReport = async (req, res) => {
               )
               - SUM((item->>'weight')::numeric),
               3
-          ) AS VarTons
+          ) AS VarTons,
+          ROUND(SUM(COALESCE((item->>'prd_ohd_mat_cst')::numeric, 0)), 3) AS prd_ohd_mat_cst,
+          ROUND(SUM(COALESCE((item->>'prd_ohd_mat_val')::numeric, 0)), 3) AS prd_ohd_mat_val
       
       FROM reconciliation_records,
       jsonb_array_elements(items_data) AS item
@@ -2103,4 +2244,6 @@ exports.getReconciliationReport = async (req, res) => {
     });
   }
 };
+
+
 
