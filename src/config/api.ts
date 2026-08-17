@@ -211,6 +211,7 @@ export const servicesAPI = {
   deleteReconciliationRecord: (recordId: string) => api.delete(`/services/reconciliation-records/${recordId}`),
   getReconciliationReport: (data: unknown) => api.post('/services/reconcile/getreport', data),
   getReconciliationReportByAll: (data: unknown) => api.post('/services/reconcile/getreportbyall', data),
+  getReservationReport: (data: unknown) => api.post('/services/reconcile/getreservationreport', data),
 
   
   // Transaction update API

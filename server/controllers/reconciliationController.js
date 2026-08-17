@@ -2245,5 +2245,75 @@ exports.getReconciliationReport = async (req, res) => {
   }
 };
 
+// Get Reservation Report controller
+exports.getReservationReport = async (req, res) => {
+  try {
+    const { location_id, tag_numbers } = req.body;
+
+    // Clean & filter tag numbers
+    const cleanTags = Array.from(
+      new Set(
+        (Array.isArray(tag_numbers) ? tag_numbers : [tag_numbers])
+          .filter((t) => typeof t === 'string' && t.trim() !== '')
+          .map((t) => t.trim())
+      )
+    );
+
+    console.log(`📌 [BACKEND getReservationReport] Location ${location_id} - Processing ${cleanTags.length} tags...`);
+
+    const reservationsFound = [];
+
+    // Iterate over each tag number
+    for (const tagNo of cleanTags) {
+      try {
+        // Query 1: Get single prd_itm_ctl_no since tag_no is unique
+        const intprdResult = await pool.query(
+          `SELECT prd_itm_ctl_no FROM intprd_rec WHERE TRIM(prd_tag_no) = $1 OR prd_tag_no = $1 LIMIT 1`,
+          [tagNo]
+        );
+
+        if (intprdResult.rows.length > 0 && intprdResult.rows[0].prd_itm_ctl_no) {
+          const prdItmCtlNo = intprdResult.rows[0].prd_itm_ctl_no;
+
+          // Query 2: Query rvtres_rec for specified columns
+          const rvtresResult = await pool.query(
+            `SELECT res_ref_pfx, res_ref_no, res_ref_itm, res_brh, res_whs, res_res_pcs, res_res_wgt FROM rvtres_rec WHERE res_itm_ctl_no = $1 OR TRIM(CAST(res_itm_ctl_no AS VARCHAR)) = TRIM(CAST($1 AS VARCHAR))`,
+            [prdItmCtlNo]
+          );
+
+          if (rvtresResult.rows.length > 0) {
+            reservationsFound.push({
+              tag_no: tagNo,
+              prd_itm_ctl_no: prdItmCtlNo,
+              reservations: rvtresResult.rows,
+            });
+          }
+        }
+      } catch (err) {
+        console.error(`Error querying reservation for tag "${tagNo}":`, err.message);
+      }
+    }
+
+    console.log(`✅ [BACKEND getReservationReport] Found ${reservationsFound.length} reservations for location ${location_id}`);
+
+    return res.json({
+      success: true,
+      location_id,
+      total_tags_processed: cleanTags.length,
+      total_reservations_found: reservationsFound.length,
+      data: reservationsFound,
+    });
+  } catch (error) {
+    console.error('Error in getReservationReport controller:', error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed in getReservationReport controller",
+      details: error.message
+    });
+  }
+};
+
+
+
 
 
