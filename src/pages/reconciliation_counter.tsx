@@ -305,11 +305,22 @@ const ReconciliationCounterPage: React.FC = () => {
               }
             });
             setReservationsMap(map);
+
+            // Auto-save reservation data to DB so it can be fetched later by location
+            servicesAPI
+              .saveReservationReport({ location_id, data: res.data.data })
+              .then((saveRes) => {
+                console.log(`✅ [saveReservationReport] Saved ${saveRes.data?.inserted ?? 0} reservation rows for location ${location_id}`);
+              })
+              .catch((saveErr) => {
+                console.warn('⚠️ [saveReservationReport] Failed to save (non-critical):', saveErr?.message);
+              });
           }
         })
         .catch((err) => {
           console.error('❌ [getReservationReport Service Error]:', err);
         });
+
     }
   }, [comparisonResults, location_id]);
 
