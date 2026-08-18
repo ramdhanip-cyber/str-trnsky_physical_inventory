@@ -244,13 +244,26 @@ interface MarkedItemInfo {
   checker_type?: string | null;
   checker_location?: string | null;
   section_id?: number | null;
+  status?: string | null;
+  system_qty?: number | null;
 }
+
+const isCheckerAddedItem = (item: { status?: string | null }): boolean =>
+  String(item.status || '').trim() === 'Checker Added';
+
+const isNewCheckerOnlyTransaction = (
+  transaction: Transaction,
+  markedInfo?: MarkedItemInfo | null
+): boolean =>
+  String(transaction.role || '').trim().toLowerCase() === 'checker' ||
+  Boolean(markedInfo && isCheckerAddedItem(markedInfo));
 
 const normalizeMarkValue = (value: unknown): string =>
   String(value ?? '').trim().toLowerCase();
 
 /** Prefer active recheck cycles over stale approved rows when multiple marks share a key */
 const markedItemPriority = (item: MarkedItemInfo): number => {
+  if (isCheckerAddedItem(item)) return 0; // not part of recheck/approve workflow
   if (!item.verified) return 3; // awaiting checker
   if (!item.reconciler_approved) return 2; // awaiting reconciler approve
   return 1; // already approved
@@ -397,9 +410,12 @@ const TransactionRow = ({
     });
   }
 
-  const isAwaitingChecker = Boolean(isMarked && markedInfo && !markedInfo.verified);
-  const isVerifiedPending = Boolean(markedInfo?.verified && !markedInfo.reconciler_approved);
-  const isApproved = Boolean(markedInfo?.reconciler_approved);
+  const isNewCheckerLine = isNewCheckerOnlyTransaction(transaction, markedInfo);
+  const isAwaitingChecker = Boolean(isMarked && markedInfo && !markedInfo.verified && !isNewCheckerLine);
+  const isVerifiedPending = Boolean(
+    !isNewCheckerLine && markedInfo?.verified && !markedInfo.reconciler_approved
+  );
+  const isApproved = Boolean(!isNewCheckerLine && markedInfo?.reconciler_approved);
   const checkerDisplayQty = markedInfo
     ? Number(markedInfo.checker_qty ?? markedInfo.checker_count ?? markedInfo.counted_qty ?? 0)
     : 0;
@@ -428,6 +444,9 @@ const TransactionRow = ({
               <Chip label={transaction.sys_tag_no} color="primary" variant="filled" size="small" sx={{ fontWeight: 600 }} />
             ) : (
               <Typography component="span" variant="body2" color="text.secondary">–</Typography>
+            )}
+            {isNewCheckerLine && (
+              <Chip label="Checker added" size="small" color="success" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 600 }} />
             )}
             {isAwaitingChecker && <Chip label="Awaiting checker" size="small" color="info" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 600 }} />}
             {isVerifiedPending && (
@@ -795,6 +814,7 @@ const CountReviewPage = () => {
         const byTx = new Map<number, MarkedItemInfo>();
         const bySku = new Map<string, MarkedItemInfo>();
         (response.data.items || []).forEach((item: MarkedItemInfo) => {
+          if (isCheckerAddedItem(item)) return;
           const normalized: MarkedItemInfo = {
             ...item,
             verified: Boolean(item.verified),
@@ -827,45 +847,50 @@ const CountReviewPage = () => {
   };
 
   const resolveMarkedInfo = (transaction: Transaction): MarkedItemInfo | null => {
+    let resolved: MarkedItemInfo | null = null;
     if (transaction.transaction_id != null) {
       const byId = markedItemsByTx.get(Number(transaction.transaction_id));
-      if (byId) return byId;
+      if (byId) resolved = byId;
     }
-    return (
-      markedItemsBySku.get(
-        buildMarkedSkuKey({
-          form: transaction.form,
-          grade: transaction.grade,
-          size: transaction.size,
-          finish: transaction.finish,
-          ext_finish: transaction.ext_finish,
-          width: transaction.width,
-          length: transaction.length,
-          mill: transaction.mill,
-          heat: transaction.heat,
-          location: transaction.location,
-          type: transaction.type,
-          section_id: transaction.section_id,
-        })
-      ) ||
-      markedItemsBySku.get(
-        buildMarkedSkuKey({
-          form: transaction.form,
-          grade: transaction.grade,
-          size: transaction.size,
-          finish: transaction.finish,
-          ext_finish: transaction.ext_finish,
-          width: transaction.width,
-          length: transaction.length,
-          mill: transaction.mill,
-          heat: transaction.heat,
-          location: transaction.location,
-          type: transaction.type,
-          section_id: '',
-        })
-      ) ||
-      null
-    );
+    if (!resolved) {
+      resolved =
+        markedItemsBySku.get(
+          buildMarkedSkuKey({
+            form: transaction.form,
+            grade: transaction.grade,
+            size: transaction.size,
+            finish: transaction.finish,
+            ext_finish: transaction.ext_finish,
+            width: transaction.width,
+            length: transaction.length,
+            mill: transaction.mill,
+            heat: transaction.heat,
+            location: transaction.location,
+            type: transaction.type,
+            section_id: transaction.section_id,
+          })
+        ) ||
+        markedItemsBySku.get(
+          buildMarkedSkuKey({
+            form: transaction.form,
+            grade: transaction.grade,
+            size: transaction.size,
+            finish: transaction.finish,
+            ext_finish: transaction.ext_finish,
+            width: transaction.width,
+            length: transaction.length,
+            mill: transaction.mill,
+            heat: transaction.heat,
+            location: transaction.location,
+            type: transaction.type,
+            section_id: '',
+          })
+        ) ||
+        null;
+    }
+    if (resolved && isCheckerAddedItem(resolved)) return null;
+    if (String(transaction.role || '').trim().toLowerCase() === 'checker') return null;
+    return resolved;
   };
 
   /** Refresh marked items and return those still awaiting approval (not reconciler_approved) */
@@ -880,6 +905,7 @@ const CountReviewPage = () => {
       const pendingApproval: MarkedItemInfo[] = [];
 
       (response.data.items || []).forEach((item: MarkedItemInfo) => {
+        if (isCheckerAddedItem(item)) return;
         const normalized: MarkedItemInfo = {
           ...item,
           verified: Boolean(item.verified),
@@ -930,7 +956,11 @@ const CountReviewPage = () => {
     try {
       setApprovingItemId(checkerSkuItemId);
       await servicesAPI.approveMarkedItem({ checker_sku_item_id: checkerSkuItemId });
-      setSnackbar({ open: true, message: 'Checker result approved; Counter qty updated', severity: 'success' });
+      setSnackbar({
+        open: true,
+        message: 'Checker result approved',
+        severity: 'success',
+      });
       await Promise.all([fetchMarkedItems(), loadAllTransactions()]);
     } catch (error: unknown) {
       console.error('Error approving marked item:', error);
@@ -1298,6 +1328,7 @@ const CountReviewPage = () => {
 
 
   const getRecheckStatusLabel = (item: MarkedItemInfo): string => {
+    if (isCheckerAddedItem(item)) return 'Checker added';
     if (!item.verified) return 'Awaiting checker';
     if (!item.reconciler_approved) return 'Awaiting approve';
     return 'Approved';
@@ -1309,7 +1340,9 @@ const CountReviewPage = () => {
     try {
       setExporting(true);
       const response = await servicesAPI.getMarkedItemsForChecking(location_id);
-      const items: MarkedItemInfo[] = response.data?.success ? (response.data.items || []) : [];
+      const items: MarkedItemInfo[] = response.data?.success
+        ? (response.data.items || []).filter((item: MarkedItemInfo) => !isCheckerAddedItem(item))
+        : [];
       if (items.length === 0) {
         setSnackbar({
           open: true,
@@ -1505,8 +1538,12 @@ const CountReviewPage = () => {
           (t) => Number(t.section_id) === Number(section.section_id)
         );
       });
-  const markedCount = filteredTransactions.filter((t) => Boolean(resolveMarkedInfo(t))).length;
+  const markedCount = filteredTransactions.filter((t) => {
+    if (isNewCheckerOnlyTransaction(t, null)) return false;
+    return Boolean(resolveMarkedInfo(t));
+  }).length;
   const pendingApproveCount = filteredTransactions.filter((t) => {
+    if (isNewCheckerOnlyTransaction(t, null)) return false;
     const info = resolveMarkedInfo(t);
     return Boolean(info?.verified && !info.reconciler_approved);
   }).length;

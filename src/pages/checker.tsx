@@ -61,7 +61,7 @@ interface Bundle {
 
 const Checker: React.FC = () => {
   const theme = useTheme();
-  const { location_id, section_id, team_id } = useParams();
+  const { location_id, section_id } = useParams();
   const navigate = useNavigate();
   
   const [transactions, setTransactions] = useState<Transaction[]>([]);

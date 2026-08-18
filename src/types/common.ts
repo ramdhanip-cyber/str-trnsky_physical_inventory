@@ -31,6 +31,7 @@ export interface Transaction {
   counted_by?: string;
   bundles?: Bundle[];
   section_id?: number; // Added to track which section this transaction belongs to
+  role?: string;
 }
 
 export interface Section {

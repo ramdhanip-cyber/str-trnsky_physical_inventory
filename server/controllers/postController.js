@@ -3028,6 +3028,28 @@ async function approveOneMarkedItem(checkerSkuItemId, approvedBy) {
     return { skipped: true, reason: 'already_approved', checker_sku_item_id: checkerSkuItemId };
   }
 
+  const approveCheckerAddedOnly = async (reason) => {
+    await pool.query(
+      `UPDATE checker_sku_item
+       SET reconciler_approved = true,
+           reconciler_approved_at = CURRENT_TIMESTAMP,
+           reconciler_approved_by = $1
+       WHERE id = $2`,
+      [approvedBy || null, checkerSkuItemId]
+    );
+    return {
+      skipped: false,
+      checker_sku_item_id: checkerSkuItemId,
+      reason,
+      qty_applied: Number(checkerSkuItem.checker_count ?? checkerSkuItem.counted_qty ?? 0)
+    };
+  };
+
+  // Net-new checker finds are not recheck cycles — no Counter tx to sync
+  if (String(checkerSkuItem.status || '').trim() === 'Checker Added') {
+    return approveCheckerAddedOnly('checker_added_auto_approved');
+  }
+
   const counterTxId = checkerSkuItem.transaction_id;
   if (!counterTxId) {
     const err = new Error('Original counter transaction ID missing on marked item');
@@ -3040,6 +3062,17 @@ async function approveOneMarkedItem(checkerSkuItemId, approvedBy) {
     [counterTxId]
   );
   if (originalTxResult.rows.length === 0) {
+    // transaction_id may point at the Checker tx for net-new lines (legacy rows)
+    const checkerOnlyTx = await pool.query(
+      `SELECT transaction_id FROM transactions WHERE transaction_id = $1 AND role = 'Checker'`,
+      [counterTxId]
+    );
+    const isNetNewFind =
+      checkerOnlyTx.rows.length > 0 ||
+      Number(checkerSkuItem.system_qty) === 0;
+    if (isNetNewFind) {
+      return approveCheckerAddedOnly('checker_added_no_counter_tx');
+    }
     const err = new Error('Original counter transaction not found');
     err.status = 404;
     throw err;
@@ -3180,6 +3213,7 @@ exports.approveAllMarkedItems = async (req, res) => {
        WHERE location_id = $1
          AND verified = true
          AND COALESCE(reconciler_approved, false) = false
+         AND COALESCE(status, '') <> 'Checker Added'
          ${sectionClause}
        ORDER BY id`,
       params
@@ -4153,17 +4187,20 @@ exports.addLineItem = async (req, res) => {
           location_id, form, grade, size, finish, ext_finish, width, length,
           mill, heat, system_qty, counted_qty, variance, status,
           transaction_id, section_id, location, type, quality,
-          verified, verified_at, checker_count
+          verified, verified_at, checker_count,
+          reconciler_approved, reconciler_approved_at
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8,
           $9, $10, $11, $12, $13, $14,
           $15, $16, $17, $18, $19,
-          $20, CURRENT_TIMESTAMP, $21
+          $20, CURRENT_TIMESTAMP, $21,
+          true, CURRENT_TIMESTAMP
         )
         RETURNING id
       `;
 
-      const checkerSkuResult = await pool.query(checkerSkuInsert, [
+      let checkerSkuResult;
+      const checkerSkuValues = [
         req.body.location_id,
         req.body.form || '',
         req.body.grade || '',
@@ -4185,7 +4222,31 @@ exports.addLineItem = async (req, res) => {
         req.body.remarks || null,
         true, // already counted by checker on create
         qty,
-      ]);
+      ];
+
+      try {
+        checkerSkuResult = await pool.query(checkerSkuInsert, checkerSkuValues);
+      } catch (insertErr) {
+        if (!insertErr?.message?.includes('reconciler_approved')) {
+          throw insertErr;
+        }
+        const fallbackInsert = `
+          INSERT INTO checker_sku_item (
+            location_id, form, grade, size, finish, ext_finish, width, length,
+            mill, heat, system_qty, counted_qty, variance, status,
+            transaction_id, section_id, location, type, quality,
+            verified, verified_at, checker_count
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8,
+            $9, $10, $11, $12, $13, $14,
+            $15, $16, $17, $18, $19,
+            $20, CURRENT_TIMESTAMP, $21
+          )
+          RETURNING id
+        `;
+        checkerSkuResult = await pool.query(fallbackInsert, checkerSkuValues);
+      }
+
       checkerSkuItemId = checkerSkuResult.rows[0]?.id || null;
       console.log('Created checker_sku_item for new Checker line:', checkerSkuItemId);
     }
