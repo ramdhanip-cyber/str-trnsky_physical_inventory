@@ -32,6 +32,8 @@ import StockAvailable from './pages/stockAvailable';
 import ReconciliationReport from "./pages/reconciliationReport";
 import ReconciliationReportView from "./pages/reconciliationReportView";
 import ReconciliationReportByAllView from "./pages/reconciliationReportByAllView";
+import ReservationReportView from "./pages/reservationReportView";
+import ReservationReport from "./pages/reservationReport";
 import { getAppBasePath } from "./config/appPath";
 
 // Define Theme
@@ -124,6 +126,11 @@ function App() {
                   <Route path="/reports/reconciliation/view" element={<ReconciliationReportView />} />
                   {/* report page - By All Fields */}
                   <Route path="/reports/reconciliation/viewbyall" element={<ReconciliationReportByAllView />} />
+                  {/* report page - Reservation Report (embedded inside reconciliation page) */}
+                  <Route path="/reports/reconciliation/reservationview" element={<ReservationReportView />} />
+                  {/* Standalone Reservation Report (accessible from sidebar submenu) */}
+                  <Route path="/reports/reservation" element={<ReservationReport />} />
+                  <Route path="/reports/reservation/view" element={<ReservationReportView />} />
                   {/* Redirect to role-appropriate page for any other routes */}
 
                   <Route path="*" element={<Navigate to={getDefaultRoute()} />} />

@@ -15,6 +15,12 @@ router.delete('/reconciliation-records/:record_id', authMiddleware, reconciliati
 router.post('/reconcile/getreport', authMiddleware, reconciliationController.getReconciliationReport);
 router.post('/reconcile/getreportbyall', authMiddleware, reconciliationController.getReconciliationReportByAll);
 
+//getreservationreport
+router.post('/reconcile/getreservationreport', authMiddleware, reconciliationController.getReservationReport);
+router.post('/reconcile/savereservationreport', authMiddleware, reconciliationController.saveReservationReport);
+router.post('/reconcile/getstoredreservationreport', authMiddleware, reconciliationController.getStoredReservationReport);
+
+
 
 // Recheck routes
 router.post('/recheck/mark-items', reconciliationController.markItemsForRecheck);

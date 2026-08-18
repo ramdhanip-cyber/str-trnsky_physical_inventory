@@ -60,6 +60,7 @@ import {
   AutoAwesome,
   Inventory2,
   Settings,
+  BookmarkBorder,
 } from "@mui/icons-material";
 import type { Theme } from "@mui/material/styles";
 
@@ -229,6 +230,7 @@ const menuItems = {
       path: null,
       subItems: [
         { text: "Reconciliation", icon: <Description />, path: "/reports/reconciliation" },
+        { text: "Reservation", icon: <BookmarkBorder />, path: "/reports/reservation" },
         { text: "Adjustment", icon: <Tune />, path: "/reports/adjustment" },
         { text: "Count", icon: <ListAlt />, path: "/reports/count" },
         { text: "Custom", icon: <Assessment />, path: "/reports/custom" }

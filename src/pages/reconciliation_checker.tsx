@@ -26,8 +26,13 @@ import {
   Select,
   MenuItem,
   useTheme,
-  IconButton
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from '@mui/material';
+import BookmarkIcon from '@mui/icons-material/Bookmark';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useSnackbar } from 'notistack';
 import type { ReconciliationData, ReconciliationItem, ReconciliationSummary } from '../types/reconciliation';
@@ -128,6 +133,22 @@ interface RecheckItem {
   tag_no?: string;
 }
 
+export interface ReservationItem {
+  res_ref_pfx?: string;
+  res_ref_no?: number | string;
+  res_ref_itm?: number | string;
+  res_brh?: string;
+  res_whs?: string;
+  res_res_pcs?: number;
+  res_res_wgt?: number;
+}
+
+export interface ReservationData {
+  tag_no: string;
+  prd_itm_ctl_no: number | string;
+  reservations: ReservationItem[];
+}
+
 const ReconciliationCheckerPage: React.FC = () => {
   const { location_id } = useParams<{ location_id: string }>();
   const location = useLocation();
@@ -160,6 +181,30 @@ const ReconciliationCheckerPage: React.FC = () => {
   const [filterBranch, setFilterBranch] = useState<string | null>(null);
   const [filterWarehouse, setFilterWarehouse] = useState<string | null>(null);
   const [filterTagNumber, setFilterTagNumber] = useState<string | null>(null);
+  const [reservationsMap, setReservationsMap] = useState<Map<string, ReservationData>>(new Map());
+  const [selectedReservationTag, setSelectedReservationTag] = useState<{ tagNo: string; data: ReservationData } | null>(null);
+
+  const getReservationForItem = (item: any, comparison?: any): { tagNo: string; data: ReservationData } | null => {
+    const tagsToCheck = [
+      item?.prd_tag_no,
+      item?.tag_no,
+      comparison?.countedItem?.sys_tag_no,
+      comparison?.countedItem?.sys_tag_id,
+      ...((item?.system_combined_items || []).map((sys: any) => sys.sys_tag_no || sys.tag_no || sys.prd_tag_no)),
+      ...((comparison?.combinedItems || []).map((c: any) => c.sysTagNo))
+    ].filter((t: unknown): t is string => typeof t === 'string' && t.trim() !== '');
+
+    for (const tag of tagsToCheck) {
+      const cleanTag = tag.trim();
+      if (reservationsMap.has(cleanTag)) {
+        const res = reservationsMap.get(cleanTag);
+        if (res && res.reservations && res.reservations.length > 0) {
+          return { tagNo: cleanTag, data: res };
+        }
+      }
+    }
+    return null;
+  };
   const effectiveCompareFields = useMemo(() => {
     const raw = (summary as ReconciliationSummary & { compare_fields?: unknown })?.compare_fields;
     if (Array.isArray(raw)) {
@@ -983,6 +1028,44 @@ const ReconciliationCheckerPage: React.FC = () => {
       setComparing(false);
     }
   };
+
+  useEffect(() => {
+    if (comparisonResults && comparisonResults.length > 0 && location_id) {
+      const allTagNos = Array.from(
+        new Set(
+          comparisonResults
+            .flatMap((r) => [
+              r.systemItem?.prd_tag_no,
+              r.systemItem?.tag_no,
+              r.countedItem?.sys_tag_no,
+              r.countedItem?.sys_tag_id,
+              ...((r.systemItem as any)?.system_combined_items || []).map((sys: any) => sys.sys_tag_no || sys.tag_no || sys.prd_tag_no),
+              ...((r as any).combinedItems || []).map((c: any) => c.sysTagNo),
+            ])
+            .filter((t: unknown): t is string => typeof t === 'string' && t.trim() !== '')
+        )
+      );
+
+      if (allTagNos.length > 0) {
+        servicesAPI
+          .getReservationReport({ location_id, tag_numbers: allTagNos })
+          .then((res) => {
+            if (res.data?.success && Array.isArray(res.data.data)) {
+              const map = new Map<string, ReservationData>();
+              res.data.data.forEach((item: ReservationData) => {
+                if (item.tag_no) {
+                  map.set(String(item.tag_no).trim(), item);
+                }
+              });
+              setReservationsMap(map);
+            }
+          })
+          .catch((err) => {
+            console.error('Error fetching reservation report in checker:', err);
+          });
+      }
+    }
+  }, [comparisonResults, location_id]);
 
   const handleBack = () => {
     navigate(-1);
@@ -2085,6 +2168,17 @@ const ReconciliationCheckerPage: React.FC = () => {
                   boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
                   borderBottom: `2px solid ${theme.palette.divider}`
                 }}>Status</TableCell>
+                <TableCell align="center" sx={{
+                  backgroundColor: theme.palette.mode === 'dark'
+                    ? theme.palette.background.paper
+                    : '#ffffff',
+                  fontWeight: 600,
+                  position: 'sticky',
+                  top: 0,
+                  zIndex: 10,
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                  borderBottom: `2px solid ${theme.palette.divider}`
+                }}>Reservation</TableCell>
                 <TableCell align="right" sx={{ 
                   backgroundColor: theme.palette.mode === 'dark' 
                     ? theme.palette.background.paper 
@@ -2112,7 +2206,7 @@ const ReconciliationCheckerPage: React.FC = () => {
             <TableBody key={`tbody-${filteredItems.length}-${filterTagNumber || ''}-${filterForm || ''}-${filterGrade || ''}-${filterStatus || ''}`}>
               {filteredItems.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={23} align="center" sx={{ py: 4 }}>
+                  <TableCell colSpan={24} align="center" sx={{ py: 4 }}>
                     <Typography variant="body1" color="text.secondary">
                       {systemItems.length === 0
                         ? 'No system inventory records were returned for this location.'
@@ -2323,6 +2417,39 @@ const ReconciliationCheckerPage: React.FC = () => {
                           />
                         )}
                       </TableCell>
+                      <TableCell align="center">
+                        {(() => {
+                          const resInfo = getReservationForItem(item, comparison);
+                          if (resInfo && resInfo.data.reservations && resInfo.data.reservations.length > 0) {
+                            return (
+                              <Button
+                                size="small"
+                                variant="contained"
+                                color="primary"
+                                onClick={() => setSelectedReservationTag({ tagNo: resInfo.tagNo, data: resInfo.data })}
+                                sx={{
+                                  textTransform: 'none',
+                                  fontWeight: 600,
+                                  fontSize: '0.72rem',
+                                  py: 0.25,
+                                  px: 1,
+                                  borderRadius: 1.5,
+                                  whiteSpace: 'nowrap',
+                                  boxShadow: '0 2px 4px rgba(12, 44, 72, 0.25)'
+                                }}
+                                startIcon={<BookmarkIcon sx={{ fontSize: '0.85rem !important' }} />}
+                              >
+                                View ({resInfo.data.reservations.length})
+                              </Button>
+                            );
+                          }
+                          return (
+                            <Typography variant="body2" color="text.secondary">
+                              -
+                            </Typography>
+                          );
+                        })()}
+                      </TableCell>
                     </TableRow>
                   );
                 })
@@ -2423,6 +2550,163 @@ const ReconciliationCheckerPage: React.FC = () => {
           </Table>
         </TableContainer>
       </Paper>
+
+      {/* Reservation Items Popup Dialog */}
+      <Dialog
+        open={Boolean(selectedReservationTag)}
+        onClose={() => setSelectedReservationTag(null)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            boxShadow: '0 12px 40px rgba(0, 0, 0, 0.25)',
+            overflow: 'hidden'
+          }
+        }}
+      >
+        <DialogTitle
+          sx={{
+            m: 0,
+            p: 2.5,
+            backgroundColor: theme.palette.primary.main,
+            color: '#ffffff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <BookmarkIcon sx={{ color: '#fff', fontSize: '1.6rem' }} />
+            <Box>
+              <Typography variant="h6" component="div" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+                Reservation Details
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.85)', fontSize: '0.78rem' }}>
+                Tag Number: {selectedReservationTag?.tagNo}
+              </Typography>
+            </Box>
+          </Box>
+          <IconButton
+            aria-label="close"
+            onClick={() => setSelectedReservationTag(null)}
+            sx={{
+              color: '#ffffff',
+              '&:hover': { backgroundColor: 'rgba(255, 255, 255, 0.15)' }
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent dividers sx={{ p: 3, backgroundColor: theme.palette.mode === 'dark' ? 'background.default' : '#f8fafc' }}>
+          {selectedReservationTag && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+              {/* Summary Info Cards */}
+              <Paper
+                elevation={0}
+                sx={{
+                  p: 2,
+                  borderRadius: 2,
+                  border: `1px solid ${theme.palette.divider}`,
+                  backgroundColor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
+                  display: 'grid',
+                  gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' },
+                  gap: 2
+                }}
+              >
+                <Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontWeight: 600, fontSize: '0.7rem' }}>
+                    Tag Number
+                  </Typography>
+                  <Typography variant="body1" sx={{ fontWeight: 700, color: 'primary.main' }}>
+                    {selectedReservationTag.tagNo}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontWeight: 600, fontSize: '0.7rem' }}>
+                    Control Item No (prd_itm_ctl_no)
+                  </Typography>
+                  <Typography variant="body1" sx={{ fontWeight: 700 }}>
+                    {selectedReservationTag.data.prd_itm_ctl_no || '-'}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontWeight: 600, fontSize: '0.7rem' }}>
+                    Total Reservations Found
+                  </Typography>
+                  <Chip
+                    label={`${selectedReservationTag.data.reservations?.length || 0} Record(s)`}
+                    size="small"
+                    color="primary"
+                    sx={{ fontWeight: 700, mt: 0.25 }}
+                  />
+                </Box>
+              </Paper>
+
+              {/* Reservations Table */}
+              <TableContainer
+                component={Paper}
+                elevation={0}
+                sx={{
+                  borderRadius: 2,
+                  border: `1px solid ${theme.palette.divider}`,
+                  maxHeight: 360,
+                  overflow: 'auto'
+                }}
+              >
+                <Table size="small" stickyHeader>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 700, backgroundColor: theme.palette.mode === 'dark' ? 'grey.900' : 'grey.100' }}>Ref Prefix</TableCell>
+                      <TableCell sx={{ fontWeight: 700, backgroundColor: theme.palette.mode === 'dark' ? 'grey.900' : 'grey.100' }}>Ref Number</TableCell>
+                      <TableCell sx={{ fontWeight: 700, backgroundColor: theme.palette.mode === 'dark' ? 'grey.900' : 'grey.100' }}>Ref Item</TableCell>
+                      <TableCell sx={{ fontWeight: 700, backgroundColor: theme.palette.mode === 'dark' ? 'grey.900' : 'grey.100' }}>Branch</TableCell>
+                      <TableCell sx={{ fontWeight: 700, backgroundColor: theme.palette.mode === 'dark' ? 'grey.900' : 'grey.100' }}>Warehouse</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700, backgroundColor: theme.palette.mode === 'dark' ? 'grey.900' : 'grey.100' }}>Reserved Pcs</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700, backgroundColor: theme.palette.mode === 'dark' ? 'grey.900' : 'grey.100' }}>Reserved Weight</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {selectedReservationTag.data.reservations && selectedReservationTag.data.reservations.length > 0 ? (
+                      selectedReservationTag.data.reservations.map((res: ReservationItem, idx: number) => (
+                        <TableRow key={idx} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                          <TableCell sx={{ fontWeight: 600 }}>{res.res_ref_pfx || '-'}</TableCell>
+                          <TableCell>{res.res_ref_no ?? '-'}</TableCell>
+                          <TableCell>{res.res_ref_itm ?? '-'}</TableCell>
+                          <TableCell>{res.res_brh || '-'}</TableCell>
+                          <TableCell>{res.res_whs || '-'}</TableCell>
+                          <TableCell align="right">{formatNumber(res.res_res_pcs)}</TableCell>
+                          <TableCell align="right">{formatNumber(res.res_res_wgt)}</TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={7} align="center" sx={{ py: 3 }}>
+                          <Typography variant="body2" color="text.secondary">
+                            No reservation records found for this tag.
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Box>
+          )}
+        </DialogContent>
+
+        <DialogActions sx={{ px: 3, py: 2, backgroundColor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff' }}>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={() => setSelectedReservationTag(null)}
+            sx={{ textTransform: 'none', px: 3, fontWeight: 600, borderRadius: 1.5 }}
+          >
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
