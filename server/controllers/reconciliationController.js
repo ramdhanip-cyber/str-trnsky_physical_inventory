@@ -2436,6 +2436,209 @@ exports.getReservationReport = async (req, res) => {
 };
 
 
+// ---------------------------------------------------------------------------
+// Adjustment items (marked from reconciliation for inventory adjustment workflow)
+// Table: star.st_adj_items (created manually — app does not auto-create)
+// ---------------------------------------------------------------------------
 
+exports.markItemsForAdjustment = async (req, res) => {
+  try {
+    const { location_id, items, adjustment_reason } = req.body;
+    const marked_by = req.user?.user_id || null;
+
+    if (!location_id || !items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({
+        error: 'Location ID and items array are required'
+      });
+    }
+
+    await pool.query('BEGIN');
+
+    const results = [];
+    const skippedItems = [];
+
+    try {
+      for (const item of items) {
+        const duplicateCheck = await pool.query(
+          `SELECT id FROM star.st_adj_items
+           WHERE location_id = $1
+             AND status = 'Pending Adjustment'
+             AND LOWER(COALESCE(form,'')) = LOWER(COALESCE($2,''))
+             AND LOWER(COALESCE(grade,'')) = LOWER(COALESCE($3,''))
+             AND LOWER(COALESCE(size,'')) = LOWER(COALESCE($4,''))
+             AND LOWER(COALESCE(finish,'')) = LOWER(COALESCE($5,''))
+             AND LOWER(COALESCE(ext_finish,'')) = LOWER(COALESCE($6,''))
+             AND COALESCE(transaction_id, 0) = COALESCE($7, 0)
+             AND COALESCE(section_id, 0) = COALESCE($8, 0)
+           LIMIT 1`,
+          [
+            location_id,
+            item.form,
+            item.grade,
+            item.size,
+            item.finish,
+            item.ext_finish,
+            item.transaction_id || null,
+            item.section_id || null
+          ]
+        );
+
+        if (duplicateCheck.rows.length > 0) {
+          skippedItems.push({
+            form: item.form,
+            grade: item.grade,
+            size: item.size,
+            reason: 'Already marked for adjustment'
+          });
+          continue;
+        }
+
+        const insertResult = await pool.query(
+          `INSERT INTO star.st_adj_items (
+            location_id, section_id, form, grade, size, finish, ext_finish,
+            width, length, mill, heat, location, type, quality,
+            system_qty, counted_qty, variance, adjustment_reason, marked_by,
+            tag_id, sys_tag_no, weight, branch, warehouse, recon_status,
+            section_desc, transaction_id, status
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7,
+            $8, $9, $10, $11, $12, $13, $14,
+            $15, $16, $17, $18, $19,
+            $20, $21, $22, $23, $24, $25,
+            $26, $27, 'Pending Adjustment'
+          )
+          RETURNING id`,
+          [
+            location_id,
+            item.section_id || null,
+            item.form || '',
+            item.grade || '',
+            item.size || '',
+            item.finish || '',
+            item.ext_finish || null,
+            item.width != null ? String(item.width) : null,
+            item.length != null ? String(item.length) : null,
+            item.mill || null,
+            item.heat || null,
+            item.location || null,
+            item.type || null,
+            item.quality || null,
+            item.system_qty || 0,
+            item.counted_qty || 0,
+            item.variance || 0,
+            adjustment_reason || 'Marked for adjustment during reconciliation',
+            marked_by,
+            item.tag_id || null,
+            item.sys_tag_no || null,
+            item.weight != null ? Number(item.weight) : null,
+            item.branch || null,
+            item.warehouse || null,
+            item.recon_status || item.status || null,
+            item.section_desc || null,
+            item.transaction_id || null
+          ]
+        );
+
+        results.push({
+          id: insertResult.rows[0].id,
+          form: item.form,
+          grade: item.grade,
+          size: item.size
+        });
+      }
+
+      await pool.query('COMMIT');
+
+      const newlyMarked = results.length;
+      const alreadyMarked = skippedItems.length;
+      let message = '';
+      if (newlyMarked > 0 && alreadyMarked > 0) {
+        message = `${newlyMarked} item(s) marked for adjustment. ${alreadyMarked} already marked and skipped.`;
+      } else if (newlyMarked > 0) {
+        message = `${newlyMarked} item(s) marked for adjustment.`;
+      } else if (alreadyMarked > 0) {
+        message = `All ${alreadyMarked} item(s) were already marked for adjustment.`;
+      } else {
+        message = 'No items were processed.';
+      }
+
+      res.json({
+        success: true,
+        newlyMarked,
+        alreadyMarked,
+        results,
+        skipped: skippedItems,
+        message
+      });
+    } catch (innerErr) {
+      await pool.query('ROLLBACK');
+      throw innerErr;
+    }
+  } catch (error) {
+    console.error('Mark items for adjustment error:', error);
+    res.status(500).json({
+      error: 'Failed to mark items for adjustment',
+      details: error.message
+    });
+  }
+};
+
+exports.getAdjustmentItems = async (req, res) => {
+  try {
+    const { location_id } = req.params;
+
+    if (!location_id) {
+      return res.status(400).json({ error: 'Location ID is required' });
+    }
+
+    const result = await pool.query(
+      `SELECT ai.*, u.full_name AS marked_by_name
+       FROM star.st_adj_items ai
+       LEFT JOIN st_users u ON ai.marked_by = u.user_id
+       WHERE ai.location_id = $1
+         AND ai.status = 'Pending Adjustment'
+       ORDER BY ai.marked_at DESC`,
+      [location_id]
+    );
+
+    res.json({
+      success: true,
+      items: result.rows
+    });
+  } catch (error) {
+    console.error('Get adjustment items error:', error);
+    res.status(500).json({
+      error: 'Failed to get adjustment items',
+      details: error.message
+    });
+  }
+};
+
+exports.removeFromAdjustment = async (req, res) => {
+  try {
+    const { item_id } = req.params;
+
+    if (!item_id) {
+      return res.status(400).json({ error: 'Item ID is required' });
+    }
+
+    const result = await pool.query(
+      `DELETE FROM star.st_adj_items WHERE id = $1 AND status = 'Pending Adjustment' RETURNING id`,
+      [item_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Adjustment item not found or already completed' });
+    }
+
+    res.json({ success: true, message: 'Item removed from adjustment list' });
+  } catch (error) {
+    console.error('Remove from adjustment error:', error);
+    res.status(500).json({
+      error: 'Failed to remove adjustment item',
+      details: error.message
+    });
+  }
+};
 
 

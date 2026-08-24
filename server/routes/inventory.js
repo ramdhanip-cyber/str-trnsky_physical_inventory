@@ -30,4 +30,9 @@ router.get('/recheck/marked-items/:location_id', reconciliationController.getMar
   router.post('/recheck/complete/:item_id', reconciliationController.completeRecheckItem);
   router.delete('/recheck/items/:item_id', reconciliationController.removeFromRecheck);
 
+// Adjustment routes (marked from reconciliation)
+router.post('/adjustment/mark-items', reconciliationController.markItemsForAdjustment);
+router.get('/adjustment/items/:location_id', reconciliationController.getAdjustmentItems);
+router.delete('/adjustment/items/:item_id', reconciliationController.removeFromAdjustment);
+
 module.exports = router; 

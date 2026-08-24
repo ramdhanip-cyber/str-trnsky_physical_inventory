@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { getLoginPath } from "../config/appPath";
 import { getDefaultRouteForRole, orderRoles, parseUserRoles } from "../config/roleUtils";
+import { getRuntimeEnvironment } from "../config/runtime";
 import {
   Box,
   CssBaseline,
@@ -287,6 +288,7 @@ export default function ModernNavigation({ children }: NavigationProps) {
   const [userRoles, setUserRoles] = useState<string[]>([]);
   const navigate = useNavigate();
   const location = useLocation();
+  const environment = getRuntimeEnvironment();
 
   const fullName = localStorage.getItem('full_name');
 
@@ -590,7 +592,7 @@ export default function ModernNavigation({ children }: NavigationProps) {
               }}
             />
             <Chip
-              label="SANDBOX"
+              label={environment}
               size="small"
               sx={{
                 height: 26,
@@ -599,9 +601,9 @@ export default function ModernNavigation({ children }: NavigationProps) {
                 fontSize: '0.65rem',
                 letterSpacing: '0.5px',
                 textTransform: 'uppercase',
-                color: '#FFE082',
-                backgroundColor: 'rgba(255,167,38,0.22)',
-                border: '1px solid rgba(255,167,38,0.4)',
+                color: environment === 'LIVE' ? '#A5D6A7' : '#FFD54F',
+                backgroundColor: environment === 'LIVE' ? 'rgba(76,175,80,0.22)' : 'rgba(255,193,7,0.18)',
+                border: environment === 'LIVE' ? '1px solid rgba(76,175,80,0.45)' : '1px solid rgba(255,193,7,0.38)',
               }}
             />
           </Box>

@@ -38,6 +38,7 @@ import {
 } from '@mui/icons-material';
 import { styled, keyframes } from '@mui/material/styles';
 import { motion, AnimatePresence } from 'framer-motion';
+import { getRuntimeEnvironment } from '../config/runtime';
 
 const BRAND_GRADIENT = 'linear-gradient(135deg, #0C2C48 0%, #1E5A8A 100%)';
 const NAVY = '#0C2C48';
@@ -221,6 +222,7 @@ const Login: React.FC<LoginPageProps> = ({ onLogin }) => {
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const environment = getRuntimeEnvironment();
 
   useEffect(() => {
     if (error) {
@@ -372,15 +374,21 @@ const Login: React.FC<LoginPageProps> = ({ onLogin }) => {
                     Star Inventory
                   </Typography>
                   <Chip
-                    label="SANDBOX"
+                    label={environment}
                     size="small"
                     sx={(t) => ({
                       borderRadius: 1.5,
                       fontWeight: 700,
                       fontSize: '0.7rem',
-                      backgroundColor: alpha(t.palette.warning.main, 0.15),
-                      color: t.palette.warning.dark,
-                      border: `1px solid ${alpha(t.palette.warning.main, 0.3)}`,
+                      backgroundColor: alpha(
+                        environment === 'LIVE' ? t.palette.success.main : t.palette.warning.main,
+                        0.15
+                      ),
+                      color: environment === 'LIVE' ? t.palette.success.dark : t.palette.warning.dark,
+                      border: `1px solid ${alpha(
+                        environment === 'LIVE' ? t.palette.success.main : t.palette.warning.main,
+                        0.3
+                      )}`,
                       textTransform: 'uppercase',
                       letterSpacing: '0.5px',
                       height: '24px',

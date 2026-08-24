@@ -92,6 +92,40 @@ export interface RecheckItem {
   original_transaction_ids?: string;
 }
 
+export interface AdjustmentMarkedItem {
+  id: number;
+  location_id: number;
+  section_id?: number | null;
+  form: string;
+  grade: string;
+  size: string;
+  finish: string;
+  ext_finish?: string;
+  width?: string | number;
+  length?: string | number;
+  mill?: string;
+  heat?: string;
+  location?: string;
+  type?: string;
+  quality?: string;
+  system_qty: number;
+  counted_qty: number;
+  variance: number;
+  status: string;
+  adjustment_reason?: string;
+  marked_by?: number;
+  marked_by_name?: string;
+  marked_at?: string;
+  tag_id?: string;
+  sys_tag_no?: string;
+  weight?: number | string | null;
+  branch?: string;
+  warehouse?: string;
+  recon_status?: string;
+  section_desc?: string;
+  transaction_id?: number | null;
+}
+
 export interface ReconciliationSummary {
   total_system_items: number;
   total_system_quantity: number;

@@ -1,31 +1,18 @@
 import axios from 'axios';
 import { getLoginPath } from './appPath';
+import { getApiPort } from './runtime';
 
 // Automatically detect the API base URL from the current window location
 const getAPIBaseURL = () => {
-  // If we're in development (localhost), use the development server
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    return 'http://localhost:5310';
-  }
-  
-  // For production, use the same hostname with port 5310
   const protocol = window.location.protocol;
   const hostname = window.location.hostname;
-  console.log('Hostname:', hostname);
-  console.log('Protocol:', protocol);
-  
-  // Use the same hostname with port 5310 for the API server
-  // Extract the base path from the current URL (same logic as App.tsx)
-  // const baseUrl = window.location.pathname.split('/star-inventory/')[0] || '';
-  // const basePath = baseUrl + '/star-inventory';
-  
-  // Use the same hostname without specifying port
-  const apiBaseURL = `${protocol}//${hostname}:5310`; // For development
-  // const apiBaseURL = `${protocol}//${hostname}:5310/${basePath}`; // For production
-  // Debug logging
+  const apiPort = getApiPort();
+  const apiBaseURL = `${protocol}//${hostname}:${apiPort}`;
+
   console.log('API Base URL Debug:', {
     protocol,
     hostname,
+    apiPort,
     fullApiBaseURL: apiBaseURL
   });
   
@@ -235,6 +222,11 @@ export const servicesAPI = {
   removeFromRecheck: (itemId: string) => api.delete(`/services/recheck/items/${itemId}`),
   updateRecheckItems: (locationId: string, data: unknown) => api.put(`/services/recheck-items/${locationId}`, data),
   deleteRecheckItems: (locationId: string, data: unknown) => api.delete(`/services/recheck-items/${locationId}`, { data }),
+
+  // Adjustment items (marked from reconciliation)
+  markItemsForAdjustment: (data: unknown) => api.post('/services/adjustment/mark-items', data),
+  getAdjustmentItems: (locationId: string) => api.get(`/services/adjustment/items/${locationId}`),
+  removeFromAdjustment: (itemId: string) => api.delete(`/services/adjustment/items/${itemId}`),
   // Checker specific API methods
   getCheckerTransactions: (params: unknown) => api.get('/services/checker/get-transactions', { params }),
   getCheckerTransactionForChecker: (params: unknown) => api.get('/services/checker/TransactionForChecker', { params }),

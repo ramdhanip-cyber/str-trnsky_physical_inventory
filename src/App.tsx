@@ -26,6 +26,7 @@ import ReconciliationPage from './pages/reconciliation';
 import ReconciliationCounterPage from './pages/reconciliation_counter';
 import ReconciliationCheckerPage from './pages/reconciliation_checker';
 import AdjustmentPage from './pages/adjustment';
+import AdjustmentMarkedItemsPage from './pages/adjustmentMarkedItems';
 import StockAvailable from './pages/stockAvailable';
 // import Checker from './pages/checker_sku';
 // import CheckerHomeSky from "./pages/checkerHome_sky";
@@ -113,6 +114,7 @@ function App() {
                   <Route path="/reconciliation/:location_id" element={<ReconciliationPage />} />
                   <Route path="/reconciliation-records/:locationId" element={<ReconciliationRecords />} />
                   <Route path="/adjustment" element={<AdjustmentPage />} />
+                  <Route path="/adjustment/marked/:location_id" element={<AdjustmentMarkedItemsPage />} />
                   <Route path="/stock-available" element={<StockAvailable />} />
                   {/* <Route path="/checker/12" element={<CheckerPage />} /> */}
                   <Route path="/assigned-counters" element={<AssignedPage />} />

@@ -1529,6 +1529,180 @@ const ReconciliationCounterPage: React.FC = () => {
     }
   };
 
+  const handleMarkForAdjustment = async () => {
+    if (selectedItems.size === 0) {
+      enqueueSnackbar('Please select at least one item to mark for adjustment', { variant: 'warning' });
+      return;
+    }
+
+    if (!location_id) {
+      enqueueSnackbar('Location ID is required', { variant: 'error' });
+      return;
+    }
+
+    try {
+      const itemsToMark: Array<Record<string, unknown>> = [];
+
+      Array.from(selectedItems).forEach((itemKey) => {
+        const comparison = comparisonMap.get(itemKey);
+        if (!comparison) return;
+
+        const systemItem = comparison.systemItem;
+        const allSysTags = Array.from(
+          new Set(
+            [
+              systemItem.prd_tag_no,
+              systemItem.tag_no,
+              (systemItem as { sys_tag_no?: string }).sys_tag_no,
+              (systemItem as { sys_tag_id?: string }).sys_tag_id,
+              ...(((systemItem as { system_combined_items?: Array<{ sys_tag_no?: string; tag_no?: string; prd_tag_no?: string }> }).system_combined_items || [])
+                .map((sys) => sys.sys_tag_no || sys.tag_no || sys.prd_tag_no)),
+              ...(comparison.combinedItems || []).map((ci) => ci.sysTagNo),
+              comparison.countedItem?.sys_tag_no,
+              comparison.countedItem?.sys_tag_id,
+            ]
+              .filter((t): t is string => typeof t === 'string' && t.trim() !== '')
+              .map((t) => t.trim())
+          )
+        );
+        const primarySysTag = allSysTags[0] || systemItem.prd_tag_no || systemItem.tag_no || null;
+        const firstSectionMeta = comparison.sections && comparison.sections.length > 0 ? comparison.sections[0] : null;
+
+        const base = {
+          form: systemItem.form || '',
+          grade: systemItem.grade || '',
+          size: systemItem.size || '',
+          finish: systemItem.finish || '',
+          ext_finish: systemItem.ext_finish || '',
+          width: systemItem.width || 0,
+          length: systemItem.length || 0,
+          system_qty: comparison.systemQuantity || 0,
+          counted_qty: comparison.countedQuantity || 0,
+          variance: comparison.variance || 0,
+          status: comparison.status,
+          recon_status: comparison.status,
+          location: systemItem.location || '',
+          mill: systemItem.mill || '',
+          heat: systemItem.heat || '',
+          type: systemItem.inv_type || '',
+          quality: systemItem.inv_quality || '',
+          tag_id: primarySysTag,
+          sys_tag_no: allSysTags.join(', ') || null,
+          weight: systemItem.weight ?? null,
+          branch: systemItem.branch || summary?.branch || null,
+          warehouse: systemItem.warehouse || summary?.warehouse || null,
+          section_desc: (firstSectionMeta as { section_desc?: string } | null)?.section_desc || null,
+        };
+
+        const txEntries: Array<{ transaction_id: number; section_id: number | null; counted_qty: number }> = [];
+        const seenTx = new Set<number>();
+
+        (comparison.combinedItems || []).forEach((ci) => {
+          const txId = ci.transactionId != null ? Number(ci.transactionId) : null;
+          if (!txId || seenTx.has(txId)) return;
+          seenTx.add(txId);
+          txEntries.push({
+            transaction_id: txId,
+            section_id: ci.sectionId != null ? Number(ci.sectionId) : null,
+            counted_qty: Number(ci.quantity) || 0,
+          });
+        });
+
+        (comparison.sections || []).forEach((section) => {
+          (section.transaction_ids || []).forEach((txIdRaw) => {
+            const txId = Number(txIdRaw);
+            if (!txId || seenTx.has(txId)) return;
+            seenTx.add(txId);
+            txEntries.push({
+              transaction_id: txId,
+              section_id: section.section_id != null ? Number(section.section_id) : null,
+              counted_qty: Number(section.quantity) || Number(comparison.countedQuantity) || 0,
+            });
+          });
+        });
+
+        if (txEntries.length === 0) {
+          const firstSection = comparison.sections && comparison.sections.length > 0 ? comparison.sections[0] : null;
+          itemsToMark.push({
+            ...base,
+            transaction_id: null,
+            section_id: firstSection?.section_id || null,
+          });
+          return;
+        }
+
+        txEntries.forEach((entry) => {
+          itemsToMark.push({
+            ...base,
+            transaction_id: entry.transaction_id,
+            section_id: entry.section_id,
+            counted_qty: entry.counted_qty || base.counted_qty,
+          });
+        });
+      });
+
+      if (itemsToMark.length === 0) {
+        enqueueSnackbar('No valid items to mark', { variant: 'warning' });
+        return;
+      }
+
+      const response = await servicesAPI.markItemsForAdjustment({
+        location_id,
+        items: itemsToMark,
+        adjustment_reason: 'Marked for adjustment from reconciliation counter page',
+      });
+
+      if (response.data.success) {
+        const { newlyMarked, alreadyMarked } = response.data;
+
+        if (newlyMarked > 0 && alreadyMarked > 0) {
+          enqueueSnackbar(
+            `${newlyMarked} item(s) marked for adjustment. ${alreadyMarked} already marked and skipped.`,
+            { variant: 'warning', autoHideDuration: 5000 }
+          );
+        } else if (newlyMarked > 0) {
+          enqueueSnackbar(
+            response.data.message || `${newlyMarked} item(s) marked for adjustment`,
+            { variant: 'success' }
+          );
+        } else if (alreadyMarked > 0) {
+          enqueueSnackbar(
+            response.data.message || `All ${alreadyMarked} item(s) were already marked for adjustment.`,
+            { variant: 'info', autoHideDuration: 5000 }
+          );
+        } else {
+          enqueueSnackbar(response.data.message || 'No items were processed.', { variant: 'warning' });
+        }
+
+        setSelectedItems(new Set());
+
+        if (newlyMarked > 0) {
+          navigate(`/adjustment/marked/${location_id}`, {
+            state: {
+              branch: summary?.branch,
+              warehouse: summary?.warehouse,
+            },
+          });
+        }
+      } else {
+        enqueueSnackbar(response.data.message || 'Failed to mark items for adjustment', { variant: 'error' });
+      }
+    } catch (error) {
+      console.error('Error marking items for adjustment:', error);
+      enqueueSnackbar('Failed to mark items for adjustment', { variant: 'error' });
+    }
+  };
+
+  const handleViewAdjustments = () => {
+    if (!location_id) return;
+    navigate(`/adjustment/marked/${location_id}`, {
+      state: {
+        branch: summary?.branch,
+        warehouse: summary?.warehouse,
+      },
+    });
+  };
+
   // Check if an item is marked for checking
   const isItemMarked = (item: ReconciliationItem): boolean => {
     const key = createComparisonKey({
@@ -1729,15 +1903,35 @@ const ReconciliationCounterPage: React.FC = () => {
           </Stack>
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
             {selectedItems.size > 0 && (
-              <Button
-                size="small"
-                variant="contained"
-                onClick={handleMarkForChecking}
-                sx={{ textTransform: 'none', fontWeight: 600 }}
-              >
-                Mark ({selectedItems.size})
-              </Button>
+              <>
+                <Button
+                  size="small"
+                  variant="contained"
+                  onClick={handleMarkForChecking}
+                  sx={{ textTransform: 'none', fontWeight: 600 }}
+                >
+                  Mark for Recheck ({selectedItems.size})
+                </Button>
+                <Button
+                  size="small"
+                  variant="contained"
+                  color="secondary"
+                  onClick={handleMarkForAdjustment}
+                  sx={{ textTransform: 'none', fontWeight: 600 }}
+                >
+                  Mark for Adjustment ({selectedItems.size})
+                </Button>
+              </>
             )}
+            <Button
+              size="small"
+              variant="outlined"
+              color="secondary"
+              onClick={handleViewAdjustments}
+              sx={{ textTransform: 'none' }}
+            >
+              View Adjustments
+            </Button>
             <Button
               size="small"
               variant="outlined"
