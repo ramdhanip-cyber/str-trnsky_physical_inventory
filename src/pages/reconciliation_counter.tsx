@@ -31,7 +31,8 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  Alert,
 } from '@mui/material';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
 import CloseIcon from '@mui/icons-material/Close';
@@ -49,6 +50,12 @@ import PrecisionManufacturingOutlinedIcon from '@mui/icons-material/PrecisionMan
 import ClearAllIcon from '@mui/icons-material/ClearAll';
 import TuneIcon from '@mui/icons-material/Tune';
 import { servicesAPI } from '../config/api';
+import {
+  loadAdjustmentItems,
+  saveAdjustmentItems,
+  toAdjustmentMarkedItems,
+  type AdjustmentMarkPayload,
+} from '../utils/adjustmentSession';
 import { alpha } from '@mui/material/styles';
 
 const formatNumber = (value: number | string | undefined | null, options?: Intl.NumberFormatOptions) => {
@@ -95,6 +102,22 @@ const stripLengthFt = (value: string | number | undefined | null): string | numb
   if (typeof value === 'number') return value;
   const s = String(value).trim().replace(/\s*ft\s*$/i, '').trim();
   return s === '' ? value : s;
+};
+
+const COMPARE_FIELD_LABELS: Record<string, string> = {
+  sys_tag_no: 'System Tag',
+  form: 'Form',
+  grade: 'Grade',
+  size: 'Size',
+  finish: 'Finish',
+  ext_finish: 'Ext. Finish',
+  width: 'Width',
+  length: 'Length',
+  location: 'Location',
+  mill: 'Mill',
+  heat: 'Heat',
+  type: 'Type',
+  quality: 'Quality',
 };
 
 // Interface for comparison results
@@ -331,6 +354,11 @@ const ReconciliationCounterPage: React.FC = () => {
     }
     return raw.filter((f: string) => (RECONCILE_ALLOWED_FIELDS as readonly string[]).includes(f));
   }, [summary]);
+
+  const compareFieldLabels = useMemo(
+    () => effectiveCompareFields.map((f) => COMPARE_FIELD_LABELS[f] || f),
+    [effectiveCompareFields]
+  );
 
   useEffect(() => {
     const applyReconciliationData = (stateData: ReconciliationData) => {
@@ -635,14 +663,82 @@ const ReconciliationCounterPage: React.FC = () => {
     return fields.join('|');
   };
 
+  const consolidatedSystemItems = useMemo(() => {
+    const toCombinedEntry = (item: ReconciliationItem) => ({
+      sys_tag_no: item.prd_tag_no || item.tag_no,
+      form: item.form,
+      grade: item.grade,
+      size: item.size,
+      finish: item.finish,
+      ext_finish: item.ext_finish,
+      width: item.width,
+      length: item.length,
+      location: item.location,
+      mill: item.mill,
+      heat: item.heat,
+      inv_type: item.inv_type,
+      inv_quality: item.inv_quality,
+      qty: Number(item.total_qty ?? item.system_qty) || 0,
+    });
+
+    const map = new Map<string, ReconciliationItem & { system_combined_items?: unknown[]; system_combined_count?: number }>();
+
+    systemItems.forEach((item) => {
+      const key = createComparisonKey({
+        prd_tag_no: item.prd_tag_no || item.tag_no,
+        form: item.form,
+        grade: item.grade,
+        size: item.size,
+        finish: item.finish,
+        ext_finish: item.ext_finish,
+        width: item.width,
+        length: item.length,
+        location: item.location,
+        mill: item.mill,
+        heat: item.heat,
+        inv_type: item.inv_type,
+        inv_quality: item.inv_quality,
+      });
+
+      const existing = map.get(key);
+      if (!existing) {
+        const prior = (item as { system_combined_items?: unknown[] }).system_combined_items;
+        map.set(key, {
+          ...item,
+          system_combined_items: Array.isArray(prior) && prior.length > 0 ? [...prior] : [toCombinedEntry(item)],
+          system_combined_count: Array.isArray(prior) && prior.length > 0 ? prior.length : 1,
+        });
+        return;
+      }
+
+      existing.total_qty = (Number(existing.total_qty) || 0) + (Number(item.total_qty) || 0);
+      existing.system_qty = (Number(existing.system_qty) || 0) + (Number(item.system_qty) || 0);
+      existing.weight = (Number(existing.weight) || 0) + (Number(item.weight) || 0);
+
+      const prior = (item as { system_combined_items?: unknown[] }).system_combined_items;
+      if (!existing.system_combined_items) existing.system_combined_items = [];
+      if (Array.isArray(prior) && prior.length > 0) {
+        existing.system_combined_items.push(...prior);
+      } else {
+        existing.system_combined_items.push(toCombinedEntry(item));
+      }
+      existing.system_combined_count = existing.system_combined_items.length;
+    });
+
+    return Array.from(map.values());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [systemItems, effectiveCompareFields]);
+
+  const mergedSystemRowCount = Math.max(0, systemItems.length - consolidatedSystemItems.length);
+
   // Auto-run comparison when system items are loaded
   useEffect(() => {
-    if (systemItems.length > 0 && location_id && !comparing) {
+    if (consolidatedSystemItems.length > 0 && location_id && !comparing) {
       performComparison();
       fetchMarkedItems();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [systemItems.length, location_id]);
+  }, [consolidatedSystemItems.length, location_id]);
 
   // Create a map of comparison results by system item key for quick lookup
   const comparisonMap = useMemo(() => {
@@ -786,7 +882,7 @@ const ReconciliationCounterPage: React.FC = () => {
       lengths: sortedLengths,
       widths: sortedWidths
     };
-  }, [systemItems, comparisonMap, comparisonResults]);
+  }, [systemItems, consolidatedSystemItems, comparisonMap, comparisonResults]);
 
   const filteredItems = useMemo(() => {
     // Start with empty array to ensure we always return a new array
@@ -806,7 +902,7 @@ const ReconciliationCounterPage: React.FC = () => {
       }));
 
     // Combine system items with orphaned items
-    filtered = [...systemItems, ...orphanedItems];
+    filtered = [...consolidatedSystemItems, ...orphanedItems];
 
     // Apply search term filter
     if (searchTerm) {
@@ -1125,8 +1221,8 @@ const ReconciliationCounterPage: React.FC = () => {
       const results: ComparisonResult[] = [];
       const matchedCountedKeys = new Set<string>();
 
-      // Process system items
-      systemItems.forEach((systemItem) => {
+      // Process system items (consolidated by active compare fields)
+      consolidatedSystemItems.forEach((systemItem) => {
         const systemKey = createComparisonKey({
           prd_tag_no: systemItem.prd_tag_no || systemItem.tag_no,
           form: systemItem.form,
@@ -1250,7 +1346,7 @@ const ReconciliationCounterPage: React.FC = () => {
           remarks: countedItem.remarks,
         };
 
-        const ranked = systemItems.map((sys) => {
+        const ranked = consolidatedSystemItems.map((sys) => {
           const mismatchedFields = effectiveCompareFields.filter((field) => {
             const sysVal = getCompareFieldValue(
               {
@@ -1646,57 +1742,34 @@ const ReconciliationCounterPage: React.FC = () => {
         return;
       }
 
-      const response = await servicesAPI.markItemsForAdjustment({
-        location_id,
-        items: itemsToMark,
-        adjustment_reason: 'Marked for adjustment from reconciliation counter page',
+      const markedItems = toAdjustmentMarkedItems(location_id, itemsToMark as AdjustmentMarkPayload[]);
+      saveAdjustmentItems(location_id, markedItems);
+      setSelectedItems(new Set());
+
+      enqueueSnackbar(
+        `${markedItems.length} item(s) sent for adjustment`,
+        { variant: 'success' }
+      );
+
+      navigate(`/adjustment/marked/${location_id}`, {
+        state: {
+          items: markedItems,
+          branch: summary?.branch,
+          warehouse: summary?.warehouse,
+        },
       });
-
-      if (response.data.success) {
-        const { newlyMarked, alreadyMarked } = response.data;
-
-        if (newlyMarked > 0 && alreadyMarked > 0) {
-          enqueueSnackbar(
-            `${newlyMarked} item(s) marked for adjustment. ${alreadyMarked} already marked and skipped.`,
-            { variant: 'warning', autoHideDuration: 5000 }
-          );
-        } else if (newlyMarked > 0) {
-          enqueueSnackbar(
-            response.data.message || `${newlyMarked} item(s) marked for adjustment`,
-            { variant: 'success' }
-          );
-        } else if (alreadyMarked > 0) {
-          enqueueSnackbar(
-            response.data.message || `All ${alreadyMarked} item(s) were already marked for adjustment.`,
-            { variant: 'info', autoHideDuration: 5000 }
-          );
-        } else {
-          enqueueSnackbar(response.data.message || 'No items were processed.', { variant: 'warning' });
-        }
-
-        setSelectedItems(new Set());
-
-        if (newlyMarked > 0) {
-          navigate(`/adjustment/marked/${location_id}`, {
-            state: {
-              branch: summary?.branch,
-              warehouse: summary?.warehouse,
-            },
-          });
-        }
-      } else {
-        enqueueSnackbar(response.data.message || 'Failed to mark items for adjustment', { variant: 'error' });
-      }
     } catch (error) {
       console.error('Error marking items for adjustment:', error);
-      enqueueSnackbar('Failed to mark items for adjustment', { variant: 'error' });
+      enqueueSnackbar('Failed to prepare items for adjustment', { variant: 'error' });
     }
   };
 
   const handleViewAdjustments = () => {
     if (!location_id) return;
+    const items = loadAdjustmentItems(location_id);
     navigate(`/adjustment/marked/${location_id}`, {
       state: {
+        items,
         branch: summary?.branch,
         warehouse: summary?.warehouse,
       },
@@ -1944,6 +2017,15 @@ const ReconciliationCounterPage: React.FC = () => {
           </Stack>
         </Stack>
       </Paper>
+
+      {compareFieldLabels.length > 0 && (
+        <Alert severity="info" sx={{ mb: 1, py: 0.25 }}>
+          Matching on: {compareFieldLabels.join(', ')}.
+          {mergedSystemRowCount > 0 && (
+            <> {mergedSystemRowCount} duplicate system row{mergedSystemRowCount === 1 ? '' : 's'} merged for display (same match key).</>
+          )}
+        </Alert>
+      )}
 
       <Paper
         elevation={0}

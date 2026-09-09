@@ -124,6 +124,12 @@ export interface AdjustmentMarkedItem {
   recon_status?: string;
   section_desc?: string;
   transaction_id?: number | null;
+  adjustment_amount?: number | string | null;
+  adjustment_type?: string;
+  adjustment_location?: string;
+  adjustment_quantity?: number | string | null;
+  item_control_no?: string;
+  cost_uom?: string;
 }
 
 export interface ReconciliationSummary {

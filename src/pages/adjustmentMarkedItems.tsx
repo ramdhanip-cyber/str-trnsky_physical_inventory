@@ -24,6 +24,12 @@ import {
   Collapse,
   Grid,
   Divider,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  MenuItem,
+  DialogContentText,
 } from '@mui/material';
 import {
   Home,
@@ -40,11 +46,17 @@ import {
   TrendingUp,
   TrendingDown,
   CheckCircleOutline,
+  EditNote,
 } from '@mui/icons-material';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useSnackbar } from 'notistack';
 import * as XLSX from 'xlsx';
 import { servicesAPI } from '../config/api';
+import {
+  loadAdjustmentItems,
+  saveAdjustmentItems,
+  clearAdjustmentItems,
+} from '../utils/adjustmentSession';
 import type { AdjustmentMarkedItem } from '../types/reconciliation';
 
 interface AdjustmentResult {
@@ -68,6 +80,51 @@ interface AdjustmentResult {
 
 const NAVY = '#0C2C48';
 const NAVY_MID = '#1E5A8A';
+const ROW_BG_EVEN = '#ffffff';
+const ROW_BG_ODD = '#f4f7fb';
+const ROW_BG_HOVER = '#e8eef6';
+
+const isFoundItem = (item: AdjustmentMarkedItem): boolean => {
+  const status = String(item.recon_status || item.status || '').toLowerCase();
+  return status === 'orphaned' || status === 'found' || status === 'counted not in system';
+};
+
+const isOverUnderItem = (item: AdjustmentMarkedItem): boolean => {
+  if (isFoundItem(item)) return false;
+  const status = String(item.recon_status || '').toLowerCase();
+  if (status === 'overcount' || status === 'undercount') return true;
+  return Number(item.variance) !== 0;
+};
+
+const itemHasAdjustment = (item: AdjustmentMarkedItem): boolean => {
+  if (isFoundItem(item)) {
+    return item.adjustment_amount != null && String(item.adjustment_amount).trim() !== '';
+  }
+  if (isOverUnderItem(item)) {
+    return Boolean(
+      item.adjustment_type?.trim()
+      && item.adjustment_location?.trim()
+      && item.adjustment_quantity != null && String(item.adjustment_quantity).trim() !== ''
+      && item.adjustment_amount != null && String(item.adjustment_amount).trim() !== ''
+    );
+  }
+  return item.adjustment_amount != null && String(item.adjustment_amount).trim() !== '';
+};
+
+const resolveCountTagNoForApproval = (item: AdjustmentMarkedItem): string | undefined => {
+  const tid = item.tag_id != null ? String(item.tag_id).trim() : '';
+  if (tid) return tid;
+  const sys = String(item.sys_tag_no ?? '').trim();
+  if (sys && sys !== '-' && sys !== '—' && sys !== 'N/A') return sys;
+  return undefined;
+};
+
+interface AdjustmentFormState {
+  adjustment_type: string;
+  adjustment_location: string;
+  adjustment_quantity: string;
+  adjustment_amount: string;
+}
 
 const fmt = (value: unknown, digits = 2) => {
   if (value == null || value === '') return '—';
@@ -120,17 +177,29 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [branch, setBranch] = useState('');
   const [warehouse, setWarehouse] = useState('');
+  const [locationDesc, setLocationDesc] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [fetchingId, setFetchingId] = useState<number | null>(null);
   const [removingId, setRemovingId] = useState<number | null>(null);
   const [erpResults, setErpResults] = useState<Record<number, AdjustmentResult[]>>({});
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+  const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
+  const [adjustingItem, setAdjustingItem] = useState<AdjustmentMarkedItem | null>(null);
+  const [adjustForm, setAdjustForm] = useState<AdjustmentFormState>({
+    adjustment_type: '',
+    adjustment_location: '',
+    adjustment_quantity: '',
+    adjustment_amount: '',
+  });
+  const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
+  const [submittingApproval, setSubmittingApproval] = useState(false);
 
   const loadLocationContext = useCallback(async () => {
-    const state = routerLocation.state as { branch?: string; warehouse?: string } | null;
+    const state = routerLocation.state as { branch?: string; warehouse?: string; location_desc?: string } | null;
     if (state?.branch && state?.warehouse) {
       setBranch(state.branch);
       setWarehouse(state.warehouse);
+      if (state.location_desc) setLocationDesc(state.location_desc);
       return;
     }
     if (!location_id) return;
@@ -138,24 +207,28 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
       const response = await servicesAPI.getLocation(location_id);
       setBranch(response.data?.branch || '');
       setWarehouse(response.data?.warehouse || '');
+      setLocationDesc(response.data?.location_desc || '');
     } catch {
       // Non-fatal
     }
   }, [location_id, routerLocation.state]);
 
-  const loadItems = useCallback(async () => {
+  const loadItems = useCallback(() => {
     if (!location_id) return;
     setLoading(true);
     try {
-      const response = await servicesAPI.getAdjustmentItems(location_id);
-      setItems(response.data?.success ? response.data.items || [] : []);
-    } catch (error) {
-      console.error('Error loading adjustment items:', error);
-      enqueueSnackbar('Failed to load marked adjustment items', { variant: 'error' });
+      const state = routerLocation.state as { items?: AdjustmentMarkedItem[] } | null;
+      const fromState = state?.items;
+      const fromSession = loadAdjustmentItems(location_id);
+      const nextItems = fromState && fromState.length > 0 ? fromState : fromSession;
+      setItems(nextItems);
+      if (nextItems.length > 0) {
+        saveAdjustmentItems(location_id, nextItems);
+      }
     } finally {
       setLoading(false);
     }
-  }, [location_id, enqueueSnackbar]);
+  }, [location_id, routerLocation.state]);
 
   useEffect(() => {
     loadLocationContext();
@@ -197,12 +270,14 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
     return { total: items.length, over, under, match };
   }, [items]);
 
-  const handleRemove = async (itemId: number) => {
+  const handleRemove = (itemId: number) => {
     setRemovingId(itemId);
     try {
-      await servicesAPI.removeFromAdjustment(String(itemId));
-      enqueueSnackbar('Item removed from adjustment list', { variant: 'success' });
-      setItems((prev) => prev.filter((item) => item.id !== itemId));
+      setItems((prev) => {
+        const next = prev.filter((item) => item.id !== itemId);
+        if (location_id) saveAdjustmentItems(location_id, next);
+        return next;
+      });
       setErpResults((prev) => {
         const next = { ...prev };
         delete next[itemId];
@@ -213,9 +288,7 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
         next.delete(itemId);
         return next;
       });
-    } catch (error) {
-      console.error('Error removing adjustment item:', error);
-      enqueueSnackbar('Failed to remove item', { variant: 'error' });
+      enqueueSnackbar('Item removed from adjustment list', { variant: 'success' });
     } finally {
       setRemovingId(null);
     }
@@ -253,6 +326,16 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
       setExpandedRows((prev) => new Set(prev).add(item.id));
 
       if (data.length > 0) {
+        const ctlNo = data[0]?.prd_itm_ctl_no;
+        if (ctlNo) {
+          setItems((prev) => {
+            const next = prev.map((row) =>
+              row.id === item.id ? { ...row, item_control_no: String(ctlNo) } : row
+            );
+            if (location_id) saveAdjustmentItems(location_id, next);
+            return next;
+          });
+        }
         enqueueSnackbar(`Found ${data.length} ERP record(s)`, { variant: 'success' });
       } else {
         enqueueSnackbar('No ERP adjustment data found for this item', { variant: 'info' });
@@ -273,6 +356,201 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
       return next;
     });
   };
+
+  const openAdjustDialog = (item: AdjustmentMarkedItem) => {
+    setAdjustingItem(item);
+    setAdjustForm({
+      adjustment_type: item.adjustment_type || item.type || '',
+      adjustment_location: item.adjustment_location || item.location || '',
+      adjustment_quantity: item.adjustment_quantity != null ? String(item.adjustment_quantity) : '',
+      adjustment_amount: item.adjustment_amount != null ? String(item.adjustment_amount) : '',
+    });
+    setAdjustDialogOpen(true);
+  };
+
+  const closeAdjustDialog = () => {
+    setAdjustDialogOpen(false);
+    setAdjustingItem(null);
+  };
+
+  const handleSaveAdjustment = () => {
+    if (!adjustingItem) return;
+
+    const foundOnly = isFoundItem(adjustingItem);
+    if (foundOnly) {
+      if (!adjustForm.adjustment_amount.trim()) {
+        enqueueSnackbar('Amount is required for found items', { variant: 'warning' });
+        return;
+      }
+    } else if (isOverUnderItem(adjustingItem)) {
+      if (!adjustForm.adjustment_type.trim() || !adjustForm.adjustment_location.trim()
+        || !adjustForm.adjustment_quantity.trim() || !adjustForm.adjustment_amount.trim()) {
+        enqueueSnackbar('Type, Location, Quantity, and Amount are required', { variant: 'warning' });
+        return;
+      }
+    }
+
+    setItems((prev) => {
+      const next = prev.map((item) => {
+        if (item.id !== adjustingItem.id) return item;
+        return {
+          ...item,
+          adjustment_type: foundOnly ? undefined : adjustForm.adjustment_type,
+          adjustment_location: foundOnly ? undefined : adjustForm.adjustment_location,
+          adjustment_quantity: foundOnly ? undefined : adjustForm.adjustment_quantity,
+          adjustment_amount: adjustForm.adjustment_amount,
+        };
+      });
+      if (location_id) saveAdjustmentItems(location_id, next);
+      return next;
+    });
+
+    enqueueSnackbar('Adjustment details saved', { variant: 'success' });
+    closeAdjustDialog();
+  };
+
+  const buildApprovalItems = () => {
+    type ApprovalItemPayload = Parameters<typeof servicesAPI.saveAdjustmentForApproval>[0]['items'][number];
+    const approvalItems: ApprovalItemPayload[] = [];
+
+    items.forEach((item) => {
+      const amount = parseFloat(String(item.adjustment_amount || 0)) || 0;
+      const adjQty = parseFloat(String(item.adjustment_quantity ?? item.variance ?? 0)) || 0;
+      const countedQty = Number(item.counted_qty) || 0;
+      const unitCost = countedQty > 0 ? Math.round((amount / countedQty) * 1000000) / 1000000 : 0;
+      const foundOnly = isFoundItem(item);
+
+      const baseItem = {
+        item_control_no: item.item_control_no || undefined,
+        system_tag_no: item.sys_tag_no || item.tag_id || undefined,
+        form: item.form,
+        grade: item.grade,
+        size: item.size,
+        finish: item.finish || '',
+        ext_finish: item.ext_finish || '',
+        width: Number(item.width) || 0,
+        length: Number(item.length) || 0,
+        location: foundOnly ? (item.location || '') : (item.adjustment_location || item.location || ''),
+        mill: item.mill || undefined,
+        heat: item.heat || undefined,
+        quality_standards: item.quality || undefined,
+        type: foundOnly ? (item.type || undefined) : (item.adjustment_type || item.type || undefined),
+        system_qty: Number(item.system_qty) || 0,
+        counted_qty: countedQty,
+        cost: unitCost,
+        cost_uom: item.cost_uom || 'CWT',
+      };
+
+      if (foundOnly) {
+        const physicalCount = {
+          section_desc: (item.section_desc || '').trim() || undefined,
+          count_tag_no: resolveCountTagNoForApproval(item),
+        };
+        const hasPhysicalMeta = Boolean(physicalCount.section_desc || physicalCount.count_tag_no);
+        approvalItems.push({
+          ...baseItem,
+          variance_qty: Number(item.variance) || 0,
+          adj_qty: Number(item.variance) || 0,
+          amount,
+          adj_typ: 'NEW',
+          adj_res_data: hasPhysicalMeta ? { physicalCount } : undefined,
+        });
+        return;
+      }
+
+      if (isOverUnderItem(item) || adjQty !== 0) {
+        approvalItems.push({
+          ...baseItem,
+          variance_qty: Number(item.variance) || 0,
+          adj_qty: adjQty,
+          amount,
+          adj_typ: 'QTY',
+        });
+      }
+    });
+
+    return approvalItems;
+  };
+
+  const handleSendForApproval = () => {
+    if (items.length === 0) {
+      enqueueSnackbar('No items to submit', { variant: 'warning' });
+      return;
+    }
+
+    const incomplete = items.filter((item) => !itemHasAdjustment(item));
+    if (incomplete.length > 0) {
+      enqueueSnackbar(
+        `Enter adjustment details for all items before submitting (${incomplete.length} remaining)`,
+        { variant: 'warning', autoHideDuration: 6000 }
+      );
+      return;
+    }
+
+    const zeroAmountItems = items.filter((item) => (parseFloat(String(item.adjustment_amount || 0)) || 0) <= 0);
+    if (zeroAmountItems.length > 0) {
+      enqueueSnackbar('Items with $0 amount cannot be submitted for approval', { variant: 'error' });
+      return;
+    }
+
+    setApprovalDialogOpen(true);
+  };
+
+  const handleConfirmApproval = async () => {
+    setApprovalDialogOpen(false);
+    if (!location_id) return;
+
+    try {
+      setSubmittingApproval(true);
+      enqueueSnackbar('Submitting adjustment for approval...', { variant: 'info' });
+
+      const approvalItems = buildApprovalItems();
+      if (approvalItems.length === 0) {
+        enqueueSnackbar('No valid adjustment lines to submit', { variant: 'warning' });
+        return;
+      }
+
+      const adjName = `${branch || 'Unknown'}_${warehouse || 'Unknown'}_${locationDesc || `Location_${location_id}`}_${new Date().toISOString().split('T')[0]}`;
+      const response = await servicesAPI.saveAdjustmentForApproval({
+        location_id: Number(location_id),
+        adj_name: adjName,
+        items: approvalItems,
+      });
+
+      if (!response.data?.success) {
+        throw new Error(response.data?.error || 'Failed to save adjustment for approval');
+      }
+
+      const createdApprovals = Array.isArray(response.data?.data?.created_approvals)
+        ? response.data.data.created_approvals
+        : [];
+      const createdSummary = createdApprovals.length > 0
+        ? createdApprovals
+            .map((entry: { request_type?: string; aprvl_id?: number }) => `${entry.request_type || 'STANDARD'}: ${entry.aprvl_id ?? '—'}`)
+            .join(' | ')
+        : `Approval ID: ${response.data.data.aprvl_id}`;
+
+      clearAdjustmentItems(location_id);
+      setItems([]);
+      enqueueSnackbar(`Submitted for approval successfully! ${createdSummary}`, { variant: 'success', autoHideDuration: 6000 });
+      navigate('/adjustment-records');
+    } catch (error) {
+      console.error('Error submitting adjustment for approval:', error);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      enqueueSnackbar(`Failed to submit for approval: ${message}`, { variant: 'error' });
+    } finally {
+      setSubmittingApproval(false);
+    }
+  };
+
+  const getStickyCellSx = (rowBg: string) => ({
+    position: 'sticky' as const,
+    right: 0,
+    zIndex: 2,
+    backgroundColor: rowBg,
+    boxShadow: `-8px 0 16px ${alpha('#000', 0.08)}`,
+    borderLeft: `1px solid ${alpha(theme.palette.divider, 0.8)}`,
+  });
 
   const handleExport = () => {
     if (filteredItems.length === 0) {
@@ -412,9 +690,18 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
             </Button>
             <Button
               startIcon={<Download />}
-              variant="contained"
+              variant="outlined"
               onClick={handleExport}
               disabled={filteredItems.length === 0}
+              sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 600 }}
+            >
+              Export
+            </Button>
+            <Button
+              startIcon={submittingApproval ? <CircularProgress size={18} color="inherit" /> : <CheckCircleOutline />}
+              variant="contained"
+              onClick={handleSendForApproval}
+              disabled={items.length === 0 || submittingApproval}
               sx={{
                 textTransform: 'none',
                 borderRadius: 2,
@@ -423,7 +710,7 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
                 boxShadow: `0 8px 18px ${alpha(NAVY, 0.28)}`,
               }}
             >
-              Export
+              Send for Approval
             </Button>
           </Stack>
         </Stack>
@@ -503,7 +790,7 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
             </Typography>
             <Typography color="text.secondary" sx={{ mb: 2 }}>
               {items.length === 0
-                ? 'Mark counted items from reconciliation to build this list.'
+                ? 'Mark items from reconciliation to review them here. Items are kept in this browser session only.'
                 : 'Try a different tag, form, or grade.'}
             </Typography>
             <Button variant="contained" onClick={() => (items.length === 0 ? navigate(-1) : setSearchTerm(''))} sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2, background: `linear-gradient(135deg, ${NAVY}, ${NAVY_MID})` }}>
@@ -539,7 +826,7 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
                   <TableCell sx={headCellSx}>Recon</TableCell>
                   <TableCell sx={headCellSx}>Marked By</TableCell>
                   <TableCell sx={headCellSx}>Marked At</TableCell>
-                  <TableCell sx={{ ...headCellSx, position: 'sticky', right: 0, zIndex: 3 }} align="center">
+                  <TableCell sx={{ ...headCellSx, ...getStickyCellSx(NAVY), zIndex: 4 }} align="center">
                     Actions
                   </TableCell>
                 </TableRow>
@@ -550,14 +837,26 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
                   const variance = Number(item.variance) || 0;
                   const isExpanded = expandedRows.has(item.id);
                   const erpRows = erpResults[item.id] || [];
+                  const rowBg = index % 2 === 0 ? ROW_BG_EVEN : ROW_BG_ODD;
+                  const foundItem = isFoundItem(item);
+                  const hasAdjustment = itemHasAdjustment(item);
 
                   return (
                     <React.Fragment key={item.id}>
                       <TableRow
                         hover
                         sx={{
-                          bgcolor: index % 2 === 0 ? '#fff' : alpha(NAVY, 0.025),
-                          '& td': { borderColor: alpha(theme.palette.divider, 0.6), py: 1, fontSize: '0.8rem', whiteSpace: 'nowrap' },
+                          bgcolor: rowBg,
+                          '&:hover': { bgcolor: ROW_BG_HOVER },
+                          '&:hover td': { backgroundColor: ROW_BG_HOVER },
+                          '&:hover td:last-of-type': { backgroundColor: ROW_BG_HOVER },
+                          '& td': {
+                            borderColor: alpha(theme.palette.divider, 0.6),
+                            py: 1,
+                            fontSize: '0.8rem',
+                            whiteSpace: 'nowrap',
+                            backgroundColor: rowBg,
+                          },
                         }}
                       >
                         <TableCell>
@@ -611,23 +910,25 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
                         </TableCell>
                         <TableCell>
                           {item.recon_status ? (
-                            <Chip size="small" label={item.recon_status} color={statusColor(item.recon_status)} variant="outlined" sx={{ height: 22, fontWeight: 600 }} />
+                            <Stack spacing={0.5} alignItems="flex-start">
+                              <Chip size="small" label={foundItem ? 'Found' : item.recon_status} color={statusColor(item.recon_status)} variant="outlined" sx={{ height: 22, fontWeight: 600 }} />
+                              {hasAdjustment && (
+                                <Chip size="small" label="Adjusted" color="success" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 700 }} />
+                              )}
+                            </Stack>
                           ) : (
                             '—'
                           )}
                         </TableCell>
                         <TableCell>{display(item.marked_by_name)}</TableCell>
                         <TableCell>{formatDate(item.marked_at)}</TableCell>
-                        <TableCell
-                          align="center"
-                          sx={{
-                            position: 'sticky',
-                            right: 0,
-                            bgcolor: index % 2 === 0 ? '#fff' : alpha(NAVY, 0.025),
-                            boxShadow: `-6px 0 12px ${alpha('#000', 0.04)}`,
-                          }}
-                        >
+                        <TableCell align="center" sx={getStickyCellSx(rowBg)}>
                           <Stack direction="row" spacing={0.25} justifyContent="center">
+                            <Tooltip title={foundItem ? 'Add adjustment amount' : 'Adjust type, location, quantity & amount'}>
+                              <IconButton size="small" color="secondary" onClick={() => openAdjustDialog(item)}>
+                                <EditNote fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
                             <Tooltip title="Lookup ERP inventory">
                               <span>
                                 <IconButton size="small" color="primary" onClick={() => handleFetchErpData(item)} disabled={fetchingId === item.id}>
@@ -697,6 +998,113 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
           </TableContainer>
         )}
       </Paper>
+
+      <Dialog open={adjustDialogOpen} onClose={closeAdjustDialog} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
+        <DialogTitle sx={{ fontWeight: 800, color: NAVY }}>
+          {adjustingItem && isFoundItem(adjustingItem) ? 'Add Adjustment Amount' : 'Item Adjustment'}
+        </DialogTitle>
+        <DialogContent dividers>
+          {adjustingItem && (
+            <Stack spacing={2} sx={{ pt: 0.5 }}>
+              <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: alpha(NAVY, 0.03) }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, color: NAVY }}>
+                  {adjustingItem.form} · {adjustingItem.size} · {adjustingItem.grade}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Tag: {adjustingItem.sys_tag_no || adjustingItem.tag_id || '—'}
+                  {' · '}
+                  {isFoundItem(adjustingItem) ? 'Found item' : isOverUnderItem(adjustingItem) ? 'Over/Under count' : 'Adjustment'}
+                </Typography>
+              </Paper>
+
+              {adjustingItem && isFoundItem(adjustingItem) ? (
+                <TextField
+                  label="Amount"
+                  type="number"
+                  fullWidth
+                  required
+                  value={adjustForm.adjustment_amount}
+                  onChange={(e) => setAdjustForm((prev) => ({ ...prev, adjustment_amount: e.target.value }))}
+                  inputProps={{ min: 0, step: '0.01' }}
+                />
+              ) : (
+                <>
+                  <TextField
+                    select
+                    label="Type"
+                    fullWidth
+                    required
+                    value={adjustForm.adjustment_type}
+                    onChange={(e) => setAdjustForm((prev) => ({ ...prev, adjustment_type: e.target.value }))}
+                  >
+                    {['M', 'D', 'W', 'S'].map((opt) => (
+                      <MenuItem key={opt} value={opt}>{opt}</MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    label="Location"
+                    fullWidth
+                    required
+                    value={adjustForm.adjustment_location}
+                    onChange={(e) => setAdjustForm((prev) => ({ ...prev, adjustment_location: e.target.value }))}
+                  />
+                  <TextField
+                    label="Quantity"
+                    type="number"
+                    fullWidth
+                    required
+                    value={adjustForm.adjustment_quantity}
+                    onChange={(e) => setAdjustForm((prev) => ({ ...prev, adjustment_quantity: e.target.value }))}
+                    inputProps={{ step: '0.01' }}
+                    helperText={`Variance: ${fmt(adjustingItem.variance)}`}
+                  />
+                  <TextField
+                    label="Amount"
+                    type="number"
+                    fullWidth
+                    required
+                    value={adjustForm.adjustment_amount}
+                    onChange={(e) => setAdjustForm((prev) => ({ ...prev, adjustment_amount: e.target.value }))}
+                    inputProps={{ min: 0, step: '0.01' }}
+                  />
+                </>
+              )}
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button onClick={closeAdjustDialog} sx={{ textTransform: 'none' }}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleSaveAdjustment}
+            sx={{ textTransform: 'none', fontWeight: 700, background: `linear-gradient(135deg, ${NAVY}, ${NAVY_MID})` }}
+          >
+            Save Adjustment
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={approvalDialogOpen} onClose={() => setApprovalDialogOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
+        <DialogTitle sx={{ fontWeight: 800, color: NAVY }}>Send for Approval</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Submit {items.length} marked item{items.length === 1 ? '' : 's'} to the gatekeeper for approval?
+            Standard adjustments and new found items will be routed to the appropriate approval queue.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button onClick={() => setApprovalDialogOpen(false)} sx={{ textTransform: 'none' }}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleConfirmApproval}
+            disabled={submittingApproval}
+            startIcon={submittingApproval ? <CircularProgress size={18} color="inherit" /> : <CheckCircleOutline />}
+            sx={{ textTransform: 'none', fontWeight: 700, background: `linear-gradient(135deg, ${NAVY}, ${NAVY_MID})` }}
+          >
+            Confirm & Submit
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

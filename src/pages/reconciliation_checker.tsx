@@ -40,6 +40,12 @@ import SearchIcon from '@mui/icons-material/Search';
 import DownloadIcon from '@mui/icons-material/Download';
 import CloseIcon from '@mui/icons-material/Close';
 import { servicesAPI } from '../config/api';
+import {
+  loadAdjustmentItems,
+  saveAdjustmentItems,
+  toAdjustmentMarkedItems,
+  type AdjustmentMarkPayload,
+} from '../utils/adjustmentSession';
 
 const formatNumber = (value: number | string | undefined | null, options?: Intl.NumberFormatOptions) => {
   if (value === null || value === undefined || value === '') {
@@ -1265,57 +1271,34 @@ const ReconciliationCheckerPage: React.FC = () => {
         return;
       }
 
-      const response = await servicesAPI.markItemsForAdjustment({
-        location_id,
-        items: itemsToMark,
-        adjustment_reason: 'Marked for adjustment from reconciliation checker page',
+      const markedItems = toAdjustmentMarkedItems(location_id, itemsToMark as AdjustmentMarkPayload[]);
+      saveAdjustmentItems(location_id, markedItems);
+      setSelectedItems(new Set());
+
+      enqueueSnackbar(
+        `${markedItems.length} item(s) sent for adjustment`,
+        { variant: 'success' }
+      );
+
+      navigate(`/adjustment/marked/${location_id}`, {
+        state: {
+          items: markedItems,
+          branch: summary?.branch,
+          warehouse: summary?.warehouse,
+        },
       });
-
-      if (response.data.success) {
-        const { newlyMarked, alreadyMarked } = response.data;
-
-        if (newlyMarked > 0 && alreadyMarked > 0) {
-          enqueueSnackbar(
-            `${newlyMarked} item(s) marked for adjustment. ${alreadyMarked} already marked and skipped.`,
-            { variant: 'warning', autoHideDuration: 5000 }
-          );
-        } else if (newlyMarked > 0) {
-          enqueueSnackbar(
-            response.data.message || `${newlyMarked} item(s) marked for adjustment`,
-            { variant: 'success' }
-          );
-        } else if (alreadyMarked > 0) {
-          enqueueSnackbar(
-            response.data.message || `All ${alreadyMarked} item(s) were already marked for adjustment.`,
-            { variant: 'info', autoHideDuration: 5000 }
-          );
-        } else {
-          enqueueSnackbar(response.data.message || 'No items were processed.', { variant: 'warning' });
-        }
-
-        setSelectedItems(new Set());
-
-        if (newlyMarked > 0) {
-          navigate(`/adjustment/marked/${location_id}`, {
-            state: {
-              branch: summary?.branch,
-              warehouse: summary?.warehouse,
-            },
-          });
-        }
-      } else {
-        enqueueSnackbar(response.data.message || 'Failed to mark items for adjustment', { variant: 'error' });
-      }
     } catch (error) {
       console.error('Error marking items for adjustment:', error);
-      enqueueSnackbar('Failed to mark items for adjustment', { variant: 'error' });
+      enqueueSnackbar('Failed to prepare items for adjustment', { variant: 'error' });
     }
   };
 
   const handleViewAdjustments = () => {
     if (!location_id) return;
+    const items = loadAdjustmentItems(location_id);
     navigate(`/adjustment/marked/${location_id}`, {
       state: {
+        items,
         branch: summary?.branch,
         warehouse: summary?.warehouse,
       },

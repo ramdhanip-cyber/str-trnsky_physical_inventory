@@ -27,6 +27,10 @@ import ReconciliationCounterPage from './pages/reconciliation_counter';
 import ReconciliationCheckerPage from './pages/reconciliation_checker';
 import AdjustmentPage from './pages/adjustment';
 import AdjustmentMarkedItemsPage from './pages/adjustmentMarkedItems';
+import AdjustmentRecordsPage from './pages/adjustmentRecords';
+import AdjustmentRecordDetailPage from './pages/adjustmentRecordDetail';
+import NewAdjustmentRecordsPage from './pages/newAdjustmentRecords';
+import NewAdjustmentRecordDetailPage from './pages/newAdjustmentRecordDetail';
 import StockAvailable from './pages/stockAvailable';
 // import Checker from './pages/checker_sku';
 // import CheckerHomeSky from "./pages/checkerHome_sky";
@@ -115,6 +119,10 @@ function App() {
                   <Route path="/reconciliation-records/:locationId" element={<ReconciliationRecords />} />
                   <Route path="/adjustment" element={<AdjustmentPage />} />
                   <Route path="/adjustment/marked/:location_id" element={<AdjustmentMarkedItemsPage />} />
+                  <Route path="/adjustment-records" element={<AdjustmentRecordsPage />} />
+                  <Route path="/adjustment-records/:aprvl_id" element={<AdjustmentRecordDetailPage />} />
+                  <Route path="/new-adjustment-records" element={<NewAdjustmentRecordsPage />} />
+                  <Route path="/new-adjustment-records/:aprvl_id" element={<NewAdjustmentRecordDetailPage />} />
                   <Route path="/stock-available" element={<StockAvailable />} />
                   {/* <Route path="/checker/12" element={<CheckerPage />} /> */}
                   <Route path="/assigned-counters" element={<AssignedPage />} />

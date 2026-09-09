@@ -53,6 +53,7 @@ import {
   Description,
   ListAlt,
   Tune,
+  Book,
   Check,
   SwapHoriz,
   CorporateFare,
@@ -222,7 +223,9 @@ const menuItems = {
       subItems: [
         { text: "Reconciliations", icon: <Engineering />, path: "/assigned-counters" },
         { text: "Checker vs Counter", icon: <Inventory />, path: "/assigned-checkers" },
-        { text: "Adjustments", icon: <Tune />, path: "/adjustment" }
+        { text: "Adjustments", icon: <Tune />, path: "/adjustment" },
+        { text: "Adjustment Records", icon: <Book />, path: "/adjustment-records" },
+        { text: "New Item Approvals", icon: <Inventory2 />, path: "/new-adjustment-records" }
       ]
     },
     {

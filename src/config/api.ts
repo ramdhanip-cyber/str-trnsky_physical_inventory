@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { getLoginPath } from './appPath';
 import { getApiPort } from './runtime';
+import { callStratixInfoService, type StratixInfoRequestParams } from '../utils/stratixInfoApi';
 
 // Automatically detect the API base URL from the current window location
 const getAPIBaseURL = () => {
@@ -88,6 +89,8 @@ export const authAPI = {
 };
 
 export const servicesAPI = {
+  callStratixInfoService: (params: StratixInfoRequestParams) => callStratixInfoService(params),
+
   // Locations
   getLocations: () => api.get('/services/locations'),
   getLocation: (id: string) => api.get(`/services/locations/${id}`),
@@ -259,6 +262,68 @@ export const servicesAPI = {
   // Get adjustment data
   getAdjustmentData: (data: { selectedItems: unknown[], branch: string, warehouse: string }) => 
     api.post('/services/adjustment-data', data),
+
+  processAdjustmentItems: (data: {
+    aprvl_id?: number;
+    lgnId?: string;
+    items: Array<{
+      item_control_no?: string;
+      system_tag_no?: string;
+      variance_qty: number;
+      adj_typ?: string;
+    }>;
+  }) => api.post('/services/process-adjustment-items', data),
+
+  getAdjustmentHeaders: () => api.get('/services/adjustments'),
+  getAdjustmentDetails: (adjId: number) => api.get(`/services/adjustments/${adjId}/details`),
+
+  saveAdjustmentForApproval: (data: {
+    location_id: number;
+    adj_name: string;
+    adj_id?: number;
+    items: Array<{
+      item_control_no?: string;
+      system_tag_no?: string;
+      form: string;
+      grade: string;
+      size: string;
+      finish: string;
+      ext_finish: string;
+      width: number;
+      length: number;
+      location: string;
+      mill?: string;
+      heat?: string;
+      quality_standards?: string;
+      type?: string;
+      system_qty: number;
+      counted_qty: number;
+      variance_qty: number;
+      adj_qty: number;
+      cost: number;
+      amount: number;
+      cost_uom?: string;
+      adj_res_data?:
+        | Array<{ res_ref_no: string; res_ord_no: string; res_qty: number; res_wgt: number }>
+        | {
+            reservations?: Array<{ res_ref_no: string; res_ord_no: string; res_qty: number; res_wgt: number }>;
+            physicalCount?: { section_desc?: string; count_tag_no?: string };
+          };
+      adj_typ?: string;
+    }>;
+  }) => api.post('/services/save-adjustment-for-approval', data),
+
+  getApprovalRecords: (requestType: 'STANDARD' | 'NEW' | 'MIXED' = 'STANDARD') =>
+    api.get('/services/approval-records', { params: { request_type: requestType } }),
+
+  getApprovalRecordDetails: (aprvlId: number) =>
+    api.get(`/services/approval-records/${aprvlId}/details`),
+
+  approveAdjustment: (data: { aprvl_id: number }) =>
+    api.post('/services/approve-adjustment', data),
+
+  rejectAdjustment: (data: { aprvl_id: number; rejection_reason?: string }) =>
+    api.post('/services/reject-adjustment', data),
   
   // Stock Available
   getStockAvailable: () => api.get('/services/stock-available'),

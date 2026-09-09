@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const post = require("../controllers/postController");
+const approval = require("../controllers/approvalController");
 const {authMiddleware} = require("../middleware/authMiddleware");
 
 // Route to register user
@@ -35,6 +36,14 @@ router.post('/checker/update-transaction', post.updateTransactions);
 router.put('/transactions/:transaction_id', post.updateTransactionById);
 router.put('/counter-review/update-transaction/:transaction_id', post.updateCounterReviewTransaction);
 router.post('/adjustment-data', authMiddleware, post.getAdjustmentData);
+router.post('/save-adjustment-for-approval', authMiddleware, approval.saveAdjustmentForApproval);
+router.post('/process-adjustment-items', authMiddleware, approval.processAdjustmentItems);
+router.get('/approval-records', authMiddleware, approval.getApprovalRecords);
+router.get('/approval-records/:aprvl_id/details', authMiddleware, approval.getApprovalRecordDetails);
+router.post('/approve-adjustment', authMiddleware, approval.approveAdjustment);
+router.post('/reject-adjustment', authMiddleware, approval.rejectAdjustment);
+router.get('/adjustments', authMiddleware, approval.listAdjustments);
+router.get('/adjustments/:adj_id/details', authMiddleware, approval.getAdjustmentDetails);
 router.post('/counter/update-transaction', post.updateCounterTransaction);
 router.delete('/counter/transactions/:transaction_id', post.deleteCounterTransaction);
 router.post('/checker/verify-transaction', post.verifyTransactions);

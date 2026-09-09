@@ -35,7 +35,7 @@ import {
 } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import { servicesAPI } from "../config/api";
-import { Add, Delete, Save, History, Inventory2, Description, Category, Tag, LocationOn, Factory, LocalFireDepartment, Comment, ClearAll } from "@mui/icons-material";
+import { Add, Delete, Save, History, Inventory2, Description, Category, Tag, LocationOn, Factory, LocalFireDepartment, Comment, ClearAll, ContentCopy } from "@mui/icons-material";
 import { useParams, useNavigate } from "react-router-dom";
 import TransactionsTableModal from '../components/TransactionsTableModal';
 
@@ -245,6 +245,7 @@ interface AttachmentItem {
 interface Transaction {
   id?: number;
   tag_id: number;
+  sys_tag_no?: string;
   form: string;
   type: string;
   grade: string;
@@ -377,6 +378,8 @@ const CounterPage: React.FC<CounterPageProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [openBundleModal, setOpenBundleModal] = useState(false);
   const [openTableModal, setOpenTableModal] = useState(false);
+  const [openDuplicateDialog, setOpenDuplicateDialog] = useState(false);
+  const [duplicateSearch, setDuplicateSearch] = useState('');
   const [tagRecordsDialogOpen, setTagRecordsDialogOpen] = useState(false);
   const [tagRecordsList, setTagRecordsList] = useState<TagRecord[]>([]);
   const [tagFetchTarget, setTagFetchTarget] = useState<'main' | 'attachment'>('main');
@@ -1652,6 +1655,118 @@ const CounterPage: React.FC<CounterPageProps> = ({
     }));
   };
 
+  const lengthFieldsFromStoredFeet = (lengthFeet: unknown) => {
+    if (lengthFeet == null || String(lengthFeet).trim() === '') return null;
+    const feetValue = parseFloat(String(lengthFeet));
+    if (!Number.isFinite(feetValue)) return null;
+    const totalInches = feetValue * 12;
+    const lenStr = totalInches.toFixed(4);
+    const lenFeet = Math.floor(totalInches / 12).toString();
+    const lenInches = (totalInches % 12).toFixed(4).replace(/\.?0+$/, '') || '0';
+    return { length: lenStr, lengthFeet: lenFeet, lengthInches: lenInches };
+  };
+
+  const applyTransactionToForm = (tx: Transaction) => {
+    const finishVal = (tx.finish ?? '').toString().trim();
+    const extFinishVal = (tx.ext_finish ?? '').toString().trim();
+    if (extFinishVal && extFinishVal !== ' ') {
+      pendingExtFinishSplit.current = extFinishVal;
+      setExtFinishSegments([extFinishVal]);
+    } else {
+      pendingExtFinishSplit.current = null;
+      setExtFinishSegments(['']);
+    }
+
+    const widthStr = tx.width != null && tx.width !== '' && !isNaN(Number(tx.width))
+      ? Number(tx.width).toFixed(4)
+      : (tx.width ?? '');
+
+    const lengthFields = lengthFieldsFromStoredFeet(tx.length);
+
+    setFormData((prev) => ({
+      ...prev,
+      tag_id: 0,
+      form: tx.form ?? '',
+      type: tx.type ?? 'M',
+      grade: tx.grade ?? '',
+      size: tx.size ?? '',
+      finish: finishVal !== '' ? finishVal : ' ',
+      extendedFinish: extFinishVal !== '' ? extFinishVal : ' ',
+      width: widthStr || prev.width,
+      ...(lengthFields
+        ? {
+            length: lengthFields.length,
+            lengthFeet: lengthFields.lengthFeet,
+            lengthInches: lengthFields.lengthInches,
+          }
+        : {
+            length: '',
+            lengthFeet: '',
+            lengthInches: '',
+          }),
+      sysTag: tx.sys_tag_no ?? '',
+      quantity: tx.qty ?? 0,
+      countType: tx.count_type ?? 'pcs',
+      bundles: (tx.bundles || []).map((b) => ({
+        num_of_bundle: b.num_of_bundle,
+        bundle_count: b.bundle_count,
+        tag_id: 0,
+      })),
+      remarks: tx.remarks ?? prev.remarks,
+      ad_cmts: tx.ad_cmts ?? '',
+      mill: tx.mill ?? '-',
+      heat: tx.heat ?? '-',
+      location: tx.location ?? prev.location,
+      pageNumber: tx.page_number ?? '',
+      serialNumber: tx.serial_number ?? '',
+    }));
+
+    setValidationWarnings({});
+    setError(null);
+    setAttachments([]);
+  };
+
+  const duplicateCandidates = React.useMemo(() => {
+    const q = duplicateSearch.trim().toLowerCase();
+    return submittedData
+      .filter((tx) => !(tx.ad_cmts || '').toLowerCase().includes('attachment of tag'))
+      .filter((tx) => {
+        if (!q) return true;
+        const haystack = [
+          tx.sys_tag_no,
+          tx.tag_id,
+          tx.form,
+          tx.grade,
+          tx.size,
+          tx.finish,
+          tx.ext_finish,
+          tx.mill,
+          tx.heat,
+          tx.location,
+          tx.remarks,
+        ]
+          .map((v) => String(v ?? '').toLowerCase())
+          .join(' ');
+        return haystack.includes(q);
+      });
+  }, [submittedData, duplicateSearch]);
+
+  const handleOpenDuplicateDialog = async () => {
+    await refreshSubmittedTransactions();
+    setDuplicateSearch('');
+    setOpenDuplicateDialog(true);
+  };
+
+  const handleDuplicateTransaction = (tx: Transaction) => {
+    applyTransactionToForm(tx);
+    setOpenDuplicateDialog(false);
+    setSnackbar({
+      open: true,
+      message: `Form filled from tag ${tx.sys_tag_no || tx.tag_id}. Update quantity or details, then save.`,
+      severity: 'success',
+    });
+  };
+
   const fetchBySystemTagNo = async () => {
     const tag = formData.sysTag.trim();
     if (!tag) {
@@ -2055,6 +2170,23 @@ const CounterPage: React.FC<CounterPageProps> = ({
                 Close
               </Button>
             )}
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={handleOpenDuplicateDialog}
+              startIcon={<ContentCopy />}
+              sx={{
+                borderRadius: '8px',
+                borderColor: '#0088FE',
+                color: '#0088FE',
+                '&:hover': {
+                  borderColor: '#0066CC',
+                  background: alpha('#0088FE', 0.08)
+                }
+              }}
+            >
+              Duplicate
+            </Button>
             <Button
               variant="outlined"
               size="small"
@@ -3338,6 +3470,116 @@ const CounterPage: React.FC<CounterPageProps> = ({
             startIcon={<Add />}
           >
             Add Attachment
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Duplicate from previous transaction */}
+      <Dialog
+        open={openDuplicateDialog}
+        onClose={() => setOpenDuplicateDialog(false)}
+        maxWidth="lg"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
+      >
+        <DialogTitle
+          sx={{
+            background: `linear-gradient(135deg, ${alpha('#0088FE', 0.12)} 0%, ${alpha('#0088FE', 0.04)} 100%)`,
+            borderBottom: `1px solid ${alpha('#0088FE', 0.15)}`,
+            py: 2,
+          }}
+        >
+          <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2}>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 800, color: '#0088FE' }}>
+                Duplicate Previous Entry
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Select a saved transaction to copy its fields into the form
+              </Typography>
+            </Box>
+            <Chip
+              label={`${duplicateCandidates.length} available`}
+              size="small"
+              sx={{ fontWeight: 700, bgcolor: alpha('#0088FE', 0.1), color: '#0088FE' }}
+            />
+          </Stack>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2.5 }}>
+          <TextField
+            fullWidth
+            size="small"
+            placeholder="Search by tag, form, grade, size, mill, heat..."
+            value={duplicateSearch}
+            onChange={(e) => setDuplicateSearch(e.target.value)}
+            sx={{ mb: 2 }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <History fontSize="small" color="action" />
+                </InputAdornment>
+              ),
+            }}
+          />
+
+          {duplicateCandidates.length === 0 ? (
+            <Box sx={{ textAlign: 'center', py: 5 }}>
+              <Typography color="text.secondary" gutterBottom>
+                No saved transactions found for this section yet.
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Save at least one item, then use Duplicate to reuse its details.
+              </Typography>
+            </Box>
+          ) : (
+            <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2, maxHeight: 420 }}>
+              <Table size="small" stickyHeader>
+                <TableHead>
+                  <TableRow>
+                    {['Tag', 'Sys Tag', 'Form', 'Grade', 'Size', 'Finish', 'Qty', 'Type', ''].map((label) => (
+                      <TableCell key={label || 'action'} sx={{ fontWeight: 700, bgcolor: alpha('#0088FE', 0.06) }}>
+                        {label}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {duplicateCandidates.map((tx) => (
+                    <TableRow key={tx.id ?? tx.tag_id} hover>
+                      <TableCell>{tx.tag_id || '—'}</TableCell>
+                      <TableCell>{tx.sys_tag_no || '—'}</TableCell>
+                      <TableCell>{tx.form}</TableCell>
+                      <TableCell>{tx.grade}</TableCell>
+                      <TableCell>{tx.size}</TableCell>
+                      <TableCell>{tx.finish}</TableCell>
+                      <TableCell align="right">{tx.qty}</TableCell>
+                      <TableCell>{tx.count_type}</TableCell>
+                      <TableCell align="right">
+                        <Button
+                          size="small"
+                          variant="contained"
+                          startIcon={<ContentCopy />}
+                          onClick={() => handleDuplicateTransaction(tx)}
+                          sx={{
+                            textTransform: 'none',
+                            fontWeight: 700,
+                            borderRadius: 2,
+                            background: 'linear-gradient(135deg, #0088FE, #0066CC)',
+                          }}
+                        >
+                          Use
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setOpenDuplicateDialog(false)} sx={{ textTransform: 'none', fontWeight: 600 }}>
+            Cancel
           </Button>
         </DialogActions>
       </Dialog>
