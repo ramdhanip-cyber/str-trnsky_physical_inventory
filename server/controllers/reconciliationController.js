@@ -2641,4 +2641,69 @@ exports.removeFromAdjustment = async (req, res) => {
   }
 };
 
+// Get reservations for a specific adjustment item's tag(s)
+// Called on-demand when user clicks "View Reservation" on an adjustment row.
+// Uses intprd_rec → rvtres_rec (live ERP data), same pattern as getReservationReport.
+exports.getAdjustmentItemReservations = async (req, res) => {
+  try {
+    const { location_id, tag_no } = req.query;
+
+    if (!location_id || !tag_no) {
+      return res.status(400).json({ error: 'location_id and tag_no are required' });
+    }
+
+    // Support comma-separated tags (e.g. "TAG1, TAG2")
+    const tags = tag_no.split(',').map(t => t.trim()).filter(Boolean);
+
+    console.log(` [getAdjustmentItemReservations] Processing ${tags.length} tag(s) for location ${location_id}`);
+
+    const reservationsFound = [];
+
+    for (const tagNo of tags) {
+      try {
+        // Step 1: Get prd_itm_ctl_no from intprd_rec using the tag number
+        const intprdResult = await pool.query(
+          `SELECT prd_itm_ctl_no FROM intprd_rec WHERE TRIM(prd_tag_no) = $1 OR prd_tag_no = $1 LIMIT 1`,
+          [tagNo]
+        );
+
+        if (intprdResult.rows.length > 0 && intprdResult.rows[0].prd_itm_ctl_no) {
+          const prdItmCtlNo = intprdResult.rows[0].prd_itm_ctl_no;
+
+          // Step 2: Query rvtres_rec for reservations using the item control number
+          const rvtresResult = await pool.query(
+            `SELECT res_ref_pfx, res_ref_no, res_ref_itm, res_brh, res_whs, res_res_pcs, res_res_wgt
+             FROM rvtres_rec
+             WHERE res_itm_ctl_no = $1
+                OR TRIM(CAST(res_itm_ctl_no AS VARCHAR)) = TRIM(CAST($1 AS VARCHAR))`,
+            [prdItmCtlNo]
+          );
+
+          if (rvtresResult.rows.length > 0) {
+            for (const row of rvtresResult.rows) {
+              reservationsFound.push({
+                tag_no: tagNo,
+                prd_itm_ctl_no: prdItmCtlNo,
+                ...row,
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`Error querying reservation for tag "${tagNo}":`, err.message);
+      }
+    }
+
+    console.log(` [getAdjustmentItemReservations] Found ${reservationsFound.length} reservation(s) for tags [${tags.join(', ')}] in location ${location_id}`);
+
+    res.json({ success: true, data: reservationsFound });
+  } catch (error) {
+    console.error('getAdjustmentItemReservations error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch reservations for adjustment item',
+      details: error.message
+    });
+  }
+};
+
 

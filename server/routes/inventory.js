@@ -33,6 +33,7 @@ router.get('/recheck/marked-items/:location_id', reconciliationController.getMar
 // Adjustment routes (marked from reconciliation)
 router.post('/adjustment/mark-items', reconciliationController.markItemsForAdjustment);
 router.get('/adjustment/items/:location_id', reconciliationController.getAdjustmentItems);
+router.get('/adjustment/item-reservations', reconciliationController.getAdjustmentItemReservations);
 router.delete('/adjustment/items/:item_id', reconciliationController.removeFromAdjustment);
 
 module.exports = router; 

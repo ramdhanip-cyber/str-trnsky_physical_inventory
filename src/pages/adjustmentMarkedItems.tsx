@@ -47,6 +47,8 @@ import {
   TrendingDown,
   CheckCircleOutline,
   EditNote,
+  BookmarkBorderOutlined,
+  Close,
 } from '@mui/icons-material';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useSnackbar } from 'notistack';
@@ -76,6 +78,18 @@ interface AdjustmentResult {
   prd_ohd_pcs: number;
   prd_ohd_wgt: number;
   prd_ohd_qty: number;
+}
+
+interface ReservationRow {
+  tag_no: string;
+  prd_itm_ctl_no: string;
+  res_ref_pfx: string;
+  res_ref_no: string;
+  res_ref_itm: string;
+  res_brh: string;
+  res_whs: string;
+  res_res_pcs: number;
+  res_res_wgt: number;
 }
 
 const NAVY = '#0C2C48';
@@ -193,6 +207,12 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
   });
   const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
   const [submittingApproval, setSubmittingApproval] = useState(false);
+
+  // Reservation popup state
+  const [reservationData, setReservationData] = useState<ReservationRow[]>([]);
+  const [reservationLoading, setReservationLoading] = useState(false);
+  const [reservationDialogOpen, setReservationDialogOpen] = useState(false);
+  const [reservationDialogTag, setReservationDialogTag] = useState('');
 
   const loadLocationContext = useCallback(async () => {
     const state = routerLocation.state as { branch?: string; warehouse?: string; location_desc?: string } | null;
@@ -551,6 +571,33 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
     boxShadow: `-8px 0 16px ${alpha('#000', 0.08)}`,
     borderLeft: `1px solid ${alpha(theme.palette.divider, 0.8)}`,
   });
+
+  const handleViewReservation = async (item: AdjustmentMarkedItem) => {
+    const tagNo = item.sys_tag_no || item.tag_id || '';
+    if (!tagNo || !location_id) {
+      enqueueSnackbar('No tag number available for this item', { variant: 'warning' });
+      return;
+    }
+
+    setReservationDialogTag(tagNo);
+    setReservationLoading(true);
+    setReservationDialogOpen(true);
+    setReservationData([]);
+
+    try {
+      const response = await servicesAPI.getAdjustmentItemReservations(location_id, tagNo);
+      const rows = response.data?.data || [];
+      setReservationData(rows);
+      if (rows.length === 0) {
+        enqueueSnackbar('No reservations found for this tag', { variant: 'info' });
+      }
+    } catch (error) {
+      console.error('Error fetching reservations:', error);
+      enqueueSnackbar('Failed to fetch reservation data', { variant: 'error' });
+    } finally {
+      setReservationLoading(false);
+    }
+  };
 
   const handleExport = () => {
     if (filteredItems.length === 0) {
@@ -929,6 +976,18 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
                                 <EditNote fontSize="small" />
                               </IconButton>
                             </Tooltip>
+                            <Tooltip title="View Reservations">
+                              <span>
+                                <IconButton
+                                  size="small"
+                                  sx={{ color: '#7c3aed' }}
+                                  onClick={() => handleViewReservation(item)}
+                                  disabled={!(item.sys_tag_no || item.tag_id)}
+                                >
+                                  <BookmarkBorderOutlined fontSize="small" />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
                             <Tooltip title="Lookup ERP inventory">
                               <span>
                                 <IconButton size="small" color="primary" onClick={() => handleFetchErpData(item)} disabled={fetchingId === item.id}>
@@ -1102,6 +1161,166 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
             sx={{ textTransform: 'none', fontWeight: 700, background: `linear-gradient(135deg, ${NAVY}, ${NAVY_MID})` }}
           >
             Confirm & Submit
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Reservation Dialog */}
+      <Dialog
+        open={reservationDialogOpen}
+        onClose={() => setReservationDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            overflow: 'hidden',
+          },
+        }}
+      >
+        <DialogTitle
+          sx={{
+            background: `linear-gradient(135deg, ${NAVY}, ${NAVY_MID})`,
+            color: '#fff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            py: 1.75,
+            px: 2.5,
+          }}
+        >
+          <Stack direction="row" alignItems="center" spacing={1.25}>
+            <BookmarkBorderOutlined />
+            <Box>
+              <Typography variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1.2 }}>
+                Reservations
+              </Typography>
+              <Typography variant="caption" sx={{ opacity: 0.85, fontWeight: 500 }}>
+                Tag: {reservationDialogTag}
+              </Typography>
+            </Box>
+          </Stack>
+          <IconButton size="small" onClick={() => setReservationDialogOpen(false)} sx={{ color: '#fff' }}>
+            <Close fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent sx={{ p: 0 }}>
+          {reservationLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+              <CircularProgress />
+            </Box>
+          ) : reservationData.length === 0 ? (
+            <Box sx={{ textAlign: 'center', py: 6, px: 3 }}>
+              <BookmarkBorderOutlined sx={{ fontSize: 48, color: alpha(NAVY, 0.3), mb: 1 }} />
+              <Typography variant="h6" sx={{ fontWeight: 700, color: NAVY, mb: 0.5 }}>
+                No Reservations Found
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                No reservation data exists for tag "{reservationDialogTag}" in this location.
+              </Typography>
+            </Box>
+          ) : (
+            <TableContainer sx={{ maxHeight: 420 }}>
+              <Table size="small" stickyHeader>
+                <TableHead>
+                  <TableRow>
+                    {['Tag No', 'Ctrl No', 'Ref Prefix', 'Ref No', 'Ref Item', 'Branch', 'Warehouse', 'Res Pcs', 'Res Wgt'].map((h) => (
+                      <TableCell
+                        key={h}
+                        align={['Res Pcs', 'Res Wgt'].includes(h) ? 'right' : 'left'}
+                        sx={{
+                          fontWeight: 700,
+                          fontSize: '0.72rem',
+                          bgcolor: NAVY,
+                          color: '#fff',
+                          py: 1,
+                          whiteSpace: 'nowrap',
+                          letterSpacing: '0.03em',
+                          borderBottom: 'none',
+                        }}
+                      >
+                        {h}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {reservationData.map((row, idx) => (
+                    <TableRow
+                      key={idx}
+                      sx={{
+                        bgcolor: idx % 2 === 0 ? '#fff' : alpha(NAVY, 0.025),
+                        '&:hover': { bgcolor: alpha(NAVY_MID, 0.06) },
+                        '& td': { py: 1, fontSize: '0.8rem', borderColor: alpha(theme.palette.divider, 0.6) },
+                      }}
+                    >
+                      <TableCell>
+                        <Chip
+                          label={row.tag_no ?? '—'}
+                          size="small"
+                          sx={{
+                            height: 22,
+                            fontWeight: 700,
+                            fontSize: '0.68rem',
+                            bgcolor: '#f5f3ff',
+                            color: '#5b21b6',
+                            border: '1px solid #ddd6fe',
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell>{row.prd_itm_ctl_no ?? '—'}</TableCell>
+                      <TableCell>
+                        <Chip
+                          label={row.res_ref_pfx ?? '—'}
+                          size="small"
+                          sx={{
+                            height: 22,
+                            fontWeight: 600,
+                            fontSize: '0.68rem',
+                            bgcolor: alpha(NAVY_MID, 0.08),
+                            color: NAVY,
+                            border: `1px solid ${alpha(NAVY_MID, 0.2)}`,
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>{row.res_ref_no ?? '—'}</TableCell>
+                      <TableCell>{row.res_ref_itm ?? '—'}</TableCell>
+                      <TableCell>{row.res_brh ?? '—'}</TableCell>
+                      <TableCell>{row.res_whs ?? '—'}</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 600 }}>
+                        {Number(row.res_res_pcs || 0).toLocaleString()}
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 600 }}>
+                        {Number(row.res_res_wgt || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+
+        <DialogActions
+          sx={{
+            px: 2.5,
+            py: 1.5,
+            borderTop: `1px solid ${alpha(theme.palette.divider, 0.8)}`,
+            bgcolor: alpha(NAVY, 0.02),
+            justifyContent: 'space-between',
+          }}
+        >
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+            {reservationData.length} reservation line{reservationData.length !== 1 ? 's' : ''}
+          </Typography>
+          <Button
+            onClick={() => setReservationDialogOpen(false)}
+            variant="outlined"
+            size="small"
+            sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 600 }}
+          >
+            Close
           </Button>
         </DialogActions>
       </Dialog>

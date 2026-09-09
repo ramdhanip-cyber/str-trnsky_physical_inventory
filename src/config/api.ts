@@ -229,6 +229,8 @@ export const servicesAPI = {
   // Adjustment items (marked from reconciliation)
   markItemsForAdjustment: (data: unknown) => api.post('/services/adjustment/mark-items', data),
   getAdjustmentItems: (locationId: string) => api.get(`/services/adjustment/items/${locationId}`),
+  getAdjustmentItemReservations: (locationId: string, tagNo: string) =>
+    api.get(`/services/adjustment/item-reservations?location_id=${locationId}&tag_no=${encodeURIComponent(tagNo)}`),
   removeFromAdjustment: (itemId: string) => api.delete(`/services/adjustment/items/${itemId}`),
   // Checker specific API methods
   getCheckerTransactions: (params: unknown) => api.get('/services/checker/get-transactions', { params }),
