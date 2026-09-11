@@ -2,8 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { 
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TableFooter,
-Typography, Card, CardContent, IconButton, Box, Button, TextField, InputAdornment,
-  Checkbox, ListItemText, Menu, MenuItem, Divider, Chip, Grid, alpha
+  Typography, Card, CardContent, IconButton, Box, Button, TextField, InputAdornment,
+  Checkbox, ListItemText, Menu, MenuItem, Divider, Chip, Grid, alpha, Tooltip
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
@@ -17,6 +17,7 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import LayersIcon from '@mui/icons-material/Layers';
+import CategoryIcon from '@mui/icons-material/Category';
 import * as XLSX from 'xlsx';
 
 interface ColumnDef {
@@ -209,6 +210,19 @@ const ReconciliationReportView: React.FC = () => {
       totalVarTons,
       totalMatVal
     };
+  }, [reportData]);
+
+  // Per-form counted qty breakdown (display only — not exported)
+  const formCountedQtySummary = useMemo(() => {
+    const map = new Map<string, number>();
+    reportData.forEach((row: any) => {
+      const form = row.form || 'Unknown';
+      map.set(form, (map.get(form) || 0) + Number(row.total_counted_qty || 0));
+    });
+    // Sort by counted qty descending
+    return Array.from(map.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([form, countedQty]) => ({ form, countedQty }));
   }, [reportData]);
 
   // Filtered Totals for sticky Footer
@@ -440,6 +454,103 @@ const ReconciliationReportView: React.FC = () => {
                 <Typography variant="caption" color="text.secondary">
                   On-Hand Valuation Sum
                 </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          {/* Card 5: Counted Qty by Form — display only, NOT exported to Excel */}
+          <Grid item xs={12}>
+            <Card sx={{
+              borderRadius: 3,
+              boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
+              border: '1px solid #e2e8f0',
+              background: 'linear-gradient(135deg, #ffffff 0%, #f0f9ff 100%)'
+            }}>
+              <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Box sx={{ p: 0.75, borderRadius: 2, bgcolor: alpha('#0891b2', 0.1), color: '#0891b2', display: 'flex' }}>
+                      <CategoryIcon fontSize="small" />
+                    </Box>
+                    <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                      Counted Qty by Form
+                    </Typography>
+                    <Tooltip title="This card is for display purposes only and is not included in the Excel export." arrow>
+                      <Chip
+                        label="Display Only"
+                        size="small"
+                        sx={{
+                          height: 18,
+                          fontSize: '0.65rem',
+                          fontWeight: 700,
+                          bgcolor: '#fff7ed',
+                          color: '#c2410c',
+                          border: '1px solid #fed7aa',
+                          borderRadius: '4px',
+                          '& .MuiChip-label': { px: 0.75 }
+                        }}
+                      />
+                    </Tooltip>
+                  </Box>
+                  <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                    {formCountedQtySummary.length} form{formCountedQtySummary.length !== 1 ? 's' : ''} · Total: <b>{stats.totalCountedQty.toLocaleString()}</b>
+                  </Typography>
+                </Box>
+
+                {formCountedQtySummary.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                    No data available
+                  </Typography>
+                ) : (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                    {formCountedQtySummary.map(({ form, countedQty }) => {
+                      const pct = stats.totalCountedQty > 0 ? (countedQty / stats.totalCountedQty) * 100 : 0;
+                      return (
+                        <Box
+                          key={form}
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1,
+                            px: 1.5,
+                            py: 0.75,
+                            borderRadius: 2,
+                            border: '1px solid #e0f2fe',
+                            bgcolor: '#f0f9ff',
+                            minWidth: 140,
+                            flex: '1 1 140px',
+                            maxWidth: 240,
+                            position: 'relative',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          {/* Progress bar background */}
+                          <Box sx={{
+                            position: 'absolute',
+                            left: 0, top: 0, bottom: 0,
+                            width: `${pct}%`,
+                            bgcolor: alpha('#0891b2', 0.08),
+                            borderRadius: 2,
+                            transition: 'width 0.4s ease'
+                          }} />
+                          <Box sx={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                            <Typography variant="body2" fontWeight={700} color="#0369a1" sx={{ letterSpacing: '0.02em' }}>
+                              {form}
+                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.5 }}>
+                              <Typography variant="body2" fontWeight={800} color="#0f172a">
+                                {countedQty.toLocaleString()}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
+                                ({pct.toFixed(1)}%)
+                              </Typography>
+                            </Box>
+                          </Box>
+                        </Box>
+                      );
+                    })}
+                  </Box>
+                )}
               </CardContent>
             </Card>
           </Grid>
