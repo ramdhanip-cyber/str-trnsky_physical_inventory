@@ -267,8 +267,32 @@ const ReconciliationReportView: React.FC = () => {
     if (filteredReportData.length === 0 || activeColumns.length === 0) return;
 
     const formattedData: any[] = [];
-    let lastForm = "";
 
+    // ── Row 1: TOTALS summary at the very top ────────────────────────────────
+    const totalsRow: Record<string, any> = {};
+    activeColumns.forEach((col) => {
+      switch (col.id) {
+        case 'form':           totalsRow[col.label] = `TOTALS (${filteredReportData.length} items)`; break;
+        case 'size':           totalsRow[col.label] = ''; break;
+        case 'total_system_qty':  totalsRow[col.label] = filteredTotals.systemQty; break;
+        case 'total_counted_qty': totalsRow[col.label] = filteredTotals.countedQty; break;
+        case 'ohdtons':        totalsRow[col.label] = Number(filteredTotals.ohdTons.toFixed(2)); break;
+        case 'counttons':      totalsRow[col.label] = Number(filteredTotals.countTons.toFixed(2)); break;
+        case 'vartons':        totalsRow[col.label] = Number(filteredTotals.varTons.toFixed(2)); break;
+        case 'prd_ohd_mat_cst': totalsRow[col.label] = Number(filteredTotals.matCost.toFixed(2)); break;
+        case 'prd_ohd_mat_val': totalsRow[col.label] = Number(filteredTotals.matVal.toFixed(2)); break;
+        default:               totalsRow[col.label] = '';
+      }
+    });
+    formattedData.push(totalsRow);
+
+    // ── Row 2: blank separator ────────────────────────────────────────────────
+    const blankRow: Record<string, any> = {};
+    activeColumns.forEach((col) => { blankRow[col.label] = ''; });
+    formattedData.push(blankRow);
+
+    // ── Rows 3+: grouped form data ────────────────────────────────────────────
+    let lastForm = '';
     filteredReportData.forEach((row: any) => {
       if (row.form !== lastForm) {
         const headerRow: Record<string, any> = {};
@@ -288,7 +312,7 @@ const ReconciliationReportView: React.FC = () => {
 
     const worksheet = XLSX.utils.json_to_sheet(formattedData);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Reconciliation Report");
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Reconciliation Report');
 
     XLSX.writeFile(workbook, `Reconciliation_Report_${locationName.replace(/\s+/g, '_')}.xlsx`);
   };
