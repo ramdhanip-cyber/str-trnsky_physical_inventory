@@ -893,7 +893,7 @@ const CountReviewPage = () => {
     return resolved;
   };
 
-  /** Refresh marked items and return those still awaiting approval (not reconciler_approved) */
+  /** Refresh marked items and return preferred marks that still need approval */
   const getUnrecheckedMarkedItems = async (): Promise<MarkedItemInfo[]> => {
     if (!location_id) return [];
     try {
@@ -902,7 +902,6 @@ const CountReviewPage = () => {
 
       const byTx = new Map<number, MarkedItemInfo>();
       const bySku = new Map<string, MarkedItemInfo>();
-      const pendingApproval: MarkedItemInfo[] = [];
 
       (response.data.items || []).forEach((item: MarkedItemInfo) => {
         if (isCheckerAddedItem(item)) return;
@@ -923,13 +922,66 @@ const CountReviewPage = () => {
         if (!existing || shouldPreferMarkedItem(normalized, existing)) {
           bySku.set(skuKey, normalized);
         }
-        if (!normalized.reconciler_approved) {
-          pendingApproval.push(normalized);
-        }
       });
 
       setMarkedItemsByTx(byTx);
       setMarkedItemsBySku(bySku);
+
+      // Only block reconcile on the same preferred mark the table shows for each
+      // Counter transaction. Stale/orphan checker_sku_item rows must not block.
+      const pendingApproval: MarkedItemInfo[] = [];
+      const seenIds = new Set<number>();
+
+      allTransactions.forEach((transaction) => {
+        if (String(transaction.role || '').trim().toLowerCase() === 'checker') return;
+
+        let resolved: MarkedItemInfo | null = null;
+        if (transaction.transaction_id != null) {
+          resolved = byTx.get(Number(transaction.transaction_id)) || null;
+        }
+        if (!resolved) {
+          resolved =
+            bySku.get(
+              buildMarkedSkuKey({
+                form: transaction.form,
+                grade: transaction.grade,
+                size: transaction.size,
+                finish: transaction.finish,
+                ext_finish: transaction.ext_finish,
+                width: transaction.width,
+                length: transaction.length,
+                mill: transaction.mill,
+                heat: transaction.heat,
+                location: transaction.location,
+                type: transaction.type,
+                section_id: transaction.section_id,
+              })
+            ) ||
+            bySku.get(
+              buildMarkedSkuKey({
+                form: transaction.form,
+                grade: transaction.grade,
+                size: transaction.size,
+                finish: transaction.finish,
+                ext_finish: transaction.ext_finish,
+                width: transaction.width,
+                length: transaction.length,
+                mill: transaction.mill,
+                heat: transaction.heat,
+                location: transaction.location,
+                type: transaction.type,
+                section_id: '',
+              })
+            ) ||
+            null;
+        }
+        if (!resolved || isCheckerAddedItem(resolved)) return;
+        if (resolved.reconciler_approved) return;
+        if (seenIds.has(Number(resolved.id))) return;
+        seenIds.add(Number(resolved.id));
+        pendingApproval.push(resolved);
+      });
+
       return pendingApproval;
     } catch (error) {
       console.error('Error checking unrechecked marked items:', error);
@@ -2501,8 +2553,8 @@ const CountReviewPage = () => {
         <DialogContent>
           <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
             {unrecheckedItems.length} item{unrecheckedItems.length === 1 ? '' : 's'} marked for recheck
-            {unrecheckedItems.length === 1 ? ' is' : ' are'} still waiting to be approved.
-            Approve these items before running reconciliation.
+            {unrecheckedItems.length === 1 ? ' is' : ' are'} still waiting for checker verify or reconciler approval.
+            Finish those steps before running reconciliation.
           </Alert>
           <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2, maxHeight: 360 }}>
             <Table size="small" stickyHeader>
@@ -2534,7 +2586,13 @@ const CountReviewPage = () => {
                       <Chip
                         label={getRecheckStatusLabel(item)}
                         size="small"
-                        color={item.verified ? 'info' : 'warning'}
+                        color={
+                          item.reconciler_approved
+                            ? 'success'
+                            : item.verified
+                              ? 'info'
+                              : 'warning'
+                        }
                         sx={{ fontWeight: 600 }}
                       />
                     </TableCell>

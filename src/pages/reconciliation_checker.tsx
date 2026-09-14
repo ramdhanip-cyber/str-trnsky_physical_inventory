@@ -253,6 +253,10 @@ const ReconciliationCheckerPage: React.FC = () => {
       if (response.data.success) {
         const markedSet = new Set<string>();
         response.data.items.forEach((item: any) => {
+          // Only active recheck cycles show as Marked (approved cycles are done)
+          if (String(item.status || '').trim() === 'Checker Added') return;
+          if (Boolean(item.reconciler_approved)) return;
+
           // Create a key similar to comparison key (marked items are counter-style, length already in feet)
           const key = createComparisonKey({
             prd_tag_no: item.transaction_id ? String(item.transaction_id) : '',
@@ -927,6 +931,9 @@ const ReconciliationCheckerPage: React.FC = () => {
 
         const systemQty = systemItem.total_qty || 0;
         const countedData = countedMap.get(systemKey);
+        const isCountedOnlyPhantom =
+          Number((systemItem as { system_combined_count?: number }).system_combined_count || 0) === 0
+          && systemQty === 0;
 
         if (countedData) {
           // Match found
@@ -934,8 +941,10 @@ const ReconciliationCheckerPage: React.FC = () => {
           const countedQty = countedData.totalQuantity;
           const variance = countedQty - systemQty;
 
-          let status: 'Match' | 'Undercount' | 'Overcount' = 'Match';
-          if (variance < 0) {
+          let status: 'Match' | 'Undercount' | 'Overcount' | 'Orphaned' = 'Match';
+          if (isCountedOnlyPhantom) {
+            status = 'Orphaned';
+          } else if (variance < 0) {
             status = 'Undercount';
           } else if (variance > 0) {
             status = 'Overcount';
@@ -967,10 +976,13 @@ const ReconciliationCheckerPage: React.FC = () => {
             countedQuantity: countedQty,
             variance,
             status,
-            isMatched: true,
+            isMatched: !isCountedOnlyPhantom,
             sections: sectionsArray
           });
         } else {
+          if (isCountedOnlyPhantom) {
+            return;
+          }
           // System item not found in counted - considered as Undercount
           results.push({
             systemItem,

@@ -600,7 +600,8 @@ exports.reconcileInventory = async (req, res) => {
         includes_checker_added: checkerAddedQty > 0,
         difference: countedQty,
         variance: countedQty,
-        status: 'Overcount',
+        // Counted with no matching system inventory = Found (not Overcount)
+        status: 'Orphaned',
         prd_ohd_mat_val: null,
         prd_ohd_mat_cst: null
       });
@@ -611,19 +612,21 @@ exports.reconcileInventory = async (req, res) => {
     const overcounts = transformedData.filter(item => item.status === 'Overcount').length;
     const undercounts = transformedData.filter(item => item.status === 'Undercount').length;
     const notCounted = transformedData.filter(item => item.status === 'Not Counted').length;
-    const discrepancies = overcounts + undercounts;
+    const foundItems = transformedData.filter(item => item.status === 'Orphaned').length;
+    const discrepancies = overcounts + undercounts + foundItems;
     const checkerAddedIncluded = transformedData.filter(item => item.includes_checker_added).length;
 
     const summary = {
       total_system_items: data.length,
       total_system_quantity: data.reduce((sum, item) => sum + (parseInt(item.total_qty) || 0), 0),
-      totalItems: data.length,
+      totalItems: transformedData.length,
       matchedItems: matchedItems,
       discrepancies: discrepancies,
       missingItems: notCounted,
       overcounts: overcounts,
       undercounts: undercounts,
       not_counted: notCounted,
+      counted_not_in_system: foundItems,
       checker_added_items: checkerAddedIncluded,
       branch: branch,
       warehouse: warehouse,

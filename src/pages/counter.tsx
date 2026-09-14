@@ -1705,11 +1705,11 @@ const CounterPage: React.FC<CounterPageProps> = ({
             lengthInches: '',
           }),
       sysTag: tx.sys_tag_no ?? '',
-      quantity: tx.qty ?? 0,
+      quantity: 0,
       countType: tx.count_type ?? 'pcs',
       bundles: (tx.bundles || []).map((b) => ({
         num_of_bundle: b.num_of_bundle,
-        bundle_count: b.bundle_count,
+        bundle_count: 0,
         tag_id: 0,
       })),
       remarks: tx.remarks ?? prev.remarks,
