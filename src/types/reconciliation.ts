@@ -128,6 +128,10 @@ export interface AdjustmentMarkedItem {
   adjustment_type?: string;
   adjustment_location?: string;
   adjustment_quantity?: number | string | null;
+  /** Explicit reconciler choice: Quantity, Amount (Cost), or New Item */
+  adj_typ?: 'QTY' | 'AMT' | 'NEW' | null;
+  /** System amount before cost edit — used when posting QTY lines */
+  original_amount?: number | null;
   item_control_no?: string;
   cost_uom?: string;
 }

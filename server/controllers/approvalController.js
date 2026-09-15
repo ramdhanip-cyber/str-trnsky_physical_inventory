@@ -6,7 +6,7 @@ const normalizeApprovalRequestType = (requestType) => {
   return ['STANDARD', 'NEW', 'MIXED'].includes(normalized) ? normalized : 'STANDARD';
 };
 
-// Save adjustment data for approval (str_adj_aprvl and str_adj_aprvl_dtl)
+// Save adjustment data for approval (star.str_adj_aprvl and star.str_adj_aprvl_dtl)
 exports.saveAdjustmentForApproval = async (req, res) => {
   try {
     const { location_id, adj_name, items, adj_id } = req.body;
@@ -29,7 +29,7 @@ exports.saveAdjustmentForApproval = async (req, res) => {
 
     // Insert approval header
     const aprvlInsertQuery = `
-      INSERT INTO str_adj_aprvl (
+      INSERT INTO star.str_adj_aprvl (
         location_id, adj_name, request_type, status, approval_status, created_by, created_at, updated_at
       )
       VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
@@ -38,7 +38,7 @@ exports.saveAdjustmentForApproval = async (req, res) => {
 
     // Insert approval details
     const detailInsertQuery = `
-      INSERT INTO str_adj_aprvl_dtl (
+      INSERT INTO star.str_adj_aprvl_dtl (
         aprvl_id, item_control_no, system_tag_no, form, grade, size, finish, ext_finish,
         width, length, location, mill, heat, quality_standards, type,
         system_qty, counted_qty, variance_qty, adj_qty, cost, amount, cost_uom, adj_res_data,
@@ -164,7 +164,7 @@ exports.getApprovalRecords = async (req, res) => {
               COALESCE(NULLIF(l.branch, ''), NULLIF(split_part(a.adj_name, '_', 1), '')) AS branch,
               COALESCE(NULLIF(l.warehouse, ''), NULLIF(split_part(a.adj_name, '_', 2), '')) AS warehouse,
               a.adj_name, a.status, a.approval_status, a.created_by, a.created_at, a.updated_at
-       FROM str_adj_aprvl a
+       FROM star.str_adj_aprvl a
        LEFT JOIN st_locations l ON a.location_id = l.location_id
        WHERE (
          $1 = 'STANDARD' AND COALESCE(a.request_type, 'STANDARD') IN ('STANDARD', 'MIXED')
@@ -192,7 +192,7 @@ exports.getApprovalRecordDetails = async (req, res) => {
     }
     const header = await pool.query(
       `SELECT aprvl_id, location_id, adj_name, COALESCE(request_type, 'STANDARD') AS request_type, status, approval_status, created_by, created_at, updated_at
-       FROM str_adj_aprvl WHERE aprvl_id = $1`,
+       FROM star.str_adj_aprvl WHERE aprvl_id = $1`,
       [aprvl_id]
     );
     const details = await pool.query(
@@ -200,7 +200,7 @@ exports.getApprovalRecordDetails = async (req, res) => {
               width, length, location, mill, heat, quality_standards, type,
               system_qty, counted_qty, variance_qty, adj_qty, cost, amount, cost_uom, adj_res_data,
               adj_typ, is_reserved, is_adjusted, adjust_status, intchg_no
-       FROM str_adj_aprvl_dtl
+       FROM star.str_adj_aprvl_dtl
        WHERE aprvl_id = $1
        ORDER BY system_tag_no NULLS LAST, form, grade, size`,
       [aprvl_id]
@@ -309,7 +309,7 @@ exports.approveAdjustment = async (req, res) => {
     // Get approval details
     const detailsResult = await pool.query(
       `SELECT item_control_no, system_tag_no, variance_qty
-       FROM str_adj_aprvl_dtl
+       FROM star.str_adj_aprvl_dtl
        WHERE aprvl_id = $1`,
       [aprvl_id]
     );
@@ -332,7 +332,7 @@ exports.approveAdjustment = async (req, res) => {
     // Process items into system tables (this will be called from frontend separately)
     // For now, just update the status
     await pool.query(
-      `UPDATE str_adj_aprvl
+      `UPDATE star.str_adj_aprvl
        SET status = 'Adjusting Items', approval_status = 'Approved', updated_at = CURRENT_TIMESTAMP
        WHERE aprvl_id = $1`,
       [aprvl_id]
@@ -374,7 +374,7 @@ exports.rejectAdjustment = async (req, res) => {
     }
 
     await pool.query(
-      `UPDATE str_adj_aprvl
+      `UPDATE star.str_adj_aprvl
        SET approval_status = 'Rejected', status = 'Rejected', updated_at = CURRENT_TIMESTAMP
        WHERE aprvl_id = $1`,
       [aprvl_id]
@@ -617,7 +617,7 @@ exports.processAdjustmentItems = async (req, res) => {
           adj_typ: item.adj_typ || 'QTY' // Include adj_typ for proper matching
         });
 
-        // If aprvl_id is provided, update the intchg_no in str_adj_aprvl_dtl
+        // If aprvl_id is provided, update the intchg_no in star.str_adj_aprvl_dtl
         if (aprvl_id) {
           try {
             // Build a more flexible matching query
@@ -633,7 +633,7 @@ exports.processAdjustmentItems = async (req, res) => {
             // Try to match by item_control_no + adj_typ first (most reliable)
             if (itemControlNo) {
               updateQuery = `
-                UPDATE str_adj_aprvl_dtl
+                UPDATE star.str_adj_aprvl_dtl
                 SET intchg_no = $1, is_adjusted = 1, adjust_status = 'Y'
                 WHERE aprvl_id = $2
                   AND item_control_no = $3
@@ -645,7 +645,7 @@ exports.processAdjustmentItems = async (req, res) => {
             // Fallback to system_tag_no + adj_typ if item_control_no is not available
             else if (systemTagNo) {
               updateQuery = `
-                UPDATE str_adj_aprvl_dtl
+                UPDATE star.str_adj_aprvl_dtl
                 SET intchg_no = $1, is_adjusted = 1, adjust_status = 'Y'
                 WHERE aprvl_id = $2
                   AND system_tag_no = $3
@@ -658,7 +658,7 @@ exports.processAdjustmentItems = async (req, res) => {
             // Last resort: match by variance_qty + adj_typ (less reliable but better than nothing)
             else {
               updateQuery = `
-                UPDATE str_adj_aprvl_dtl
+                UPDATE star.str_adj_aprvl_dtl
                 SET intchg_no = $1, is_adjusted = 1, adjust_status = 'Y'
                 WHERE aprvl_id = $2
                   AND variance_qty = $3
@@ -671,9 +671,9 @@ exports.processAdjustmentItems = async (req, res) => {
             if (updateQuery) {
               const result = await pool.query(updateQuery, queryParams);
               if (result.rowCount > 0) {
-                console.log(`Item ${i + 1} - Updated intchg_no (${maxCtlNum}) in str_adj_aprvl_dtl for aprvl_id: ${aprvl_id}, adj_typ: ${itemAdjTyp}`);
+                console.log(`Item ${i + 1} - Updated intchg_no (${maxCtlNum}) in star.str_adj_aprvl_dtl for aprvl_id: ${aprvl_id}, adj_typ: ${itemAdjTyp}`);
               } else {
-                console.warn(`Item ${i + 1} - No matching record found in str_adj_aprvl_dtl to update intchg_no (adj_typ: ${itemAdjTyp})`);
+                console.warn(`Item ${i + 1} - No matching record found in star.str_adj_aprvl_dtl to update intchg_no (adj_typ: ${itemAdjTyp})`);
               }
             }
           } catch (updateError) {

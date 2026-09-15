@@ -1,7 +1,8 @@
 const ROLE_PRIORITY: Record<string, number> = {
   Reconciler: 1,
-  Counter: 2,
-  Checker: 3,
+  Gatekeeper: 2,
+  Counter: 3,
+  Checker: 4,
 };
 
 export const parseUserRoles = (): string[] => {
@@ -21,6 +22,8 @@ export const getDefaultRouteForRole = (role: string): string => {
   switch (role) {
     case 'Reconciler':
       return '/dashboard';
+    case 'Gatekeeper':
+      return '/adjustment-records';
     case 'Counter':
       return '/counter';
     case 'Checker':

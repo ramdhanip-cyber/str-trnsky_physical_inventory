@@ -196,6 +196,12 @@ const ROLE_META: Record<
     features: ['Dashboard Analytics', 'User Management', 'System Reports'],
     accent: BRAND_GRADIENT,
   },
+  Gatekeeper: {
+    icon: <Security sx={{ fontSize: 28 }} />,
+    description: 'Approve or reject inventory adjustment submissions',
+    features: ['Adjustment Approvals', 'New Item Approvals', 'ERP Posting'],
+    accent: 'linear-gradient(135deg, #F7971E 0%, #FFD200 100%)',
+  },
   Counter: {
     icon: <PointOfSale sx={{ fontSize: 28 }} />,
     description: 'Process transactions and manage inventory counts',
@@ -277,6 +283,9 @@ const Login: React.FC<LoginPageProps> = ({ onLogin }) => {
       case 'Reconciler':
         navigate('/dashboard');
         break;
+      case 'Gatekeeper':
+        navigate('/adjustment-records');
+        break;
       case 'Counter':
         navigate('/counter');
         break;
@@ -296,8 +305,9 @@ const Login: React.FC<LoginPageProps> = ({ onLogin }) => {
   const orderedRoles = [...roleDesc].sort((a, b) => {
     const rolePriority: Record<string, number> = {
       Reconciler: 1,
-      Counter: 2,
-      Checker: 3,
+      Gatekeeper: 2,
+      Counter: 3,
+      Checker: 4,
     };
     const aPriority = rolePriority[a] ?? 99;
     const bPriority = rolePriority[b] ?? 99;

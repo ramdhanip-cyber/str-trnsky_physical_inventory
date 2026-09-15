@@ -3276,7 +3276,7 @@ exports.getPreloadSections = async (req, res) => {
   }
 
   try {
-    const sqlQuery = `SELECT loc_loc FROM inrloc_rec WHERE loc_whs = '${warehouse}'`;
+    const sqlQuery = `SELECT DISTINCT(loc_loc) FROM inrloc_rec WHERE loc_whs = '${warehouse}'`;
     const response = { data: await runErpSql(sqlQuery) };
 
     res.json(response.data);

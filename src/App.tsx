@@ -39,7 +39,10 @@ import ReconciliationReportView from "./pages/reconciliationReportView";
 import ReconciliationReportByAllView from "./pages/reconciliationReportByAllView";
 import ReservationReportView from "./pages/reservationReportView";
 import ReservationReport from "./pages/reservationReport";
+import ProfilePage from "./pages/profile";
+import RoleGuard from "./components/RoleGuard";
 import { getAppBasePath } from "./config/appPath";
+import { getDefaultRouteForRole } from "./config/roleUtils";
 
 // Define Theme
 const theme = createTheme({
@@ -76,17 +79,7 @@ function App() {
 
   // Get default route based on user role
   const getDefaultRoute = () => {
-    const role = getUserRole();
-    switch(role) {
-      case 'Reconciler':
-        return '/dashboard';
-      case 'Counter':
-        return '/counter';
-      case 'Checker':
-        return '/checker';
-      default:
-        return '/dashboard';
-    }
+    return getDefaultRouteForRole(getUserRole());
   };
 
   return (
@@ -103,6 +96,7 @@ function App() {
               <Navigations>
                 <Routes>
                   <Route path="/dashboard" element={<Dashboard />} />
+                  <Route path="/profile" element={<ProfilePage />} />
                   <Route path="/users" element={<UserManagement />} />
                   <Route path="/locations" element={<LocationManagement />} />
                   <Route path="/items" element={<ItemsPage />} />
@@ -119,10 +113,38 @@ function App() {
                   <Route path="/reconciliation-records/:locationId" element={<ReconciliationRecords />} />
                   <Route path="/adjustment" element={<AdjustmentPage />} />
                   <Route path="/adjustment/marked/:location_id" element={<AdjustmentMarkedItemsPage />} />
-                  <Route path="/adjustment-records" element={<AdjustmentRecordsPage />} />
-                  <Route path="/adjustment-records/:aprvl_id" element={<AdjustmentRecordDetailPage />} />
-                  <Route path="/new-adjustment-records" element={<NewAdjustmentRecordsPage />} />
-                  <Route path="/new-adjustment-records/:aprvl_id" element={<NewAdjustmentRecordDetailPage />} />
+                  <Route
+                    path="/adjustment-records"
+                    element={
+                      <RoleGuard allowedRoles={['Gatekeeper']}>
+                        <AdjustmentRecordsPage />
+                      </RoleGuard>
+                    }
+                  />
+                  <Route
+                    path="/adjustment-records/:aprvl_id"
+                    element={
+                      <RoleGuard allowedRoles={['Gatekeeper']}>
+                        <AdjustmentRecordDetailPage />
+                      </RoleGuard>
+                    }
+                  />
+                  <Route
+                    path="/new-adjustment-records"
+                    element={
+                      <RoleGuard allowedRoles={['Gatekeeper']}>
+                        <NewAdjustmentRecordsPage />
+                      </RoleGuard>
+                    }
+                  />
+                  <Route
+                    path="/new-adjustment-records/:aprvl_id"
+                    element={
+                      <RoleGuard allowedRoles={['Gatekeeper']}>
+                        <NewAdjustmentRecordDetailPage />
+                      </RoleGuard>
+                    }
+                  />
                   <Route path="/stock-available" element={<StockAvailable />} />
                   {/* <Route path="/checker/12" element={<CheckerPage />} /> */}
                   <Route path="/assigned-counters" element={<AssignedPage />} />

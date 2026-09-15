@@ -43,12 +43,13 @@ import {
   ExpandMore,
   ExpandLess,
   Inventory2Outlined,
-  TrendingUp,
-  TrendingDown,
   CheckCircleOutline,
   EditNote,
   BookmarkBorderOutlined,
   Close,
+  ScaleOutlined,
+  AttachMoney,
+  AddBoxOutlined,
 } from '@mui/icons-material';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useSnackbar } from 'notistack';
@@ -60,6 +61,101 @@ import {
   clearAdjustmentItems,
 } from '../utils/adjustmentSession';
 import type { AdjustmentMarkedItem } from '../types/reconciliation';
+
+type AdjTyp = 'QTY' | 'AMT' | 'NEW';
+
+const isFoundItem = (item: AdjustmentMarkedItem): boolean => {
+  const status = String(item.recon_status || item.status || '').toLowerCase();
+  return status === 'orphaned' || status === 'found' || status === 'counted not in system';
+};
+
+const isOverUnderItem = (item: AdjustmentMarkedItem): boolean => {
+  if (isFoundItem(item)) return false;
+  const status = String(item.recon_status || '').toLowerCase();
+  if (status === 'overcount' || status === 'undercount') return true;
+  return Number(item.variance) !== 0;
+};
+
+const ADJ_TYP_OPTIONS: Array<{
+  value: AdjTyp;
+  label: string;
+  shortLabel: string;
+  description: string;
+  icon: React.ReactNode;
+  color: string;
+}> = [
+  {
+    value: 'QTY',
+    label: 'Quantity',
+    shortLabel: 'Qty',
+    description: 'Post quantity variance to match the physical count.',
+    icon: <ScaleOutlined fontSize="small" />,
+    color: '#1565C0',
+  },
+  {
+    value: 'AMT',
+    label: 'Amount (Cost)',
+    shortLabel: 'Amount',
+    description: 'Correct dollar value / cost without changing quantity.',
+    icon: <AttachMoney fontSize="small" />,
+    color: '#E65100',
+  },
+  {
+    value: 'NEW',
+    label: 'New Item',
+    shortLabel: 'New',
+    description: 'Add inventory not previously on the system (qty + value).',
+    icon: <AddBoxOutlined fontSize="small" />,
+    color: '#C62828',
+  },
+];
+
+const getAdjTypMeta = (adjTyp?: string | null) =>
+  ADJ_TYP_OPTIONS.find((opt) => opt.value === adjTyp) || null;
+
+const suggestAdjTyp = (item: AdjustmentMarkedItem): AdjTyp => {
+  if (isFoundItem(item)) return 'NEW';
+  if (Number(item.variance) !== 0) return 'QTY';
+  return 'AMT';
+};
+
+const itemHasAdjustment = (item: AdjustmentMarkedItem): boolean => {
+  const adjTyp = item.adj_typ;
+  if (!adjTyp) return false;
+  if (adjTyp === 'QTY') {
+    return (
+      item.adjustment_quantity != null
+      && String(item.adjustment_quantity).trim() !== ''
+      && Number(item.adjustment_quantity) !== 0
+    );
+  }
+  if (adjTyp === 'AMT') {
+    return item.adjustment_amount != null && String(item.adjustment_amount).trim() !== ''
+      && Number(item.adjustment_amount) > 0;
+  }
+  if (adjTyp === 'NEW') {
+    return item.adjustment_amount != null && String(item.adjustment_amount).trim() !== ''
+      && Number(item.adjustment_amount) > 0;
+  }
+  return false;
+};
+
+const resolveCountTagNoForApproval = (item: AdjustmentMarkedItem): string | undefined => {
+  const tid = item.tag_id != null ? String(item.tag_id).trim() : '';
+  if (tid) return tid;
+  const sys = String(item.sys_tag_no ?? '').trim();
+  if (sys && sys !== '-' && sys !== '—' && sys !== 'N/A') return sys;
+  return undefined;
+};
+
+interface AdjustmentFormState {
+  adj_typ: AdjTyp;
+  adjustment_type: string;
+  adjustment_location: string;
+  adjustment_quantity: string;
+  adjustment_amount: string;
+  cost_uom: string;
+}
 
 interface AdjustmentResult {
   prd_itm_ctl_no: string;
@@ -97,48 +193,6 @@ const NAVY_MID = '#1E5A8A';
 const ROW_BG_EVEN = '#ffffff';
 const ROW_BG_ODD = '#f4f7fb';
 const ROW_BG_HOVER = '#e8eef6';
-
-const isFoundItem = (item: AdjustmentMarkedItem): boolean => {
-  const status = String(item.recon_status || item.status || '').toLowerCase();
-  return status === 'orphaned' || status === 'found' || status === 'counted not in system';
-};
-
-const isOverUnderItem = (item: AdjustmentMarkedItem): boolean => {
-  if (isFoundItem(item)) return false;
-  const status = String(item.recon_status || '').toLowerCase();
-  if (status === 'overcount' || status === 'undercount') return true;
-  return Number(item.variance) !== 0;
-};
-
-const itemHasAdjustment = (item: AdjustmentMarkedItem): boolean => {
-  if (isFoundItem(item)) {
-    return item.adjustment_amount != null && String(item.adjustment_amount).trim() !== '';
-  }
-  if (isOverUnderItem(item)) {
-    return Boolean(
-      item.adjustment_type?.trim()
-      && item.adjustment_location?.trim()
-      && item.adjustment_quantity != null && String(item.adjustment_quantity).trim() !== ''
-      && item.adjustment_amount != null && String(item.adjustment_amount).trim() !== ''
-    );
-  }
-  return item.adjustment_amount != null && String(item.adjustment_amount).trim() !== '';
-};
-
-const resolveCountTagNoForApproval = (item: AdjustmentMarkedItem): string | undefined => {
-  const tid = item.tag_id != null ? String(item.tag_id).trim() : '';
-  if (tid) return tid;
-  const sys = String(item.sys_tag_no ?? '').trim();
-  if (sys && sys !== '-' && sys !== '—' && sys !== 'N/A') return sys;
-  return undefined;
-};
-
-interface AdjustmentFormState {
-  adjustment_type: string;
-  adjustment_location: string;
-  adjustment_quantity: string;
-  adjustment_amount: string;
-}
 
 const fmt = (value: unknown, digits = 2) => {
   if (value == null || value === '') return '—';
@@ -200,10 +254,12 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
   const [adjustingItem, setAdjustingItem] = useState<AdjustmentMarkedItem | null>(null);
   const [adjustForm, setAdjustForm] = useState<AdjustmentFormState>({
+    adj_typ: 'QTY',
     adjustment_type: '',
     adjustment_location: '',
     adjustment_quantity: '',
     adjustment_amount: '',
+    cost_uom: 'CWT',
   });
   const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
   const [submittingApproval, setSubmittingApproval] = useState(false);
@@ -287,7 +343,11 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
     const over = items.filter((i) => Number(i.variance) > 0).length;
     const under = items.filter((i) => Number(i.variance) < 0).length;
     const match = items.filter((i) => Number(i.variance) === 0).length;
-    return { total: items.length, over, under, match };
+    const qty = items.filter((i) => i.adj_typ === 'QTY').length;
+    const amt = items.filter((i) => i.adj_typ === 'AMT').length;
+    const neu = items.filter((i) => i.adj_typ === 'NEW').length;
+    const ready = items.filter((i) => itemHasAdjustment(i)).length;
+    return { total: items.length, over, under, match, qty, amt, neu, ready };
   }, [items]);
 
   const handleRemove = (itemId: number) => {
@@ -378,12 +438,18 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
   };
 
   const openAdjustDialog = (item: AdjustmentMarkedItem) => {
+    const suggested = item.adj_typ || suggestAdjTyp(item);
     setAdjustingItem(item);
     setAdjustForm({
+      adj_typ: suggested,
       adjustment_type: item.adjustment_type || item.type || '',
       adjustment_location: item.adjustment_location || item.location || '',
-      adjustment_quantity: item.adjustment_quantity != null ? String(item.adjustment_quantity) : '',
+      adjustment_quantity:
+        item.adjustment_quantity != null
+          ? String(item.adjustment_quantity)
+          : String(item.variance ?? item.counted_qty ?? ''),
       adjustment_amount: item.adjustment_amount != null ? String(item.adjustment_amount) : '',
+      cost_uom: item.cost_uom || 'CWT',
     });
     setAdjustDialogOpen(true);
   };
@@ -396,16 +462,21 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
   const handleSaveAdjustment = () => {
     if (!adjustingItem) return;
 
-    const foundOnly = isFoundItem(adjustingItem);
-    if (foundOnly) {
-      if (!adjustForm.adjustment_amount.trim()) {
-        enqueueSnackbar('Amount is required for found items', { variant: 'warning' });
+    const { adj_typ } = adjustForm;
+
+    if (adj_typ === 'QTY') {
+      if (!adjustForm.adjustment_quantity.trim() || Number(adjustForm.adjustment_quantity) === 0) {
+        enqueueSnackbar('Quantity (non-zero) is required for Quantity adjustments', { variant: 'warning' });
         return;
       }
-    } else if (isOverUnderItem(adjustingItem)) {
-      if (!adjustForm.adjustment_type.trim() || !adjustForm.adjustment_location.trim()
-        || !adjustForm.adjustment_quantity.trim() || !adjustForm.adjustment_amount.trim()) {
-        enqueueSnackbar('Type, Location, Quantity, and Amount are required', { variant: 'warning' });
+    } else if (adj_typ === 'AMT') {
+      if (!adjustForm.adjustment_amount.trim() || Number(adjustForm.adjustment_amount) <= 0) {
+        enqueueSnackbar('Amount must be greater than 0 for Amount (Cost) adjustments', { variant: 'warning' });
+        return;
+      }
+    } else if (adj_typ === 'NEW') {
+      if (!adjustForm.adjustment_amount.trim() || Number(adjustForm.adjustment_amount) <= 0) {
+        enqueueSnackbar('Amount must be greater than 0 for New Item adjustments', { variant: 'warning' });
         return;
       }
     }
@@ -413,19 +484,28 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
     setItems((prev) => {
       const next = prev.map((item) => {
         if (item.id !== adjustingItem.id) return item;
+        const amountVal = adjustForm.adjustment_amount.trim()
+          ? Number(adjustForm.adjustment_amount)
+          : item.original_amount ?? null;
         return {
           ...item,
-          adjustment_type: foundOnly ? undefined : adjustForm.adjustment_type,
-          adjustment_location: foundOnly ? undefined : adjustForm.adjustment_location,
-          adjustment_quantity: foundOnly ? undefined : adjustForm.adjustment_quantity,
-          adjustment_amount: adjustForm.adjustment_amount,
+          adj_typ,
+          adjustment_type: adj_typ === 'QTY' ? (adjustForm.adjustment_type || item.type) : item.adjustment_type,
+          adjustment_location: adj_typ === 'QTY' ? (adjustForm.adjustment_location || item.location) : item.adjustment_location,
+          adjustment_quantity:
+            adj_typ === 'QTY' || adj_typ === 'NEW'
+              ? adjustForm.adjustment_quantity
+              : 0,
+          adjustment_amount: adj_typ === 'AMT' || adj_typ === 'NEW' ? amountVal : (item.original_amount ?? amountVal),
+          cost_uom: adjustForm.cost_uom || item.cost_uom || 'CWT',
+          original_amount: item.original_amount ?? (adj_typ === 'AMT' ? amountVal : item.original_amount),
         };
       });
       if (location_id) saveAdjustmentItems(location_id, next);
       return next;
     });
 
-    enqueueSnackbar('Adjustment details saved', { variant: 'success' });
+    enqueueSnackbar(`${getAdjTypMeta(adj_typ)?.label || adj_typ} details saved`, { variant: 'success' });
     closeAdjustDialog();
   };
 
@@ -434,11 +514,15 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
     const approvalItems: ApprovalItemPayload[] = [];
 
     items.forEach((item) => {
+      const adjTyp = item.adj_typ;
+      if (!adjTyp) return;
+
       const amount = parseFloat(String(item.adjustment_amount || 0)) || 0;
+      const originalAmount = Number(item.original_amount ?? amount) || 0;
       const adjQty = parseFloat(String(item.adjustment_quantity ?? item.variance ?? 0)) || 0;
       const countedQty = Number(item.counted_qty) || 0;
-      const unitCost = countedQty > 0 ? Math.round((amount / countedQty) * 1000000) / 1000000 : 0;
-      const foundOnly = isFoundItem(item);
+      const qtyForCost = adjTyp === 'AMT' ? countedQty : (Math.abs(adjQty) || countedQty || 1);
+      const unitCost = qtyForCost > 0 ? Math.round((amount / qtyForCost) * 1000000) / 1000000 : 0;
 
       const baseItem = {
         item_control_no: item.item_control_no || undefined,
@@ -450,18 +534,18 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
         ext_finish: item.ext_finish || '',
         width: Number(item.width) || 0,
         length: Number(item.length) || 0,
-        location: foundOnly ? (item.location || '') : (item.adjustment_location || item.location || ''),
+        location: item.adjustment_location || item.location || '',
         mill: item.mill || undefined,
         heat: item.heat || undefined,
         quality_standards: item.quality || undefined,
-        type: foundOnly ? (item.type || undefined) : (item.adjustment_type || item.type || undefined),
+        type: item.adjustment_type || item.type || undefined,
         system_qty: Number(item.system_qty) || 0,
         counted_qty: countedQty,
         cost: unitCost,
         cost_uom: item.cost_uom || 'CWT',
       };
 
-      if (foundOnly) {
+      if (adjTyp === 'NEW') {
         const physicalCount = {
           section_desc: (item.section_desc || '').trim() || undefined,
           count_tag_no: resolveCountTagNoForApproval(item),
@@ -469,8 +553,8 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
         const hasPhysicalMeta = Boolean(physicalCount.section_desc || physicalCount.count_tag_no);
         approvalItems.push({
           ...baseItem,
-          variance_qty: Number(item.variance) || 0,
-          adj_qty: Number(item.variance) || 0,
+          variance_qty: Number(item.variance) || adjQty || countedQty,
+          adj_qty: adjQty || Number(item.variance) || countedQty,
           amount,
           adj_typ: 'NEW',
           adj_res_data: hasPhysicalMeta ? { physicalCount } : undefined,
@@ -478,13 +562,24 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
         return;
       }
 
-      if (isOverUnderItem(item) || adjQty !== 0) {
+      if (adjTyp === 'QTY') {
         approvalItems.push({
           ...baseItem,
-          variance_qty: Number(item.variance) || 0,
+          variance_qty: Number(item.variance) || adjQty,
           adj_qty: adjQty,
-          amount,
+          amount: originalAmount,
           adj_typ: 'QTY',
+        });
+        return;
+      }
+
+      if (adjTyp === 'AMT') {
+        approvalItems.push({
+          ...baseItem,
+          variance_qty: 0,
+          adj_qty: 0,
+          amount,
+          adj_typ: 'AMT',
         });
       }
     });
@@ -501,15 +596,18 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
     const incomplete = items.filter((item) => !itemHasAdjustment(item));
     if (incomplete.length > 0) {
       enqueueSnackbar(
-        `Enter adjustment details for all items before submitting (${incomplete.length} remaining)`,
+        `Choose an action (Qty / Amount / New) and complete details for all items (${incomplete.length} remaining)`,
         { variant: 'warning', autoHideDuration: 6000 }
       );
       return;
     }
 
-    const zeroAmountItems = items.filter((item) => (parseFloat(String(item.adjustment_amount || 0)) || 0) <= 0);
-    if (zeroAmountItems.length > 0) {
-      enqueueSnackbar('Items with $0 amount cannot be submitted for approval', { variant: 'error' });
+    const zeroAmountLines = items.filter((item) => {
+      if (item.adj_typ === 'QTY') return false;
+      return (parseFloat(String(item.adjustment_amount || 0)) || 0) <= 0;
+    });
+    if (zeroAmountLines.length > 0) {
+      enqueueSnackbar('Amount/New lines require amount greater than $0', { variant: 'error' });
       return;
     }
 
@@ -552,8 +650,11 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
 
       clearAdjustmentItems(location_id);
       setItems([]);
-      enqueueSnackbar(`Submitted for approval successfully! ${createdSummary}`, { variant: 'success', autoHideDuration: 6000 });
-      navigate('/adjustment-records');
+      enqueueSnackbar(
+        `Submitted for approval successfully! ${createdSummary}. A Gatekeeper must approve before ERP posting.`,
+        { variant: 'success', autoHideDuration: 7000 }
+      );
+      navigate(-1);
     } catch (error) {
       console.error('Error submitting adjustment for approval:', error);
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -662,9 +763,10 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
 
   const statCards = [
     { label: 'Marked', value: stats.total, icon: <Inventory2Outlined />, color: NAVY_MID },
-    { label: 'Over', value: stats.over, icon: <TrendingUp />, color: theme.palette.info.main },
-    { label: 'Under', value: stats.under, icon: <TrendingDown />, color: theme.palette.warning.main },
-    { label: 'Zero Var', value: stats.match, icon: <CheckCircleOutline />, color: theme.palette.success.main },
+    { label: 'Qty ready', value: stats.qty, icon: <ScaleOutlined />, color: '#1565C0' },
+    { label: 'Amount ready', value: stats.amt, icon: <AttachMoney />, color: '#E65100' },
+    { label: 'New ready', value: stats.neu, icon: <AddBoxOutlined />, color: '#C62828' },
+    { label: 'Ready / Total', value: `${stats.ready}/${stats.total}`, icon: <CheckCircleOutline />, color: theme.palette.success.main },
   ];
 
   return (
@@ -723,6 +825,7 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
                 <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
                   Location {location_id || '—'}
                   {branch || warehouse ? ` · ${branch || '—'}${warehouse ? ` / ${warehouse}` : ''}` : ''}
+                  {' · '}Choose Qty, Amount, or New — then send to gatekeeper
                 </Typography>
               </Box>
             </Stack>
@@ -886,7 +989,6 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
                   const erpRows = erpResults[item.id] || [];
                   const rowBg = index % 2 === 0 ? ROW_BG_EVEN : ROW_BG_ODD;
                   const foundItem = isFoundItem(item);
-                  const hasAdjustment = itemHasAdjustment(item);
 
                   return (
                     <React.Fragment key={item.id}>
@@ -956,11 +1058,26 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
                           <Chip size="small" label={fmt(variance)} color={varianceColor(variance)} sx={{ fontWeight: 700, height: 22 }} />
                         </TableCell>
                         <TableCell>
-                          {item.recon_status ? (
+                          {item.recon_status || item.adj_typ ? (
                             <Stack spacing={0.5} alignItems="flex-start">
-                              <Chip size="small" label={foundItem ? 'Found' : item.recon_status} color={statusColor(item.recon_status)} variant="outlined" sx={{ height: 22, fontWeight: 600 }} />
-                              {hasAdjustment && (
-                                <Chip size="small" label="Adjusted" color="success" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 700 }} />
+                              {item.recon_status && (
+                                <Chip size="small" label={foundItem ? 'Found' : item.recon_status} color={statusColor(item.recon_status)} variant="outlined" sx={{ height: 22, fontWeight: 600 }} />
+                              )}
+                              {item.adj_typ ? (
+                                <Chip
+                                  size="small"
+                                  label={getAdjTypMeta(item.adj_typ)?.shortLabel || item.adj_typ}
+                                  sx={{
+                                    height: 20,
+                                    fontSize: '0.65rem',
+                                    fontWeight: 700,
+                                    bgcolor: alpha(getAdjTypMeta(item.adj_typ)?.color || NAVY, 0.12),
+                                    color: getAdjTypMeta(item.adj_typ)?.color || NAVY,
+                                    border: `1px solid ${alpha(getAdjTypMeta(item.adj_typ)?.color || NAVY, 0.35)}`,
+                                  }}
+                                />
+                              ) : (
+                                <Chip size="small" label="Choose action" color="default" variant="outlined" sx={{ height: 20, fontSize: '0.65rem' }} />
                               )}
                             </Stack>
                           ) : (
@@ -971,7 +1088,7 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
                         <TableCell>{formatDate(item.marked_at)}</TableCell>
                         <TableCell align="center" sx={getStickyCellSx(rowBg)}>
                           <Stack direction="row" spacing={0.25} justifyContent="center">
-                            <Tooltip title={foundItem ? 'Add adjustment amount' : 'Adjust type, location, quantity & amount'}>
+                            <Tooltip title="Choose Qty, Amount, or New Item adjustment">
                               <IconButton size="small" color="secondary" onClick={() => openAdjustDialog(item)}>
                                 <EditNote fontSize="small" />
                               </IconButton>
@@ -1060,7 +1177,7 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
 
       <Dialog open={adjustDialogOpen} onClose={closeAdjustDialog} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
         <DialogTitle sx={{ fontWeight: 800, color: NAVY }}>
-          {adjustingItem && isFoundItem(adjustingItem) ? 'Add Adjustment Amount' : 'Item Adjustment'}
+          Choose Adjustment Action
         </DialogTitle>
         <DialogContent dividers>
           {adjustingItem && (
@@ -1072,27 +1189,56 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
                 <Typography variant="caption" color="text.secondary">
                   Tag: {adjustingItem.sys_tag_no || adjustingItem.tag_id || '—'}
                   {' · '}
-                  {isFoundItem(adjustingItem) ? 'Found item' : isOverUnderItem(adjustingItem) ? 'Over/Under count' : 'Adjustment'}
+                  Sys {fmt(adjustingItem.system_qty)} / Counted {fmt(adjustingItem.counted_qty)} / Var {fmt(adjustingItem.variance)}
+                  {isFoundItem(adjustingItem) ? ' · Found item' : ''}
                 </Typography>
               </Paper>
 
-              {adjustingItem && isFoundItem(adjustingItem) ? (
-                <TextField
-                  label="Amount"
-                  type="number"
-                  fullWidth
-                  required
-                  value={adjustForm.adjustment_amount}
-                  onChange={(e) => setAdjustForm((prev) => ({ ...prev, adjustment_amount: e.target.value }))}
-                  inputProps={{ min: 0, step: '0.01' }}
-                />
-              ) : (
-                <>
+              <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', letterSpacing: 0.4 }}>
+                WHAT SHOULD THE GATEKEEPER APPROVE?
+              </Typography>
+              <Stack spacing={1}>
+                {ADJ_TYP_OPTIONS.map((opt) => {
+                  const selected = adjustForm.adj_typ === opt.value;
+                  return (
+                    <Box
+                      key={opt.value}
+                      component="button"
+                      type="button"
+                      onClick={() => setAdjustForm((prev) => ({ ...prev, adj_typ: opt.value }))}
+                      sx={{
+                        all: 'unset',
+                        cursor: 'pointer',
+                        display: 'block',
+                        p: 1.5,
+                        borderRadius: 2,
+                        border: '1px solid',
+                        borderColor: selected ? opt.color : alpha(NAVY, 0.12),
+                        bgcolor: selected ? alpha(opt.color, 0.08) : alpha(NAVY, 0.02),
+                        transition: 'border-color 0.15s ease, background-color 0.15s ease',
+                        '&:hover': { borderColor: opt.color, bgcolor: alpha(opt.color, 0.1) },
+                      }}
+                    >
+                      <Stack direction="row" spacing={1.25} alignItems="flex-start">
+                        <Box sx={{ color: opt.color, mt: 0.25 }}>{opt.icon}</Box>
+                        <Box>
+                          <Typography sx={{ fontWeight: 800, color: NAVY, fontSize: '0.95rem' }}>{opt.label}</Typography>
+                          <Typography variant="caption" color="text.secondary">{opt.description}</Typography>
+                        </Box>
+                      </Stack>
+                    </Box>
+                  );
+                })}
+              </Stack>
+
+              <Divider />
+
+              {adjustForm.adj_typ === 'QTY' && (
+                <Stack spacing={1.5}>
                   <TextField
                     select
-                    label="Type"
+                    label="Inventory Type"
                     fullWidth
-                    required
                     value={adjustForm.adjustment_type}
                     onChange={(e) => setAdjustForm((prev) => ({ ...prev, adjustment_type: e.target.value }))}
                   >
@@ -1103,19 +1249,58 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
                   <TextField
                     label="Location"
                     fullWidth
-                    required
                     value={adjustForm.adjustment_location}
                     onChange={(e) => setAdjustForm((prev) => ({ ...prev, adjustment_location: e.target.value }))}
                   />
                   <TextField
-                    label="Quantity"
+                    label="Quantity to adjust"
                     type="number"
                     fullWidth
                     required
                     value={adjustForm.adjustment_quantity}
                     onChange={(e) => setAdjustForm((prev) => ({ ...prev, adjustment_quantity: e.target.value }))}
                     inputProps={{ step: '0.01' }}
-                    helperText={`Variance: ${fmt(adjustingItem.variance)}`}
+                    helperText={`Suggested from variance: ${fmt(adjustingItem.variance)}`}
+                  />
+                </Stack>
+              )}
+
+              {adjustForm.adj_typ === 'AMT' && (
+                <Stack spacing={1.5}>
+                  <TextField
+                    label="Total Amount"
+                    type="number"
+                    fullWidth
+                    required
+                    value={adjustForm.adjustment_amount}
+                    onChange={(e) => setAdjustForm((prev) => ({ ...prev, adjustment_amount: e.target.value }))}
+                    inputProps={{ min: 0, step: '0.01' }}
+                    helperText="Corrects dollar value only — quantity stays unchanged."
+                  />
+                  <TextField
+                    select
+                    label="Cost UOM"
+                    fullWidth
+                    value={adjustForm.cost_uom}
+                    onChange={(e) => setAdjustForm((prev) => ({ ...prev, cost_uom: e.target.value }))}
+                  >
+                    {['CWT', 'C', 'LB', 'EA', 'FT'].map((opt) => (
+                      <MenuItem key={opt} value={opt}>{opt}</MenuItem>
+                    ))}
+                  </TextField>
+                </Stack>
+              )}
+
+              {adjustForm.adj_typ === 'NEW' && (
+                <Stack spacing={1.5}>
+                  <TextField
+                    label="Quantity"
+                    type="number"
+                    fullWidth
+                    value={adjustForm.adjustment_quantity}
+                    onChange={(e) => setAdjustForm((prev) => ({ ...prev, adjustment_quantity: e.target.value }))}
+                    inputProps={{ step: '0.01' }}
+                    helperText={`Defaults from counted qty (${fmt(adjustingItem.counted_qty)}) / variance (${fmt(adjustingItem.variance)})`}
                   />
                   <TextField
                     label="Amount"
@@ -1125,8 +1310,20 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
                     value={adjustForm.adjustment_amount}
                     onChange={(e) => setAdjustForm((prev) => ({ ...prev, adjustment_amount: e.target.value }))}
                     inputProps={{ min: 0, step: '0.01' }}
+                    helperText="Required. Creates a NEW inventory line after gatekeeper approval."
                   />
-                </>
+                  <TextField
+                    select
+                    label="Cost UOM"
+                    fullWidth
+                    value={adjustForm.cost_uom}
+                    onChange={(e) => setAdjustForm((prev) => ({ ...prev, cost_uom: e.target.value }))}
+                  >
+                    {['CWT', 'C', 'LB', 'EA', 'FT'].map((opt) => (
+                      <MenuItem key={opt} value={opt}>{opt}</MenuItem>
+                    ))}
+                  </TextField>
+                </Stack>
               )}
             </Stack>
           )}
@@ -1138,7 +1335,7 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
             onClick={handleSaveAdjustment}
             sx={{ textTransform: 'none', fontWeight: 700, background: `linear-gradient(135deg, ${NAVY}, ${NAVY_MID})` }}
           >
-            Save Adjustment
+            Save {getAdjTypMeta(adjustForm.adj_typ)?.label || 'Adjustment'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -1146,9 +1343,14 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
       <Dialog open={approvalDialogOpen} onClose={() => setApprovalDialogOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
         <DialogTitle sx={{ fontWeight: 800, color: NAVY }}>Send for Approval</DialogTitle>
         <DialogContent>
-          <DialogContentText>
-            Submit {items.length} marked item{items.length === 1 ? '' : 's'} to the gatekeeper for approval?
-            Standard adjustments and new found items will be routed to the appropriate approval queue.
+          <DialogContentText component="div">
+            Submit these adjustments to the gatekeeper?
+            <Box component="ul" sx={{ mt: 1, mb: 0, pl: 2.5 }}>
+              <li>Quantity (QTY): {stats.qty} → Adjustment Records</li>
+              <li>Amount (AMT): {stats.amt} → Adjustment Records</li>
+              <li>New Item (NEW): {stats.neu} → New Item Approvals</li>
+            </Box>
+            Gatekeeper approval will post QTY/AMT to ERP XI tables and run Stratix services for NEW items.
           </DialogContentText>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>

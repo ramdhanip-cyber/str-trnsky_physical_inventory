@@ -30,7 +30,8 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  Badge,
 } from '@mui/material';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -39,6 +40,10 @@ import type { ReconciliationData, ReconciliationItem, ReconciliationSummary } fr
 import SearchIcon from '@mui/icons-material/Search';
 import DownloadIcon from '@mui/icons-material/Download';
 import CloseIcon from '@mui/icons-material/Close';
+import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import PlaylistAddCheckIcon from '@mui/icons-material/PlaylistAddCheck';
+import { alpha } from '@mui/material/styles';
 import { servicesAPI } from '../config/api';
 import {
   loadAdjustmentItems,
@@ -46,6 +51,12 @@ import {
   toAdjustmentMarkedItems,
   type AdjustmentMarkPayload,
 } from '../utils/adjustmentSession';
+import {
+  getReconRowBackground,
+  getReconStatusChipSx,
+  getReconVarianceColor,
+  RECON_STATUS_PASTEL,
+} from '../utils/reconciliationStatusColors';
 
 const formatNumber = (value: number | string | undefined | null, options?: Intl.NumberFormatOptions) => {
   if (value === null || value === undefined || value === '') {
@@ -87,6 +98,28 @@ const stripLengthFt = (value: string | number | undefined | null): string | numb
 };
 
 const getDisplayStatus = (status: string) => (status === 'Orphaned' ? 'Found' : status);
+
+/** Counted-only placeholder from API (not real ERP inventory). Must stay Found, never Overcount. */
+const isFoundOnlySystemRow = (item: {
+  status?: string;
+  _isOrphaned?: boolean;
+  system_combined_count?: number;
+  system_combined_items?: unknown[];
+  total_qty?: number | string | null;
+  system_qty?: number | string | null;
+}): boolean => {
+  if (item.status === 'Orphaned' || item._isOrphaned === true) return true;
+  if (Number(item.system_combined_count) === 0) return true;
+  const qty = Number(item.total_qty ?? item.system_qty) || 0;
+  if (
+    qty === 0 &&
+    Array.isArray(item.system_combined_items) &&
+    item.system_combined_items.length === 0
+  ) {
+    return true;
+  }
+  return false;
+};
 
 // Interface for comparison results
 interface ComparisonResult {
@@ -176,6 +209,7 @@ const ReconciliationCheckerPage: React.FC = () => {
   const [comparing, setComparing] = useState(false);
   const [comparisonResults, setComparisonResults] = useState<ComparisonResult[]>([]);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [pendingAdjustmentCount, setPendingAdjustmentCount] = useState(0);
   const [markedItems, setMarkedItems] = useState<Set<string>>(new Set());
   const [recheckItems, setRecheckItems] = useState<RecheckItem[]>([]);
   const [isExporting, setIsExporting] = useState(false);
@@ -235,10 +269,24 @@ const ReconciliationCheckerPage: React.FC = () => {
       return;
     }
 
-    const items = (stateData.items ?? []).map((item: ReconciliationItem) => ({
-      ...item,
-      length: stripLengthFt(item.length) ?? item.length
-    }));
+    const items = (stateData.items ?? []).map((item: ReconciliationItem) => {
+      const normalized = {
+        ...item,
+        length: stripLengthFt(item.length) ?? item.length,
+      };
+      if (isFoundOnlySystemRow(normalized as Parameters<typeof isFoundOnlySystemRow>[0])) {
+        return {
+          ...normalized,
+          total_qty: 0,
+          system_qty: 0,
+          system_combined_items: [],
+          system_combined_count: 0,
+          status: 'Orphaned',
+          _isOrphaned: true,
+        };
+      }
+      return normalized;
+    });
     setSystemItems(items);
     setSummary(stateData.summary ?? null);
     setLoading(false);
@@ -633,21 +681,39 @@ const ReconciliationCheckerPage: React.FC = () => {
   const filteredItems = useMemo(() => {
     // Start with empty array to ensure we always return a new array
     let filtered: ReconciliationItem[] = [];
-    
-    // Get orphaned items from comparison results and convert them to ReconciliationItem format
+
+    const toComparisonKey = (item: ReconciliationItem) =>
+      createComparisonKey({
+        prd_tag_no: item.prd_tag_no || item.tag_no,
+        form: item.form,
+        grade: item.grade,
+        size: item.size,
+        finish: item.finish,
+        ext_finish: item.ext_finish,
+        width: item.width,
+        length: item.length,
+        location: item.location,
+        mill: item.mill,
+        heat: item.heat,
+        inv_type: item.inv_type,
+        inv_quality: item.inv_quality,
+      });
+
+    const systemKeys = new Set(systemItems.map(toComparisonKey));
+
     const orphanedItems: ReconciliationItem[] = comparisonResults
-      .filter(result => result.status === 'Orphaned')
-      .map(result => ({
+      .filter((result) => result.status === 'Orphaned')
+      .map((result) => ({
         ...result.systemItem,
-        total_qty: 0, // Orphaned items have no system quantity
+        total_qty: 0,
         prd_ohd_mat_val: 0,
         prd_ohd_mat_cst: 0,
         branch: '-',
         warehouse: '-',
-        _isOrphaned: true // Mark as orphaned for filtering
-      }));
-    
-    // Combine system items with orphaned items
+        _isOrphaned: true,
+      }))
+      .filter((item) => !systemKeys.has(toComparisonKey(item)));
+
     filtered = [...systemItems, ...orphanedItems];
     
     // Apply search term filter
@@ -929,11 +995,11 @@ const ReconciliationCheckerPage: React.FC = () => {
           inv_quality: systemItem.inv_quality
         });
 
-        const systemQty = systemItem.total_qty || 0;
+        const systemQty = Number(systemItem.total_qty) || 0;
         const countedData = countedMap.get(systemKey);
-        const isCountedOnlyPhantom =
-          Number((systemItem as { system_combined_count?: number }).system_combined_count || 0) === 0
-          && systemQty === 0;
+        const isCountedOnlyPhantom = isFoundOnlySystemRow(
+          systemItem as Parameters<typeof isFoundOnlySystemRow>[0]
+        );
 
         if (countedData) {
           // Match found
@@ -1308,6 +1374,7 @@ const ReconciliationCheckerPage: React.FC = () => {
   const handleViewAdjustments = () => {
     if (!location_id) return;
     const items = loadAdjustmentItems(location_id);
+    setPendingAdjustmentCount(items.length);
     navigate(`/adjustment/marked/${location_id}`, {
       state: {
         items,
@@ -1316,6 +1383,14 @@ const ReconciliationCheckerPage: React.FC = () => {
       },
     });
   };
+
+  useEffect(() => {
+    if (!location_id) {
+      setPendingAdjustmentCount(0);
+      return;
+    }
+    setPendingAdjustmentCount(loadAdjustmentItems(location_id).length);
+  }, [location_id]);
 
   // Check if an item is marked for checking
   const isItemMarked = (item: ReconciliationItem): boolean => {
@@ -1540,17 +1615,17 @@ const ReconciliationCheckerPage: React.FC = () => {
         const status = result.status;
         
         if (status === 'Match') {
-          statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6EFCE' } };
-          statusCell.font = { color: { argb: 'FF006100' }, bold: true, size: 10 };
+          statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC8E6C9' } };
+          statusCell.font = { color: { argb: 'FF2E7D32' }, bold: true, size: 10 };
         } else if (status === 'Undercount') {
-          statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC7CE' } };
-          statusCell.font = { color: { argb: 'FF9C0006' }, bold: true, size: 10 };
+          statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBBDEFB' } };
+          statusCell.font = { color: { argb: 'FF1565C0' }, bold: true, size: 10 };
         } else if (status === 'Overcount') {
-          statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEB9C' } };
-          statusCell.font = { color: { argb: 'FF9C6500' }, bold: true, size: 10 };
+          statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE0B2' } };
+          statusCell.font = { color: { argb: 'FFE65100' }, bold: true, size: 10 };
         } else if (status === 'Orphaned') {
-          statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEB9C' } };
-          statusCell.font = { color: { argb: 'FF9C6500' }, bold: true, size: 10 };
+          statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFCDD2' } };
+          statusCell.font = { color: { argb: 'FFC62828' }, bold: true, size: 10 };
         }
         statusCell.alignment = { horizontal: 'center', vertical: 'middle' };
 
@@ -1558,17 +1633,17 @@ const ReconciliationCheckerPage: React.FC = () => {
         if (result.variance !== 0) {
           const varianceCell = row.getCell(varianceColIndex);
           if (status === 'Match') {
-            varianceCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6EFCE' } };
-            varianceCell.font = { color: { argb: 'FF006100' }, bold: true, size: 10 };
+            varianceCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC8E6C9' } };
+            varianceCell.font = { color: { argb: 'FF2E7D32' }, bold: true, size: 10 };
           } else if (status === 'Undercount') {
-            varianceCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC7CE' } };
-            varianceCell.font = { color: { argb: 'FF9C0006' }, bold: true, size: 10 };
+            varianceCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBBDEFB' } };
+            varianceCell.font = { color: { argb: 'FF1565C0' }, bold: true, size: 10 };
           } else if (status === 'Overcount') {
-            varianceCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEB9C' } };
-            varianceCell.font = { color: { argb: 'FF9C6500' }, bold: true, size: 10 };
+            varianceCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE0B2' } };
+            varianceCell.font = { color: { argb: 'FFE65100' }, bold: true, size: 10 };
           } else if (status === 'Orphaned') {
-            varianceCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEB9C' } };
-            varianceCell.font = { color: { argb: 'FF9C6500' }, bold: true, size: 10 };
+            varianceCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFCDD2' } };
+            varianceCell.font = { color: { argb: 'FFC62828' }, bold: true, size: 10 };
           }
         }
       });
@@ -1659,26 +1734,49 @@ const ReconciliationCheckerPage: React.FC = () => {
                 <Button
                   variant="contained"
                   color="primary"
+                  startIcon={<BookmarkIcon />}
                   onClick={handleMarkForChecking}
-                  sx={{ fontWeight: 600 }}
+                  sx={{ fontWeight: 600, textTransform: 'none' }}
                 >
                   Mark for Recheck ({selectedItems.size})
                 </Button>
                 <Button
                   variant="contained"
                   color="secondary"
+                  startIcon={<PlaylistAddCheckIcon />}
                   onClick={handleMarkForAdjustment}
-                  sx={{ fontWeight: 600 }}
+                  sx={{ fontWeight: 600, textTransform: 'none' }}
                 >
                   Mark for Adjustment ({selectedItems.size})
                 </Button>
               </>
             )}
             <Button
-              variant="outlined"
-              color="secondary"
+              variant="contained"
+              color="inherit"
+              startIcon={
+                <Badge
+                  badgeContent={pendingAdjustmentCount || null}
+                  color="secondary"
+                  max={99}
+                  sx={{ '& .MuiBadge-badge': { fontSize: 10, height: 16, minWidth: 16 } }}
+                >
+                  <AssignmentOutlinedIcon />
+                </Badge>
+              }
               onClick={handleViewAdjustments}
-              sx={{ fontWeight: 600 }}
+              sx={{
+                fontWeight: 600,
+                textTransform: 'none',
+                color: 'text.primary',
+                bgcolor: alpha(theme.palette.secondary.main, 0.12),
+                border: '1px solid',
+                borderColor: alpha(theme.palette.secondary.main, 0.35),
+                '&:hover': {
+                  bgcolor: alpha(theme.palette.secondary.main, 0.2),
+                  borderColor: theme.palette.secondary.main,
+                },
+              }}
             >
               View Adjustments
             </Button>
@@ -1692,33 +1790,37 @@ const ReconciliationCheckerPage: React.FC = () => {
             )}
             {!comparing && comparisonResults.length > 0 && (
               <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                <Chip
-                  label={`Matches: ${comparisonResults.filter(r => r.status === 'Match').length}`}
-                  size="small"
-                  color="success"
-                />
-                <Chip
-                  label={`Undercounts: ${comparisonResults.filter(r => r.status === 'Undercount').length}`}
-                  size="small"
-                  color="warning"
-                />
-                <Chip
-                  label={`Overcounts: ${comparisonResults.filter(r => r.status === 'Overcount').length}`}
-                  size="small"
-                  color="info"
-                />
-                <Chip
-                  label={`Found: ${comparisonResults.filter(r => r.status === 'Orphaned').length}`}
-                  size="small"
-                  color="error"
-                />
+                {([
+                  { key: 'Match' as const, label: 'Matches', count: comparisonResults.filter((r) => r.status === 'Match').length },
+                  { key: 'Undercount' as const, label: 'Undercounts', count: comparisonResults.filter((r) => r.status === 'Undercount').length },
+                  { key: 'Overcount' as const, label: 'Overcounts', count: comparisonResults.filter((r) => r.status === 'Overcount').length },
+                  { key: 'Orphaned' as const, label: 'Found', count: comparisonResults.filter((r) => r.status === 'Orphaned').length },
+                ]).map((stat) => {
+                  const pastel = RECON_STATUS_PASTEL[stat.key];
+                  return (
+                    <Chip
+                      key={stat.key}
+                      label={`${stat.label}: ${stat.count}`}
+                      size="small"
+                      sx={{
+                        fontWeight: 600,
+                        bgcolor: pastel.chipBg,
+                        color: pastel.chipText,
+                        border: '1px solid',
+                        borderColor: pastel.main,
+                      }}
+                    />
+                  );
+                })}
               </Box>
             )}
-            <Button 
-              variant="outlined" 
-              color="primary" 
+            <Button
+              variant="outlined"
+              color="primary"
+              startIcon={<RefreshIcon />}
               onClick={() => performComparison()}
               disabled={comparing}
+              sx={{ fontWeight: 600, textTransform: 'none' }}
             >
               {comparing ? 'Comparing...' : 'Refresh Comparison'}
             </Button>
@@ -2388,61 +2490,10 @@ const ReconciliationCheckerPage: React.FC = () => {
                   const comparison = comparisonMap.get(itemKey);
                   const status = comparison?.status;
                   
-                  // Get background color based on status
-                  const getBackgroundColor = () => {
-                    if (!comparison) return 'transparent';
-                    switch (status) {
-                      case 'Match':
-                        return 'rgba(76, 175, 80, 0.08)'; // Green
-                      case 'Undercount':
-                        return 'rgba(211, 47, 47, 0.08)'; // Red
-                      case 'Overcount':
-                        return 'rgba(255, 152, 0, 0.08)'; // Orange
-                      case 'Orphaned':
-                        return 'rgba(255, 235, 59, 0.15)'; // Yellow
-                      default:
-                        return 'transparent';
-                    }
-                  };
-
-                  const getHoverBackgroundColor = () => {
-                    if (!comparison) return 'rgba(0, 0, 0, 0.04)';
-                    switch (status) {
-                      case 'Match':
-                        return 'rgba(76, 175, 80, 0.12)'; // Green
-                      case 'Undercount':
-                        return 'rgba(211, 47, 47, 0.12)'; // Red
-                      case 'Overcount':
-                        return 'rgba(255, 152, 0, 0.12)'; // Orange
-                      case 'Orphaned':
-                        return 'rgba(255, 235, 59, 0.20)'; // Yellow
-                      default:
-                        return 'rgba(0, 0, 0, 0.04)';
-                    }
-                  };
-
-                  const getOddRowBackgroundColor = () => {
-                    if (!comparison) return 'rgba(15, 23, 42, 0.015)';
-                    switch (status) {
-                      case 'Match':
-                        return 'rgba(76, 175, 80, 0.04)'; // Green
-                      case 'Undercount':
-                        return 'rgba(211, 47, 47, 0.04)'; // Red
-                      case 'Overcount':
-                        return 'rgba(255, 152, 0, 0.04)'; // Orange
-                      case 'Orphaned':
-                        return 'rgba(255, 235, 59, 0.10)'; // Yellow
-                      default:
-                        return 'rgba(15, 23, 42, 0.015)';
-                    }
-                  };
-
-                  const statusColor = comparison ? {
-                    Match: 'success',
-                    Undercount: 'error', // Red
-                    Overcount: 'warning', // Orange
-                    Orphaned: 'warning' // Yellow (using warning as closest, but we'll use custom color)
-                  }[comparison.status] as 'success' | 'warning' | 'error' : undefined;
+                  // Get background color based on status (pastel)
+                  const getBackgroundColor = () => getReconRowBackground(status, 'base');
+                  const getHoverBackgroundColor = () => getReconRowBackground(status, 'hover');
+                  const getOddRowBackgroundColor = () => getReconRowBackground(status, 'odd');
 
                   // Check if checkbox should be shown (only for items with counted quantity)
                   const showCheckbox = comparison && comparison.countedQuantity > 0;
@@ -2539,7 +2590,7 @@ const ReconciliationCheckerPage: React.FC = () => {
                           <Typography
                             variant="body2"
                             sx={{
-                              color: comparison.variance === 0 ? 'success.main' : comparison.variance > 0 ? 'warning.main' : 'error.main',
+                              color: getReconVarianceColor(status, comparison.variance),
                               fontWeight: comparison.variance !== 0 ? 600 : 'normal'
                             }}
                           >
@@ -2552,14 +2603,7 @@ const ReconciliationCheckerPage: React.FC = () => {
                           <Chip
                             label={getDisplayStatus(comparison.status)}
                             size="small"
-                            color={status === 'Orphaned' ? 'warning' : statusColor}
-                            sx={{ 
-                              fontWeight: 600,
-                              ...(status === 'Orphaned' && {
-                                backgroundColor: 'rgba(255, 235, 59, 0.3)',
-                                color: 'rgba(0, 0, 0, 0.87)'
-                              })
-                            }}
+                            sx={getReconStatusChipSx(comparison.status)}
                           />
                         ) : (
                           <Chip

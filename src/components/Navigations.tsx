@@ -222,10 +222,7 @@ const menuItems = {
       path: null,
       subItems: [
         { text: "Reconciliations", icon: <Engineering />, path: "/assigned-counters" },
-        { text: "Checker vs Counter", icon: <Inventory />, path: "/assigned-checkers" },
-        { text: "Adjustments", icon: <Tune />, path: "/adjustment" },
-        { text: "Adjustment Records", icon: <Book />, path: "/adjustment-records" },
-        { text: "New Item Approvals", icon: <Inventory2 />, path: "/new-adjustment-records" }
+        { text: "Checker vs Counter", icon: <Inventory />, path: "/assigned-checkers" }
       ]
     },
     {
@@ -238,6 +235,17 @@ const menuItems = {
         { text: "Adjustment", icon: <Tune />, path: "/reports/adjustment" },
         { text: "Count", icon: <ListAlt />, path: "/reports/count" },
         { text: "Custom", icon: <Assessment />, path: "/reports/custom" }
+      ]
+    }
+  ],
+  Gatekeeper: [
+    {
+      text: "Approvals",
+      icon: <FactCheck />,
+      path: null,
+      subItems: [
+        { text: "Adjustment Records", icon: <Book />, path: "/adjustment-records" },
+        { text: "New Item Approvals", icon: <Inventory2 />, path: "/new-adjustment-records" }
       ]
     }
   ]
@@ -335,6 +343,8 @@ export default function ModernNavigation({ children }: NavigationProps) {
     switch (roleName) {
       case 'Reconciler':
         return <CorporateFare fontSize="small" sx={{ color: 'primary.main' }} />;
+      case 'Gatekeeper':
+        return <Security fontSize="small" sx={{ color: 'warning.main' }} />;
       case 'Counter':
         return <PointOfSale fontSize="small" sx={{ color: 'secondary.main' }} />;
       case 'Checker':
@@ -574,6 +584,14 @@ export default function ModernNavigation({ children }: NavigationProps) {
             </List>
           </Box>
         )}
+        {role === 'Gatekeeper' && (
+          <Box key="Gatekeeper">
+            {!collapsed && <CategoryLabel>Gatekeeper</CategoryLabel>}
+            <List disablePadding>
+              {renderMenuItems(menuItems.Gatekeeper)}
+            </List>
+          </Box>
+        )}
       </Box>
 
       <DrawerFooter sx={{ px: collapsed ? 1 : 1.75 }}>
@@ -740,7 +758,8 @@ export default function ModernNavigation({ children }: NavigationProps) {
             location.pathname === '/users' ||
             location.pathname === '/teams' ||
             location.pathname === '/items' ||
-            location.pathname === '/stock-available'
+            location.pathname === '/stock-available' ||
+            location.pathname === '/profile'
               ? '#e8eef4'
               : 'background.default',
           transition: theme => theme.transitions.create(['width', 'margin', 'background-color'], {

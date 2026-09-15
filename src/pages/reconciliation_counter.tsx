@@ -49,6 +49,9 @@ import PlaceOutlinedIcon from '@mui/icons-material/PlaceOutlined';
 import PrecisionManufacturingOutlinedIcon from '@mui/icons-material/PrecisionManufacturingOutlined';
 import ClearAllIcon from '@mui/icons-material/ClearAll';
 import TuneIcon from '@mui/icons-material/Tune';
+import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import PlaylistAddCheckIcon from '@mui/icons-material/PlaylistAddCheck';
 import { servicesAPI } from '../config/api';
 import {
   loadAdjustmentItems,
@@ -57,6 +60,13 @@ import {
   type AdjustmentMarkPayload,
 } from '../utils/adjustmentSession';
 import { alpha } from '@mui/material/styles';
+import {
+  getReconRowBackground,
+  getReconStatusChipSx,
+  getReconStatusPastel,
+  getReconVarianceColor,
+  RECON_STATUS_PASTEL,
+} from '../utils/reconciliationStatusColors';
 
 const formatNumber = (value: number | string | undefined | null, options?: Intl.NumberFormatOptions) => {
   if (value === null || value === undefined || value === '') {
@@ -78,6 +88,28 @@ const formatValue = (value: unknown) => {
 
 const getStatusDisplayLabel = (status: string): string => {
   return status === 'Orphaned' ? 'Found' : status;
+};
+
+/** Counted-only placeholder from API (not real ERP inventory). Must stay Found, never Overcount. */
+const isFoundOnlySystemRow = (item: {
+  status?: string;
+  _isOrphaned?: boolean;
+  system_combined_count?: number;
+  system_combined_items?: unknown[];
+  total_qty?: number | string | null;
+  system_qty?: number | string | null;
+}): boolean => {
+  if (item.status === 'Orphaned' || item._isOrphaned === true) return true;
+  if (Number(item.system_combined_count) === 0) return true;
+  const qty = Number(item.total_qty ?? item.system_qty) || 0;
+  if (
+    qty === 0 &&
+    Array.isArray(item.system_combined_items) &&
+    item.system_combined_items.length === 0
+  ) {
+    return true;
+  }
+  return false;
 };
 
 const RECONCILE_ALLOWED_FIELDS = ['sys_tag_no', 'form', 'grade', 'size', 'finish', 'ext_finish', 'width', 'length', 'location', 'mill', 'heat', 'type', 'quality'] as const;
@@ -219,6 +251,7 @@ const ReconciliationCounterPage: React.FC = () => {
   const [comparisonResults, setComparisonResults] = useState<ComparisonResult[]>([]);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [markedItems, setMarkedItems] = useState<Set<string>>(new Set());
+  const [pendingAdjustmentCount, setPendingAdjustmentCount] = useState(0);
   // Filter states (kept for internal filtering logic, but UI removed)
   const [filterForm, setFilterForm] = useState<string | null>(null);
   const [filterGrade, setFilterGrade] = useState<string | null>(null);
@@ -362,10 +395,25 @@ const ReconciliationCounterPage: React.FC = () => {
 
   useEffect(() => {
     const applyReconciliationData = (stateData: ReconciliationData) => {
-      const items = (stateData.items ?? []).map((item: ReconciliationItem) => ({
-        ...item,
-        length: stripLengthFt(item.length) ?? item.length
-      }));
+      const items = (stateData.items ?? []).map((item: ReconciliationItem) => {
+        const normalized = {
+          ...item,
+          length: stripLengthFt(item.length) ?? item.length,
+        };
+        // Keep counted-only rows as Found so client compare does not treat qty 0 as Overcount
+        if (isFoundOnlySystemRow(normalized as Parameters<typeof isFoundOnlySystemRow>[0])) {
+          return {
+            ...normalized,
+            total_qty: 0,
+            system_qty: 0,
+            system_combined_items: [],
+            system_combined_count: 0,
+            status: 'Orphaned',
+            _isOrphaned: true,
+          };
+        }
+        return normalized;
+      });
       setSystemItems(items);
       setSummary(stateData.summary ?? null);
       setLoading(false);
@@ -704,8 +752,36 @@ const ReconciliationCounterPage: React.FC = () => {
         inv_quality: item.inv_quality,
       });
 
+      // Preserve Found (counted-only) rows — do not invent a combined ERP entry
+      // (that used to flip system_combined_count 0 → 1 and status to Overcount).
+      if (isFoundOnlySystemRow(item as Parameters<typeof isFoundOnlySystemRow>[0])) {
+        if (!map.has(key)) {
+          map.set(key, {
+            ...item,
+            total_qty: 0,
+            system_qty: 0,
+            system_combined_items: [],
+            system_combined_count: 0,
+            status: 'Orphaned',
+            _isOrphaned: true,
+          } as ReconciliationItem & { system_combined_items?: unknown[]; system_combined_count?: number; _isOrphaned?: boolean });
+        }
+        return;
+      }
+
       const existing = map.get(key);
       if (!existing) {
+        const prior = (item as { system_combined_items?: unknown[] }).system_combined_items;
+        map.set(key, {
+          ...item,
+          system_combined_items: Array.isArray(prior) && prior.length > 0 ? [...prior] : [toCombinedEntry(item)],
+          system_combined_count: Array.isArray(prior) && prior.length > 0 ? prior.length : 1,
+        });
+        return;
+      }
+
+      // Real ERP row wins over a Found placeholder with the same key
+      if (isFoundOnlySystemRow(existing as Parameters<typeof isFoundOnlySystemRow>[0])) {
         const prior = (item as { system_combined_items?: unknown[] }).system_combined_items;
         map.set(key, {
           ...item,
@@ -892,20 +968,40 @@ const ReconciliationCounterPage: React.FC = () => {
     // Start with empty array to ensure we always return a new array
     let filtered: ReconciliationItem[] = [];
 
-    // Get orphaned items from comparison results and convert them to ReconciliationItem format
+    const toComparisonKey = (item: ReconciliationItem) =>
+      createComparisonKey({
+        prd_tag_no: item.prd_tag_no || item.tag_no,
+        form: item.form,
+        grade: item.grade,
+        size: item.size,
+        finish: item.finish,
+        ext_finish: item.ext_finish,
+        width: item.width,
+        length: item.length,
+        location: item.location,
+        mill: item.mill,
+        heat: item.heat,
+        inv_type: item.inv_type,
+        inv_quality: item.inv_quality,
+      });
+
+    const consolidatedKeys = new Set(consolidatedSystemItems.map(toComparisonKey));
+
+    // Orphaned rows from client compare — only when not already in consolidated list
+    // (API Found rows are kept in consolidatedSystemItems; appending again duplicated each row)
     const orphanedItems: ReconciliationItem[] = comparisonResults
-      .filter(result => result.status === 'Orphaned')
-      .map(result => ({
+      .filter((result) => result.status === 'Orphaned')
+      .map((result) => ({
         ...result.systemItem,
-        total_qty: 0, // Orphaned items have no system quantity
+        total_qty: 0,
         prd_ohd_mat_val: 0,
         prd_ohd_mat_cst: 0,
         branch: '-',
         warehouse: '-',
-        _isOrphaned: true // Mark as orphaned for filtering
-      }));
+        _isOrphaned: true,
+      }))
+      .filter((item) => !consolidatedKeys.has(toComparisonKey(item)));
 
-    // Combine system items with orphaned items
     filtered = [...consolidatedSystemItems, ...orphanedItems];
 
     // Apply search term filter
@@ -1243,12 +1339,12 @@ const ReconciliationCounterPage: React.FC = () => {
           inv_quality: systemItem.inv_quality
         });
 
-        const systemQty = systemItem.total_qty || 0;
+        const systemQty = Number(systemItem.total_qty) || 0;
         const countedData = countedMap.get(systemKey);
-        // Backend counted-only rows have no ERP inventory (system_combined_count = 0, qty 0)
-        const isCountedOnlyPhantom =
-          Number((systemItem as { system_combined_count?: number }).system_combined_count || 0) === 0
-          && systemQty === 0;
+        // Backend counted-only rows = Found (not Overcount from system qty 0)
+        const isCountedOnlyPhantom = isFoundOnlySystemRow(
+          systemItem as Parameters<typeof isFoundOnlySystemRow>[0]
+        );
 
         if (countedData) {
           // Match found
@@ -1782,9 +1878,22 @@ const ReconciliationCounterPage: React.FC = () => {
     }
   };
 
+  const refreshPendingAdjustmentCount = () => {
+    if (!location_id) {
+      setPendingAdjustmentCount(0);
+      return;
+    }
+    setPendingAdjustmentCount(loadAdjustmentItems(location_id).length);
+  };
+
+  useEffect(() => {
+    refreshPendingAdjustmentCount();
+  }, [location_id]);
+
   const handleViewAdjustments = () => {
     if (!location_id) return;
     const items = loadAdjustmentItems(location_id);
+    setPendingAdjustmentCount(items.length);
     navigate(`/adjustment/marked/${location_id}`, {
       state: {
         items,
@@ -1876,6 +1985,20 @@ const ReconciliationCounterPage: React.FC = () => {
 
   const quickStatusFilters = ['Match', 'Undercount', 'Overcount', 'Orphaned', 'Not Counted'] as const;
 
+  const statusCounts = useMemo(
+    () => ({
+      match: comparisonResults.filter((r) => r.status === 'Match').length,
+      under: comparisonResults.filter((r) => r.status === 'Undercount').length,
+      over: comparisonResults.filter((r) => r.status === 'Overcount').length,
+      found: comparisonResults.filter((r) => r.status === 'Orphaned').length,
+    }),
+    [comparisonResults]
+  );
+
+  const toggleStatusFilter = (status: typeof quickStatusFilters[number]) => {
+    setFilterStatus((prev) => (prev === status ? null : status));
+  };
+
   const filterControlSx = {
     '& .MuiOutlinedInput-root': {
       borderRadius: 2,
@@ -1939,101 +2062,267 @@ const ReconciliationCounterPage: React.FC = () => {
     >
       <Paper
         variant="outlined"
-        sx={{ flexShrink: 0, px: 1, py: 0.75, mb: 1, borderRadius: 1.5 }}
+        sx={{
+          flexShrink: 0,
+          mb: 1,
+          borderRadius: 2,
+          overflow: 'hidden',
+          boxShadow: `0 1px 3px ${alpha(theme.palette.common.black, 0.06)}`,
+        }}
       >
-        <Stack
-          direction="row"
-          alignItems="center"
-          justifyContent="space-between"
-          flexWrap="wrap"
-          gap={1}
-        >
-          <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
-            <IconButton size="small" onClick={handleBack} aria-label="Back to counter review">
-              <ChevronLeft fontSize="small" />
-            </IconButton>
-            <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
-              System Reconciliation
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Location {location_id || '-'}
-            </Typography>
-            {summary && (
-              <>
-                <Divider orientation="vertical" flexItem sx={{ mx: 0.25 }} />
-                <Chip size="small" variant="outlined" label={`Branch: ${summary.branch || '-'}`} />
-                <Chip size="small" variant="outlined" label={`WH: ${summary.warehouse || '-'}`} />
-                <Chip
-                  size="small"
-                  variant="outlined"
-                  label={`Items: ${formatNumber(summary.total_system_items || summary.totalItems || 0)}`}
-                />
-                <Chip
-                  size="small"
-                  variant="outlined"
-                  label={`Qty: ${formatNumber(summary.total_system_quantity || 0)}`}
-                />
-              </>
-            )}
-            {comparing && (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                <CircularProgress size={16} />
-                <Typography variant="caption" color="text.secondary">
-                  Comparing...
+        <Box
+          sx={{
+            height: 3,
+            background: `linear-gradient(90deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
+          }}
+        />
+        <Box sx={{ px: { xs: 1.25, sm: 2 }, py: 1.5 }}>
+          <Stack
+            direction={{ xs: 'column', lg: 'row' }}
+            alignItems={{ xs: 'stretch', lg: 'center' }}
+            justifyContent="space-between"
+            spacing={1.5}
+          >
+            <Stack direction="row" alignItems="center" spacing={1.25} sx={{ minWidth: 0 }}>
+              <IconButton
+                size="small"
+                onClick={handleBack}
+                aria-label="Back to counter review"
+                sx={{
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  bgcolor: alpha(theme.palette.background.paper, 0.8),
+                }}
+              >
+                <ChevronLeft fontSize="small" />
+              </IconButton>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, lineHeight: 1.25, fontSize: '1.05rem' }}>
+                  System Reconciliation
                 </Typography>
+                <Stack direction="row" alignItems="center" spacing={0.75} flexWrap="wrap" useFlexGap>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                    Location {location_id || '-'}
+                  </Typography>
+                  {summary && (
+                    <>
+                      <Typography variant="caption" color="text.disabled">·</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Branch {summary.branch || '-'}
+                      </Typography>
+                      <Typography variant="caption" color="text.disabled">·</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        WH {summary.warehouse || '-'}
+                      </Typography>
+                    </>
+                  )}
+                  {comparing && (
+                    <>
+                      <Typography variant="caption" color="text.disabled">·</Typography>
+                      <Stack direction="row" alignItems="center" spacing={0.5}>
+                        <CircularProgress size={12} />
+                        <Typography variant="caption" color="text.secondary">
+                          Comparing…
+                        </Typography>
+                      </Stack>
+                    </>
+                  )}
+                </Stack>
               </Box>
-            )}
-            {!comparing && comparisonResults.length > 0 && (
-              <>
-                <Chip size="small" color="success" label={`Match ${comparisonResults.filter((r) => r.status === 'Match').length}`} />
-                <Chip size="small" color="warning" label={`Under ${comparisonResults.filter((r) => r.status === 'Undercount').length}`} />
-                <Chip size="small" color="info" label={`Over ${comparisonResults.filter((r) => r.status === 'Overcount').length}`} />
-                <Chip size="small" color="error" label={`Found ${comparisonResults.filter((r) => r.status === 'Orphaned').length}`} />
-              </>
-            )}
-          </Stack>
-          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-            {selectedItems.size > 0 && (
-              <>
-                <Button
-                  size="small"
-                  variant="contained"
-                  onClick={handleMarkForChecking}
-                  sx={{ textTransform: 'none', fontWeight: 600 }}
-                >
-                  Mark for Recheck ({selectedItems.size})
-                </Button>
-                <Button
-                  size="small"
-                  variant="contained"
-                  color="secondary"
-                  onClick={handleMarkForAdjustment}
-                  sx={{ textTransform: 'none', fontWeight: 600 }}
-                >
-                  Mark for Adjustment ({selectedItems.size})
-                </Button>
-              </>
-            )}
-            <Button
-              size="small"
-              variant="outlined"
-              color="secondary"
-              onClick={handleViewAdjustments}
-              sx={{ textTransform: 'none' }}
+            </Stack>
+
+            <Stack
+              direction="row"
+              spacing={0.75}
+              alignItems="center"
+              flexWrap="wrap"
+              useFlexGap
+              sx={{ justifyContent: { xs: 'flex-start', lg: 'flex-end' } }}
             >
-              View Adjustments
-            </Button>
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={() => performComparison()}
-              disabled={comparing}
-              sx={{ textTransform: 'none' }}
-            >
-              {comparing ? 'Comparing...' : 'Refresh'}
-            </Button>
+              {selectedItems.size > 0 && (
+                <Paper
+                  variant="outlined"
+                  sx={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    borderRadius: 2,
+                    overflow: 'hidden',
+                    bgcolor: alpha(theme.palette.primary.main, 0.04),
+                  }}
+                >
+                  <Button
+                    size="small"
+                    variant="contained"
+                    startIcon={<BookmarkIcon fontSize="small" />}
+                    onClick={handleMarkForChecking}
+                    sx={{ textTransform: 'none', fontWeight: 600, px: 1.5, borderRadius: 0 }}
+                  >
+                    Recheck ({selectedItems.size})
+                  </Button>
+                  <Divider orientation="vertical" flexItem />
+                  <Button
+                    size="small"
+                    variant="contained"
+                    color="secondary"
+                    startIcon={<PlaylistAddCheckIcon fontSize="small" />}
+                    onClick={handleMarkForAdjustment}
+                    sx={{ textTransform: 'none', fontWeight: 600, px: 1.5, borderRadius: 0 }}
+                  >
+                    Adjust ({selectedItems.size})
+                  </Button>
+                </Paper>
+              )}
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={
+                  <Badge
+                    badgeContent={pendingAdjustmentCount || null}
+                    color="secondary"
+                    max={99}
+                    sx={{ '& .MuiBadge-badge': { fontSize: 10, height: 16, minWidth: 16 } }}
+                  >
+                    <AssignmentOutlinedIcon fontSize="small" />
+                  </Badge>
+                }
+                onClick={handleViewAdjustments}
+                sx={{ textTransform: 'none', fontWeight: 600, px: 1.5, borderRadius: 2 }}
+              >
+                Adjustments
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={comparing ? <CircularProgress size={14} /> : <RefreshIcon fontSize="small" />}
+                onClick={() => performComparison()}
+                disabled={comparing}
+                sx={{ textTransform: 'none', fontWeight: 600, px: 1.5, borderRadius: 2 }}
+              >
+                {comparing ? 'Refreshing…' : 'Refresh'}
+              </Button>
+            </Stack>
           </Stack>
-        </Stack>
+
+          {(summary || comparisonResults.length > 0) && (
+            <Stack
+              direction={{ xs: 'column', md: 'row' }}
+              spacing={1.25}
+              sx={{
+                mt: 1.5,
+                pt: 1.5,
+                borderTop: '1px solid',
+                borderColor: 'divider',
+              }}
+            >
+              {summary && (
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  flexWrap="wrap"
+                  useFlexGap
+                  sx={{ flex: { md: '0 0 auto' } }}
+                >
+                  {[
+                    {
+                      label: 'System items',
+                      value: formatNumber(summary.total_system_items || summary.totalItems || 0),
+                      icon: <CategoryOutlinedIcon sx={{ fontSize: 16 }} />,
+                    },
+                    {
+                      label: 'System qty',
+                      value: formatNumber(summary.total_system_quantity || 0),
+                      icon: <PrecisionManufacturingOutlinedIcon sx={{ fontSize: 16 }} />,
+                    },
+                  ].map((tile) => (
+                    <Box
+                      key={tile.label}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        px: 1.25,
+                        py: 0.75,
+                        borderRadius: 2,
+                        bgcolor: alpha(theme.palette.text.primary, 0.03),
+                        border: '1px solid',
+                        borderColor: alpha(theme.palette.divider, 0.8),
+                        minWidth: 120,
+                      }}
+                    >
+                      <Box sx={{ color: 'text.secondary', display: 'flex' }}>{tile.icon}</Box>
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.2, display: 'block' }}>
+                          {tile.label}
+                        </Typography>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+                          {tile.value}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  ))}
+                </Stack>
+              )}
+
+              {comparisonResults.length > 0 && (
+                <Stack
+                  direction="row"
+                  spacing={0.75}
+                  flexWrap="wrap"
+                  useFlexGap
+                  sx={{ flex: 1, minWidth: 0 }}
+                >
+                  {([
+                    { key: 'Match' as const, label: 'Match', count: statusCounts.match },
+                    { key: 'Undercount' as const, label: 'Under', count: statusCounts.under },
+                    { key: 'Overcount' as const, label: 'Over', count: statusCounts.over },
+                    { key: 'Orphaned' as const, label: 'Found', count: statusCounts.found },
+                  ]).map((stat) => {
+                    const isActive = filterStatus === stat.key;
+                    const pastel = RECON_STATUS_PASTEL[stat.key];
+                    return (
+                      <Box
+                        key={stat.key}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => toggleStatusFilter(stat.key)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            toggleStatusFilter(stat.key);
+                          }
+                        }}
+                        sx={{
+                          flex: '1 1 72px',
+                          minWidth: 72,
+                          px: 1.25,
+                          py: 0.75,
+                          borderRadius: 2,
+                          cursor: 'pointer',
+                          border: '1px solid',
+                          borderColor: isActive ? pastel.main : alpha(pastel.main, 0.3),
+                          bgcolor: isActive ? pastel.soft : pastel.softer,
+                          transition: 'transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease',
+                          '&:hover': {
+                            transform: 'translateY(-1px)',
+                            boxShadow: `0 4px 12px ${alpha(pastel.main, 0.2)}`,
+                            borderColor: pastel.main,
+                          },
+                        }}
+                      >
+                        <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.2, display: 'block' }}>
+                          {stat.label}
+                        </Typography>
+                        <Typography variant="h6" sx={{ fontWeight: 800, lineHeight: 1.1, color: pastel.main, fontSize: '1.15rem' }}>
+                          {stat.count}
+                        </Typography>
+                      </Box>
+                    );
+                  })}
+                </Stack>
+              )}
+            </Stack>
+          )}
+        </Box>
       </Paper>
 
       {compareFieldLabels.length > 0 && (
@@ -2204,6 +2493,7 @@ const ReconciliationCounterPage: React.FC = () => {
               </Typography>
               {quickStatusFilters.map((status) => {
                 const isActive = filterStatus === status;
+                const pastel = getReconStatusPastel(status);
                 return (
                   <Chip
                     key={status}
@@ -2211,15 +2501,24 @@ const ReconciliationCounterPage: React.FC = () => {
                     label={getStatusDisplayLabel(status)}
                     clickable
                     onClick={() => setFilterStatus(isActive ? null : status)}
-                    color={
-                      status === 'Match' ? 'success'
-                        : status === 'Undercount' ? 'warning'
-                          : status === 'Overcount' ? 'info'
-                            : status === 'Orphaned' ? 'error'
-                              : 'default'
-                    }
                     variant={isActive ? 'filled' : 'outlined'}
-                    sx={{ fontWeight: 600, borderRadius: 2, transition: 'transform 0.15s ease', '&:hover': { transform: 'translateY(-1px)' } }}
+                    sx={{
+                      fontWeight: 600,
+                      borderRadius: 2,
+                      transition: 'transform 0.15s ease',
+                      '&:hover': { transform: 'translateY(-1px)' },
+                      ...(pastel
+                        ? {
+                            bgcolor: isActive ? pastel.chipBg : alpha(pastel.chipBg, 0.35),
+                            color: pastel.chipText,
+                            borderColor: pastel.main,
+                            '&.MuiChip-outlined': {
+                              borderColor: pastel.main,
+                              color: pastel.chipText,
+                            },
+                          }
+                        : {}),
+                    }}
                   />
                 );
               })}
@@ -2668,61 +2967,10 @@ const ReconciliationCounterPage: React.FC = () => {
                   const comparison = comparisonMap.get(itemKey);
                   const status = comparison?.status;
 
-                  // Get background color based on status
-                  const getBackgroundColor = () => {
-                    if (!comparison) return 'transparent';
-                    switch (status) {
-                      case 'Match':
-                        return 'rgba(76, 175, 80, 0.08)'; // Green
-                      case 'Undercount':
-                        return 'rgba(211, 47, 47, 0.08)'; // Red
-                      case 'Overcount':
-                        return 'rgba(255, 152, 0, 0.08)'; // Orange
-                      case 'Orphaned':
-                        return 'rgba(255, 235, 59, 0.15)'; // Yellow
-                      default:
-                        return 'transparent';
-                    }
-                  };
-
-                  const getHoverBackgroundColor = () => {
-                    if (!comparison) return 'rgba(0, 0, 0, 0.04)';
-                    switch (status) {
-                      case 'Match':
-                        return 'rgba(76, 175, 80, 0.12)'; // Green
-                      case 'Undercount':
-                        return 'rgba(211, 47, 47, 0.12)'; // Red
-                      case 'Overcount':
-                        return 'rgba(255, 152, 0, 0.12)'; // Orange
-                      case 'Orphaned':
-                        return 'rgba(255, 235, 59, 0.20)'; // Yellow
-                      default:
-                        return 'rgba(0, 0, 0, 0.04)';
-                    }
-                  };
-
-                  const getOddRowBackgroundColor = () => {
-                    if (!comparison) return 'rgba(15, 23, 42, 0.015)';
-                    switch (status) {
-                      case 'Match':
-                        return 'rgba(76, 175, 80, 0.04)'; // Green
-                      case 'Undercount':
-                        return 'rgba(211, 47, 47, 0.04)'; // Red
-                      case 'Overcount':
-                        return 'rgba(255, 152, 0, 0.04)'; // Orange
-                      case 'Orphaned':
-                        return 'rgba(255, 235, 59, 0.10)'; // Yellow
-                      default:
-                        return 'rgba(15, 23, 42, 0.015)';
-                    }
-                  };
-
-                  const statusColor = comparison ? {
-                    Match: 'success',
-                    Undercount: 'error', // Red
-                    Overcount: 'warning', // Orange
-                    Orphaned: 'warning' // Yellow (using warning as closest, but we'll use custom color)
-                  }[comparison.status] as 'success' | 'warning' | 'error' : undefined;
+                  // Get background color based on status (pastel)
+                  const getBackgroundColor = () => getReconRowBackground(status, 'base');
+                  const getHoverBackgroundColor = () => getReconRowBackground(status, 'hover');
+                  const getOddRowBackgroundColor = () => getReconRowBackground(status, 'odd');
 
                   // Check if checkbox should be shown (only for items with counted quantity)
                   const showCheckbox = comparison && comparison.countedQuantity > 0;
@@ -2731,7 +2979,7 @@ const ReconciliationCounterPage: React.FC = () => {
 
                   const rowKey = `${item.prd_tag_no || item.tag_no || index}-${filterTagNumber || ''}-${filterForm || ''}-${filterGrade || ''}-${filterSize || ''}-${filterStatus || ''}`;
                   const showCombinedDropdown = Boolean(comparison?.combinedItems && comparison.combinedItems.length > 1);
-                  const systemCombinedCount = Number((item as any).system_combined_count || 1);
+                  const systemCombinedCount = Number((item as any).system_combined_count ?? 1);
                   const showSystemCombinedDropdown = systemCombinedCount > 1;
                   const hasCombinedDetails = showCombinedDropdown || showSystemCombinedDropdown;
                   const isCombinedExpanded = expandedCombinedRows.has(rowKey);
@@ -2845,7 +3093,7 @@ const ReconciliationCounterPage: React.FC = () => {
                             <Typography
                               variant="body2"
                               sx={{
-                                color: comparison.variance === 0 ? 'success.main' : comparison.variance > 0 ? 'warning.main' : 'error.main',
+                                color: getReconVarianceColor(status, comparison.variance),
                                 fontWeight: comparison.variance !== 0 ? 600 : 'normal'
                               }}
                             >
@@ -2870,14 +3118,7 @@ const ReconciliationCounterPage: React.FC = () => {
                               <Chip
                                 label={getStatusDisplayLabel(comparison.status)}
                                 size="small"
-                                color={status === 'Orphaned' ? 'warning' : statusColor}
-                                sx={{
-                                  fontWeight: 600,
-                                  ...(status === 'Orphaned' && {
-                                    backgroundColor: 'rgba(255, 235, 59, 0.3)',
-                                    color: 'rgba(0, 0, 0, 0.87)'
-                                  })
-                                }}
+                                sx={getReconStatusChipSx(comparison.status)}
                               />
                             </Box>
                           ) : (

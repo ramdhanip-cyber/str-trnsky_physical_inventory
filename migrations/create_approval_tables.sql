@@ -1,6 +1,12 @@
--- Approval tables for adjustment workflow (matches SSS application)
+-- Approval tables for adjustment workflow (QTY / AMT / NEW)
+-- Run this on the same PostgreSQL database used by Star_Phy_Inv / str_devsky_phy_inv.
+--
+-- Most Trensky tables live in schema "star". Create there so they match
+-- star.st_locations, star.st_adj_items, etc.
 
-CREATE TABLE IF NOT EXISTS str_adj_aprvl (
+CREATE SCHEMA IF NOT EXISTS star;
+
+CREATE TABLE IF NOT EXISTS star.str_adj_aprvl (
     aprvl_id SERIAL PRIMARY KEY,
     location_id INTEGER NOT NULL,
     adj_name VARCHAR(255) NOT NULL,
@@ -12,9 +18,9 @@ CREATE TABLE IF NOT EXISTS str_adj_aprvl (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS str_adj_aprvl_dtl (
+CREATE TABLE IF NOT EXISTS star.str_adj_aprvl_dtl (
     dtl_id SERIAL PRIMARY KEY,
-    aprvl_id INTEGER NOT NULL REFERENCES str_adj_aprvl(aprvl_id) ON DELETE CASCADE,
+    aprvl_id INTEGER NOT NULL REFERENCES star.str_adj_aprvl(aprvl_id) ON DELETE CASCADE,
     item_control_no VARCHAR(255),
     system_tag_no VARCHAR(255),
     form VARCHAR(255) NOT NULL,
@@ -44,9 +50,13 @@ CREATE TABLE IF NOT EXISTS str_adj_aprvl_dtl (
     intchg_no INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE INDEX IF NOT EXISTS idx_str_adj_aprvl_location ON str_adj_aprvl(location_id);
-CREATE INDEX IF NOT EXISTS idx_str_adj_aprvl_request_type ON str_adj_aprvl(request_type);
-CREATE INDEX IF NOT EXISTS idx_str_adj_aprvl_status ON str_adj_aprvl(status);
-CREATE INDEX IF NOT EXISTS idx_str_adj_aprvl_approval_status ON str_adj_aprvl(approval_status);
-CREATE INDEX IF NOT EXISTS idx_str_adj_aprvl_dtl_aprvl_id ON str_adj_aprvl_dtl(aprvl_id);
-CREATE INDEX IF NOT EXISTS idx_str_adj_aprvl_dtl_item_control_no ON str_adj_aprvl_dtl(item_control_no);
+CREATE INDEX IF NOT EXISTS idx_str_adj_aprvl_location ON star.str_adj_aprvl(location_id);
+CREATE INDEX IF NOT EXISTS idx_str_adj_aprvl_request_type ON star.str_adj_aprvl(request_type);
+CREATE INDEX IF NOT EXISTS idx_str_adj_aprvl_status ON star.str_adj_aprvl(status);
+CREATE INDEX IF NOT EXISTS idx_str_adj_aprvl_approval_status ON star.str_adj_aprvl(approval_status);
+CREATE INDEX IF NOT EXISTS idx_str_adj_aprvl_dtl_aprvl_id ON star.str_adj_aprvl_dtl(aprvl_id);
+CREATE INDEX IF NOT EXISTS idx_str_adj_aprvl_dtl_item_control_no ON star.str_adj_aprvl_dtl(item_control_no);
+
+-- Optional synonyms in public (only needed if app search_path does not include star)
+-- CREATE TABLE IF NOT EXISTS public.str_adj_aprvl (LIKE star.str_adj_aprvl INCLUDING ALL);
+-- Prefer fixing search_path or using star.str_adj_aprvl in SQL instead.
