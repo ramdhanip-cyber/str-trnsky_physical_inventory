@@ -26,7 +26,7 @@ export interface ReconciliationItem {
   counted_qty: number;
   variance: number;
   difference?: number;
-  status: 'Match' | 'Matched' | 'Overcount' | 'Undercount' | 'Not Counted' | 'Counted Not In System' | 'Rechecking in Progress' | 'Rechecked';
+  status: 'Match' | 'Matched' | 'Overcount' | 'Undercount' | 'Not Counted' | 'Counted Not In System' | 'Rechecking in Progress' | 'Rechecked' | 'Orphaned';
   transaction_count?: number;
   teams?: string;
   counters?: string;
@@ -65,6 +65,9 @@ export interface ReconciliationItem {
   // Comparison data properties (when item has been compared with checker data)
   checker_qty?: number;
   has_comparison?: boolean;
+  // Count sheet tracking fields
+  page_number?: string | null;
+  serial_number?: string | null;
 }
 
 export interface RecheckItem {

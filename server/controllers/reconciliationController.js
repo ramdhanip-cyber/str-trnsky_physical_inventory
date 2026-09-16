@@ -301,7 +301,10 @@ exports.reconcileInventory = async (req, res) => {
       includeHeat ? 't.heat' : 'MIN(t.heat) as heat',
       includeLocation ? 't.location' : 'MIN(t.location) as location',
       includeType ? 't.type' : 'MIN(t.type) as type',
-      'SUM(t.qty) as counted_qty'
+      'SUM(t.qty) as counted_qty',
+      // Aggregate page_number and serial_number across all grouped transactions
+      `STRING_AGG(DISTINCT t.page_number, ', ') as page_number`,
+      `STRING_AGG(DISTINCT t.serial_number, ', ') as serial_number`
     ];
     const counterGroupByParts = [
       ...(includeTagNo ? ['t.sys_tag_no'] : []),
@@ -504,8 +507,8 @@ exports.reconcileInventory = async (req, res) => {
         matchedCounted.reduce((sum, t) => sum + (parseInt(t.counted_qty) || 0), 0) : 0;
       const checkerAddedQty = matchedCounted
         ? matchedCounted
-            .filter((t) => t.count_source === 'Checker Added')
-            .reduce((sum, t) => sum + (parseInt(t.counted_qty) || 0), 0)
+          .filter((t) => t.count_source === 'Checker Added')
+          .reduce((sum, t) => sum + (parseInt(t.counted_qty) || 0), 0)
         : 0;
       const includesCheckerAdded = checkerAddedQty > 0;
 
@@ -524,6 +527,14 @@ exports.reconcileInventory = async (req, res) => {
       } else {
         status = 'Undercount';
       }
+
+      // Collect page_number and serial_number from all matched counter transactions
+      const matchedPageNumbers = matchedCounted
+        ? [...new Set(matchedCounted.flatMap(t => (t.page_number || '').split(', ').filter(Boolean)))].join(', ')
+        : null;
+      const matchedSerialNumbers = matchedCounted
+        ? [...new Set(matchedCounted.flatMap(t => (t.serial_number || '').split(', ').filter(Boolean)))].join(', ')
+        : null;
 
       return {
         sys_tag_no: item.sys_tag_no,
@@ -556,7 +567,9 @@ exports.reconcileInventory = async (req, res) => {
         variance: difference,
         status: status,
         prd_ohd_mat_val: item.prd_ohd_mat_val,
-        prd_ohd_mat_cst: item.prd_ohd_mat_cst
+        prd_ohd_mat_cst: item.prd_ohd_mat_cst,
+        page_number: matchedPageNumbers || null,
+        serial_number: matchedSerialNumbers || null
       };
     });
 
@@ -570,6 +583,10 @@ exports.reconcileInventory = async (req, res) => {
         .filter((t) => t.count_source === 'Checker Added')
         .reduce((sum, t) => sum + (parseInt(t.counted_qty) || 0), 0);
       if (countedQty <= 0) return;
+
+      // Collect page_number and serial_number from all matched counter transactions
+      const orphanPageNumbers = [...new Set(matchedCounted.flatMap(t => (t.page_number || '').split(', ').filter(Boolean)))].join(', ');
+      const orphanSerialNumbers = [...new Set(matchedCounted.flatMap(t => (t.serial_number || '').split(', ').filter(Boolean)))].join(', ');
 
       transformedData.push({
         sys_tag_no: first.sys_tag_no || null,
@@ -603,7 +620,9 @@ exports.reconcileInventory = async (req, res) => {
         // Counted with no matching system inventory = Found (not Overcount)
         status: 'Orphaned',
         prd_ohd_mat_val: null,
-        prd_ohd_mat_cst: null
+        prd_ohd_mat_cst: null,
+        page_number: orphanPageNumbers || null,
+        serial_number: orphanSerialNumbers || null
       });
     });
 
@@ -2058,6 +2077,8 @@ exports.getReconciliationReportByAll = async (req, res) => {
           TRIM(item->>'tag_no')                             AS tag_no,
 
           -- Aggregations
+          STRING_AGG(DISTINCT NULLIF(TRIM(item->>'page_number'), ''), ', ')   AS page_number,
+          STRING_AGG(DISTINCT NULLIF(TRIM(item->>'serial_number'), ''), ', ') AS serial_number,
           ROUND(SUM((item->>'system_qty')::numeric), 3)     AS total_system_qty,
           ROUND(SUM((item->>'counted_qty')::numeric), 3)    AS total_counted_qty,
           ROUND(SUM((item->>'system_qty')::numeric) - SUM((item->>'counted_qty')::numeric), 3) AS variance_qty,
@@ -2133,6 +2154,7 @@ exports.getReconciliationReportByAll = async (req, res) => {
           TRIM(item->>'status'),
           TRIM(item->>'sys_tag_no'),
           TRIM(item->>'tag_no')
+          -- Note: page_number and serial_number are NOT in GROUP BY because they are aggregated via STRING_AGG
 
       ORDER BY 
           form, grade, size, finish, ext_finish, width, length, location, 
@@ -2172,7 +2194,7 @@ exports.getReconciliationReport = async (req, res) => {
       });
     }
 
-    
+
 
     const checklocqry = `Select location_id from st_locations where location_desc = $1`
     const checklocqryres = await pool.query(checklocqry, [location_desc]);
@@ -2217,7 +2239,9 @@ exports.getReconciliationReport = async (req, res) => {
               3
           ) AS VarTons,
           ROUND(SUM(COALESCE((item->>'prd_ohd_mat_cst')::numeric, 0)), 3) AS prd_ohd_mat_cst,
-          ROUND(SUM(COALESCE((item->>'prd_ohd_mat_val')::numeric, 0)), 3) AS prd_ohd_mat_val
+          ROUND(SUM(COALESCE((item->>'prd_ohd_mat_val')::numeric, 0)), 3) AS prd_ohd_mat_val,
+          STRING_AGG(DISTINCT NULLIF(TRIM(item->>'page_number'), ''), ', ')   AS page_number,
+          STRING_AGG(DISTINCT NULLIF(TRIM(item->>'serial_number'), ''), ', ') AS serial_number
       
       FROM reconciliation_records,
       jsonb_array_elements(items_data) AS item
@@ -2282,10 +2306,10 @@ exports.saveReservationReport = async (req, res) => {
             tag_no,
             prd_itm_ctl_no ?? null,
             res.res_ref_pfx ?? null,
-            res.res_ref_no  ?? null,
+            res.res_ref_no ?? null,
             res.res_ref_itm ?? null,
-            res.res_brh     ?? null,
-            res.res_whs     ?? null,
+            res.res_brh ?? null,
+            res.res_whs ?? null,
             res.res_res_pcs ?? null,
             res.res_res_wgt ?? null
           ]

@@ -350,6 +350,28 @@ const REPORT_COLUMNS: ColumnDef[] = [
       </Typography>
     ),
     getExcelValue: (row) => Number(row.prd_ohd_mat_val || 0)
+  },
+  {
+    id: 'page_number',
+    label: 'Page No.',
+    align: 'left',
+    getDisplayValue: (row) => (
+      <Typography variant="body2" color="#334155" sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+        {row.page_number || '—'}
+      </Typography>
+    ),
+    getExcelValue: (row) => row.page_number ?? ''
+  },
+  {
+    id: 'serial_number',
+    label: 'Count Line No.',
+    align: 'left',
+    getDisplayValue: (row) => (
+      <Typography variant="body2" color="#334155" sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+        {row.serial_number || '—'}
+      </Typography>
+    ),
+    getExcelValue: (row) => row.serial_number ?? ''
   }
 ];
 
@@ -390,20 +412,20 @@ const ReconciliationReportByAllView: React.FC = () => {
     if (!searchTerm.trim()) return reportData;
     const term = searchTerm.toLowerCase();
     return reportData.filter((row: any) =>
-      (row.form        && String(row.form).toLowerCase().includes(term)) ||
-      (row.grade       && String(row.grade).toLowerCase().includes(term)) ||
-      (row.size        && String(row.size).toLowerCase().includes(term)) ||
-      (row.finish      && String(row.finish).toLowerCase().includes(term)) ||
-      (row.ext_finish  && String(row.ext_finish).toLowerCase().includes(term)) ||
-      (row.location    && String(row.location).toLowerCase().includes(term)) ||
-      (row.mill        && String(row.mill).toLowerCase().includes(term)) ||
-      (row.heat        && String(row.heat).toLowerCase().includes(term)) ||
-      (row.branch      && String(row.branch).toLowerCase().includes(term)) ||
-      (row.warehouse   && String(row.warehouse).toLowerCase().includes(term)) ||
-      (row.inv_type    && String(row.inv_type).toLowerCase().includes(term)) ||
+      (row.form && String(row.form).toLowerCase().includes(term)) ||
+      (row.grade && String(row.grade).toLowerCase().includes(term)) ||
+      (row.size && String(row.size).toLowerCase().includes(term)) ||
+      (row.finish && String(row.finish).toLowerCase().includes(term)) ||
+      (row.ext_finish && String(row.ext_finish).toLowerCase().includes(term)) ||
+      (row.location && String(row.location).toLowerCase().includes(term)) ||
+      (row.mill && String(row.mill).toLowerCase().includes(term)) ||
+      (row.heat && String(row.heat).toLowerCase().includes(term)) ||
+      (row.branch && String(row.branch).toLowerCase().includes(term)) ||
+      (row.warehouse && String(row.warehouse).toLowerCase().includes(term)) ||
+      (row.inv_type && String(row.inv_type).toLowerCase().includes(term)) ||
       (row.inv_quality && String(row.inv_quality).toLowerCase().includes(term)) ||
-      (row.status      && String(row.status).toLowerCase().includes(term)) ||
-      (row.sys_tag_no  && String(row.sys_tag_no).toLowerCase().includes(term))
+      (row.status && String(row.status).toLowerCase().includes(term)) ||
+      (row.sys_tag_no && String(row.sys_tag_no).toLowerCase().includes(term))
     );
   }, [reportData, searchTerm]);
 
@@ -416,12 +438,12 @@ const ReconciliationReportByAllView: React.FC = () => {
     let totalMatVal = 0;
 
     reportData.forEach((row: any) => {
-      totalSystemQty  += Number(row.total_system_qty  || 0);
+      totalSystemQty += Number(row.total_system_qty || 0);
       totalCountedQty += Number(row.total_counted_qty || 0);
-      totalOhdTons    += Number(row.ohdtons           || 0);
-      totalCountTons  += Number(row.counttons         || 0);
-      totalVarTons    += Number(row.vartons           || 0);
-      totalMatVal     += Number(row.prd_ohd_mat_val   || 0);
+      totalOhdTons += Number(row.ohdtons || 0);
+      totalCountTons += Number(row.counttons || 0);
+      totalVarTons += Number(row.vartons || 0);
+      totalMatVal += Number(row.prd_ohd_mat_val || 0);
     });
 
     return { totalRecords: reportData.length, totalSystemQty, totalCountedQty, totalOhdTons, totalCountTons, totalVarTons, totalMatVal };
@@ -438,14 +460,14 @@ const ReconciliationReportByAllView: React.FC = () => {
     let matVal = 0;
 
     filteredReportData.forEach((row: any) => {
-      systemQty   += Number(row.total_system_qty  || 0);
-      countedQty  += Number(row.total_counted_qty || 0);
-      varianceQty += Number(row.variance_qty      || 0);
-      ohdTons     += Number(row.ohdtons           || 0);
-      countTons   += Number(row.counttons         || 0);
-      varTons     += Number(row.vartons           || 0);
-      matCost     += Number(row.prd_ohd_mat_cst   || 0);
-      matVal      += Number(row.prd_ohd_mat_val   || 0);
+      systemQty += Number(row.total_system_qty || 0);
+      countedQty += Number(row.total_counted_qty || 0);
+      varianceQty += Number(row.variance_qty || 0);
+      ohdTons += Number(row.ohdtons || 0);
+      countTons += Number(row.counttons || 0);
+      varTons += Number(row.vartons || 0);
+      matCost += Number(row.prd_ohd_mat_cst || 0);
+      matVal += Number(row.prd_ohd_mat_val || 0);
     });
 
     return { systemQty, countedQty, varianceQty, ohdTons, countTons, varTons, matCost, matVal };

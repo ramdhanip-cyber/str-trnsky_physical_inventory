@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { 
+import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TableFooter,
   Typography, Card, CardContent, IconButton, Box, Button, TextField, InputAdornment,
   Checkbox, ListItemText, Menu, MenuItem, Divider, Chip, Grid, alpha, Tooltip
@@ -150,13 +150,35 @@ const REPORT_COLUMNS: ColumnDef[] = [
       </Typography>
     ),
     getExcelValue: (row) => Number(row.prd_ohd_mat_val || 0)
+  },
+  {
+    id: 'page_number',
+    label: 'Page No.',
+    align: 'left',
+    getDisplayValue: (row) => (
+      <Typography variant="body2" color="#334155" sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+        {row.page_number || '—'}
+      </Typography>
+    ),
+    getExcelValue: (row) => row.page_number ?? ''
+  },
+  {
+    id: 'serial_number',
+    label: 'Count Line No.',
+    align: 'left',
+    getDisplayValue: (row) => (
+      <Typography variant="body2" color="#334155" sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+        {row.serial_number || '—'}
+      </Typography>
+    ),
+    getExcelValue: (row) => row.serial_number ?? ''
   }
 ];
 
 const ReconciliationReportView: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  
+
   const reportData = location.state?.reportData || [];
   const locationName = location.state?.locationName || 'Unknown Location';
 
@@ -272,16 +294,16 @@ const ReconciliationReportView: React.FC = () => {
     const totalsRow: Record<string, any> = {};
     activeColumns.forEach((col) => {
       switch (col.id) {
-        case 'form':           totalsRow[col.label] = `TOTALS (${filteredReportData.length} items)`; break;
-        case 'size':           totalsRow[col.label] = ''; break;
-        case 'total_system_qty':  totalsRow[col.label] = filteredTotals.systemQty; break;
+        case 'form': totalsRow[col.label] = `TOTALS (${filteredReportData.length} items)`; break;
+        case 'size': totalsRow[col.label] = ''; break;
+        case 'total_system_qty': totalsRow[col.label] = filteredTotals.systemQty; break;
         case 'total_counted_qty': totalsRow[col.label] = filteredTotals.countedQty; break;
-        case 'ohdtons':        totalsRow[col.label] = Number(filteredTotals.ohdTons.toFixed(2)); break;
-        case 'counttons':      totalsRow[col.label] = Number(filteredTotals.countTons.toFixed(2)); break;
-        case 'vartons':        totalsRow[col.label] = Number(filteredTotals.varTons.toFixed(2)); break;
+        case 'ohdtons': totalsRow[col.label] = Number(filteredTotals.ohdTons.toFixed(2)); break;
+        case 'counttons': totalsRow[col.label] = Number(filteredTotals.countTons.toFixed(2)); break;
+        case 'vartons': totalsRow[col.label] = Number(filteredTotals.varTons.toFixed(2)); break;
         case 'prd_ohd_mat_cst': totalsRow[col.label] = Number(filteredTotals.matCost.toFixed(2)); break;
         case 'prd_ohd_mat_val': totalsRow[col.label] = Number(filteredTotals.matVal.toFixed(2)); break;
-        default:               totalsRow[col.label] = '';
+        default: totalsRow[col.label] = '';
       }
     });
     formattedData.push(totalsRow);
@@ -323,13 +345,13 @@ const ReconciliationReportView: React.FC = () => {
       <Box sx={{ flexShrink: 0, mb: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <IconButton 
-              onClick={() => navigate(-1)} 
-              sx={{ 
-                bgcolor: '#ffffff', 
+            <IconButton
+              onClick={() => navigate(-1)}
+              sx={{
+                bgcolor: '#ffffff',
                 boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
                 border: '1px solid #e2e8f0',
-                '&:hover': { bgcolor: '#f8fafc' } 
+                '&:hover': { bgcolor: '#f8fafc' }
               }}
             >
               <ArrowBackIcon sx={{ color: '#0C2C48' }} />
@@ -366,9 +388,9 @@ const ReconciliationReportView: React.FC = () => {
         <Grid container spacing={2}>
           {/* Card 1: Total Items */}
           <Grid item xs={12} sm={6} md={3}>
-            <Card sx={{ 
-              borderRadius: 3, 
-              boxShadow: '0 2px 10px rgba(0,0,0,0.04)', 
+            <Card sx={{
+              borderRadius: 3,
+              boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
               border: '1px solid #e2e8f0',
               background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)'
             }}>
@@ -393,9 +415,9 @@ const ReconciliationReportView: React.FC = () => {
 
           {/* Card 2: Counted Qty */}
           <Grid item xs={12} sm={6} md={3}>
-            <Card sx={{ 
-              borderRadius: 3, 
-              boxShadow: '0 2px 10px rgba(0,0,0,0.04)', 
+            <Card sx={{
+              borderRadius: 3,
+              boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
               border: '1px solid #e2e8f0',
               background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)'
             }}>
@@ -420,9 +442,9 @@ const ReconciliationReportView: React.FC = () => {
 
           {/* Card 3: Net Variance Tons */}
           <Grid item xs={12} sm={6} md={3}>
-            <Card sx={{ 
-              borderRadius: 3, 
-              boxShadow: '0 2px 10px rgba(0,0,0,0.04)', 
+            <Card sx={{
+              borderRadius: 3,
+              boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
               border: '1px solid #e2e8f0',
               background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)'
             }}>
@@ -431,19 +453,19 @@ const ReconciliationReportView: React.FC = () => {
                   <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 0.8 }}>
                     Net Variance Tons
                   </Typography>
-                  <Box sx={{ 
-                    p: 0.75, 
-                    borderRadius: 2, 
-                    bgcolor: stats.totalVarTons < 0 ? alpha('#dc2626', 0.1) : stats.totalVarTons > 0 ? alpha('#059669', 0.1) : alpha('#64748b', 0.1), 
-                    color: stats.totalVarTons < 0 ? '#dc2626' : stats.totalVarTons > 0 ? '#059669' : '#475569', 
-                    display: 'flex' 
+                  <Box sx={{
+                    p: 0.75,
+                    borderRadius: 2,
+                    bgcolor: stats.totalVarTons < 0 ? alpha('#dc2626', 0.1) : stats.totalVarTons > 0 ? alpha('#059669', 0.1) : alpha('#64748b', 0.1),
+                    color: stats.totalVarTons < 0 ? '#dc2626' : stats.totalVarTons > 0 ? '#059669' : '#475569',
+                    display: 'flex'
                   }}>
                     {stats.totalVarTons < 0 ? <TrendingDownIcon fontSize="small" /> : <TrendingUpIcon fontSize="small" />}
                   </Box>
                 </Box>
-                <Typography 
-                  variant="h5" 
-                  fontWeight={800} 
+                <Typography
+                  variant="h5"
+                  fontWeight={800}
                   sx={{ color: stats.totalVarTons < 0 ? '#dc2626' : stats.totalVarTons > 0 ? '#059669' : '#0f172a' }}
                 >
                   {stats.totalVarTons > 0 ? `+${stats.totalVarTons.toFixed(2)}` : stats.totalVarTons.toFixed(2)}
@@ -457,9 +479,9 @@ const ReconciliationReportView: React.FC = () => {
 
           {/* Card 4: Total Material Value */}
           <Grid item xs={12} sm={6} md={3}>
-            <Card sx={{ 
-              borderRadius: 3, 
-              boxShadow: '0 2px 10px rgba(0,0,0,0.04)', 
+            <Card sx={{
+              borderRadius: 3,
+              boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
               border: '1px solid #e2e8f0',
               background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)'
             }}>
@@ -582,26 +604,26 @@ const ReconciliationReportView: React.FC = () => {
       </Box>
 
       {/* Main Report Table Flex Container */}
-      <Card sx={{ 
-        flex: 1, 
-        minHeight: 0, 
-        display: 'flex', 
-        flexDirection: 'column', 
-        borderRadius: 3, 
-        boxShadow: '0 8px 24px rgba(0,0,0,0.06)', 
-        border: '1px solid #e2e8f0', 
-        overflow: 'hidden' 
+      <Card sx={{
+        flex: 1,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        borderRadius: 3,
+        boxShadow: '0 8px 24px rgba(0,0,0,0.06)',
+        border: '1px solid #e2e8f0',
+        overflow: 'hidden'
       }}>
-        
+
         {/* Search & Actions Toolbar */}
-        <Box sx={{ 
+        <Box sx={{
           flexShrink: 0,
-          p: 1.5, 
+          p: 1.5,
           px: 2.5,
-          display: 'flex', 
-          flexWrap: 'wrap', 
-          gap: 2, 
-          alignItems: 'center', 
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 2,
+          alignItems: 'center',
           justifyContent: 'space-between',
           bgcolor: '#ffffff',
           borderBottom: '1px solid #e2e8f0'
@@ -611,7 +633,7 @@ const ReconciliationReportView: React.FC = () => {
             size="small"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            sx={{ 
+            sx={{
               minWidth: 280,
               '& .MuiOutlinedInput-root': {
                 borderRadius: 2,
@@ -671,12 +693,12 @@ const ReconciliationReportView: React.FC = () => {
               Columns ({visibleCount}/{REPORT_COLUMNS.length})
             </Button>
 
-            <Button 
-              variant="contained" 
+            <Button
+              variant="contained"
               startIcon={<FileDownloadIcon />}
               onClick={handleExportExcel}
               disabled={filteredReportData.length === 0 || activeColumns.length === 0}
-              sx={{ 
+              sx={{
                 borderRadius: 2,
                 background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                 boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
@@ -684,7 +706,7 @@ const ReconciliationReportView: React.FC = () => {
                   background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
                   boxShadow: '0 6px 16px rgba(16, 185, 129, 0.35)'
                 },
-                textTransform: 'none', 
+                textTransform: 'none',
                 fontWeight: 700,
                 px: 2.5
               }}
@@ -713,24 +735,24 @@ const ReconciliationReportView: React.FC = () => {
             <Typography variant="subtitle2" fontWeight={700} color="#0f172a">
               Show / Hide Columns
             </Typography>
-            <Chip 
-              label={`${visibleCount}/${REPORT_COLUMNS.length}`} 
-              size="small" 
+            <Chip
+              label={`${visibleCount}/${REPORT_COLUMNS.length}`}
+              size="small"
               sx={{ height: 20, fontSize: '0.7rem', fontWeight: 700 }}
             />
           </Box>
           <Divider sx={{ my: 1 }} />
           <Box sx={{ px: 1, pb: 1, display: 'flex', gap: 1, justifyContent: 'space-between' }}>
-            <Button 
-              size="small" 
-              onClick={handleSelectAllColumns} 
+            <Button
+              size="small"
+              onClick={handleSelectAllColumns}
               disabled={visibleCount === REPORT_COLUMNS.length}
               sx={{ textTransform: 'none', fontSize: '0.75rem', fontWeight: 600 }}
             >
               Select All
             </Button>
-            <Button 
-              size="small" 
+            <Button
+              size="small"
               color="secondary"
               onClick={handleHideAllColumns}
               disabled={visibleCount === 0}
@@ -742,19 +764,19 @@ const ReconciliationReportView: React.FC = () => {
           <Divider sx={{ mb: 1 }} />
           <Box sx={{ maxHeight: 280, overflowY: 'auto' }}>
             {REPORT_COLUMNS.map((col) => (
-              <MenuItem 
+              <MenuItem
                 key={col.id}
                 dense
                 onClick={() => toggleColumn(col.id)}
                 sx={{ borderRadius: 1.5, my: 0.25, px: 1 }}
               >
-                <Checkbox 
-                  checked={!!visibleColumns[col.id]} 
+                <Checkbox
+                  checked={!!visibleColumns[col.id]}
                   size="small"
                   sx={{ p: 0.5, mr: 1, color: '#94a3b8', '&.Mui-checked': { color: '#0C2C48' } }}
                 />
-                <ListItemText 
-                  primary={col.label} 
+                <ListItemText
+                  primary={col.label}
                   primaryTypographyProps={{ variant: 'body2', fontWeight: visibleColumns[col.id] ? 600 : 400, color: '#1e293b' }}
                 />
               </MenuItem>
@@ -768,11 +790,11 @@ const ReconciliationReportView: React.FC = () => {
             <TableHead>
               <TableRow>
                 {activeColumns.map((col) => (
-                  <TableCell 
-                    key={col.id} 
-                    align={col.align} 
-                    sx={{ 
-                      fontWeight: 700, 
+                  <TableCell
+                    key={col.id}
+                    align={col.align}
+                    sx={{
+                      fontWeight: 700,
                       bgcolor: '#0C2C48',
                       color: '#ffffff',
                       py: 1.75,
@@ -801,9 +823,9 @@ const ReconciliationReportView: React.FC = () => {
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                       Select columns from the "Columns" menu above to view report details.
                     </Typography>
-                    <Button 
-                      variant="outlined" 
-                      size="small" 
+                    <Button
+                      variant="outlined"
+                      size="small"
                       startIcon={<RestartAltIcon />}
                       onClick={handleSelectAllColumns}
                       sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 600 }}
@@ -814,9 +836,9 @@ const ReconciliationReportView: React.FC = () => {
                 </TableRow>
               ) : filteredReportData.length > 0 ? (
                 filteredReportData.map((row: any, index: number) => (
-                  <TableRow 
-                    key={index} 
-                    sx={{ 
+                  <TableRow
+                    key={index}
+                    sx={{
                       bgcolor: index % 2 === 0 ? '#ffffff' : '#f8fafc',
                       '&:hover': { bgcolor: '#f1f5f9' },
                       transition: 'background-color 0.15s ease'
@@ -835,8 +857,8 @@ const ReconciliationReportView: React.FC = () => {
                     <Typography variant="body1" fontWeight={600} color="text.secondary">
                       No matching record found for "{searchTerm}".
                     </Typography>
-                    <Button 
-                      variant="text" 
+                    <Button
+                      variant="text"
                       size="small"
                       onClick={() => setSearchTerm('')}
                       sx={{ textTransform: 'none', mt: 1 }}

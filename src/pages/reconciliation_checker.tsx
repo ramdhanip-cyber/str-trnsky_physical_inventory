@@ -281,7 +281,7 @@ const ReconciliationCheckerPage: React.FC = () => {
           system_qty: 0,
           system_combined_items: [],
           system_combined_count: 0,
-          status: 'Orphaned',
+          status: 'Orphaned' as const,
           _isOrphaned: true,
         };
       }
