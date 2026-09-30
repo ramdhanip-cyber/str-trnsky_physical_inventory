@@ -33,6 +33,7 @@ import {
   alpha,
 } from "@mui/material";
 import { servicesAPI } from "../config/api";
+import { isRoleHidden } from "../config/roleVisibility";
 import {
   PersonAdd as PersonAddIcon,
   PersonRemove as PersonRemoveIcon,
@@ -519,6 +520,7 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
     if (!sourceMembers || sourceMembers.length === 0) return "-";
 
     const groupedMembers = sourceMembers.reduce<Record<string, Set<string>>>((acc, member) => {
+      if (isRoleHidden(member.role_desc)) return acc;
       const name = member.full_name?.trim();
       if (!name) return acc;
       if (!acc[name]) acc[name] = new Set<string>();
@@ -1278,6 +1280,7 @@ const ViewSectionsDialog: React.FC<ViewSectionsDialogProps> = ({
                     // Group members by user_id to combine roles
                     console.log('Team members before grouping:', team.members);
                     const groupedMembers = team.members.reduce((acc, member) => {
+                      if (isRoleHidden(member.role_desc)) return acc;
                       if (!acc[member.user_id]) {
                         acc[member.user_id] = {
                           user_id: member.user_id,

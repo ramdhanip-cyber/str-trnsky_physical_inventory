@@ -70,7 +70,6 @@ const isFoundItem = (item: AdjustmentMarkedItem): boolean => {
 };
 
 
-
 const ADJ_TYP_OPTIONS: Array<{
   value: AdjTyp;
   label: string;

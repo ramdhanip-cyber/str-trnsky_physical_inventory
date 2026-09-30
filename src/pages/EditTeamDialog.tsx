@@ -76,20 +76,24 @@ const EditTeamDialog: React.FC<EditTeamDialogProps> = ({
 }) => {
   const [teamName, setTeamName] = useState('');
   const [userRoles, setUserRoles] = useState<{ userId: string; roleId: string }[]>([]);
+  const [hiddenMembers, setHiddenMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (team) {
       setTeamName(team.team_name);
-      const initialUserRoles = team.members.map((member) => ({
+      const visibleRoleIds = new Set(roles.map((role) => role.role_id));
+      const isVisible = (member: TeamMember) => roles.length === 0 || visibleRoleIds.has(member.role_id);
+      const initialUserRoles = team.members.filter(isVisible).map((member) => ({
         userId: member.user_id.toString(),
         roleId: member.role_id.toString(),
       }));
+      setHiddenMembers(team.members.filter((member) => !isVisible(member)));
       setUserRoles(initialUserRoles.length > 0 ? initialUserRoles : [{ userId: '', roleId: '' }]);
       setError('');
     }
-  }, [team]);
+  }, [team, roles]);
 
   const handleAddUserRole = () => {
     setUserRoles([...userRoles, { userId: '', roleId: '' }]);
@@ -131,10 +135,16 @@ const EditTeamDialog: React.FC<EditTeamDialogProps> = ({
         team_name: teamName,
         tag_from: team?.tag_from || '0',
         tag_to: team?.tag_to || '0',
-        members: validUserRoles.map((ur) => ({
-          user_id: parseInt(ur.userId),
-          role_id: parseInt(ur.roleId),
-        })),
+        members: [
+          ...validUserRoles.map((ur) => ({
+            user_id: parseInt(ur.userId),
+            role_id: parseInt(ur.roleId),
+          })),
+          ...hiddenMembers.map((member) => ({
+            user_id: member.user_id,
+            role_id: member.role_id,
+          })),
+        ],
       };
 
       const response = await servicesAPI.updateTeam(team?.team_id.toString() || '', teamData);

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { filterVisibleRoleRecords } from "../config/roleVisibility";
 import {
   Button,
   Box,
@@ -259,7 +260,7 @@ const TeamManagement = () => {
       })));
       
       // Assign colors to roles
-      const coloredRoles = rolesData.map((role: Role, index: number) => ({
+      const coloredRoles = filterVisibleRoleRecords<Role>(rolesData).map((role: Role, index: number) => ({
         ...role,
         color: avatarColors[index % avatarColors.length]
       }));
@@ -287,7 +288,7 @@ const TeamManagement = () => {
       const term = searchTerm.toLowerCase();
       result = result.filter(team =>
         (team.team_name || '').toLowerCase().includes(term) ||
-        (team.members || []).some(member =>
+        filterVisibleRoleRecords(team.members || []).some(member =>
           (member.full_name || '').toLowerCase().includes(term)
         )
       );
@@ -397,7 +398,7 @@ const TeamManagement = () => {
   };
 
   // Calculate statistics
-  const totalMembers = teams.reduce((sum, team) => sum + (team.members?.length || 0), 0);
+  const totalMembers = teams.reduce((sum, team) => sum + filterVisibleRoleRecords(team.members || []).length, 0);
   const averageMembersPerTeam = teams.length > 0 ? (totalMembers / teams.length).toFixed(1) : 0;
 
   if (loading && !refreshing) {
@@ -730,7 +731,7 @@ const TeamManagement = () => {
           }}
         >
           {filteredTeams.map((team) => {
-            const members = (team.members || []).filter((m) => m?.full_name);
+            const members = filterVisibleRoleRecords(team.members || []).filter((m) => m?.full_name);
             const tagLabel =
               team.tag_from || team.tag_to
                 ? `${team.tag_from || '—'} → ${team.tag_to || '—'}`
@@ -1069,7 +1070,7 @@ const TeamManagement = () => {
                     
                     <TableCell sx={{ py: 3 }}>
                       <Stack direction="column" spacing={1.5}>
-                        {(team.members || []).filter((m) => m?.full_name).map((member) => (
+                        {filterVisibleRoleRecords(team.members || []).filter((m) => m?.full_name).map((member) => (
                           <Box key={member.id || `${member.user_id}-${member.role_id}`} display="flex" alignItems="center" gap={1.5}>
                             <Tooltip title={member.full_name}>
                               <Avatar 
@@ -1241,7 +1242,7 @@ const TeamManagement = () => {
               <Grid container spacing={1}>
                 <Grid item xs={6}>
                   <Typography variant="body2" color="text.secondary">
-                    <strong>Members:</strong> {teams.find(t => t.team_id === teamToDelete)?.members?.length || 0}
+                    <strong>Members:</strong> {filterVisibleRoleRecords(teams.find(t => t.team_id === teamToDelete)?.members || []).length}
                   </Typography>
                 </Grid>
                 <Grid item xs={6}>

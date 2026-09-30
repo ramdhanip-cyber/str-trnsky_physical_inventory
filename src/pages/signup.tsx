@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { authAPI } from "../config/api";
+import { filterVisibleRoleRecords } from "../config/roleVisibility";
 import { 
   Button, 
   Container, 
@@ -29,7 +30,7 @@ const Signup: React.FC = () => {
   useEffect(() => {
     // Fetch roles from the API
     authAPI.getRoles()
-      .then((res) => setRoles(res.data))
+      .then((res) => setRoles(filterVisibleRoleRecords(res.data)))
       .catch(() => setError("Failed to load roles"));
   }, []);
 
