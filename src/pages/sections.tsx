@@ -26,6 +26,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import LayersIcon from '@mui/icons-material/Layers';
 import * as XLSX from 'xlsx';
 import { servicesAPI } from '../config/api';
+import { isRoleHidden } from '../config/roleVisibility';
 
 const BRAND = '#0C2C48';
 const BRAND_GRADIENT = 'linear-gradient(135deg, #0C2C48 0%, #1E5A8A 100%)';
@@ -318,7 +319,7 @@ const Sections: React.FC<SectionsProps> = ({
           team.members.forEach((member: any) => {
             const name = typeof member.full_name === 'string' ? member.full_name.trim() : '';
             const role = typeof member.role_desc === 'string' ? member.role_desc.trim() : '';
-            if (!name) return;
+            if (!name || isRoleHidden(role)) return;
             if (!groupedMembers[name]) groupedMembers[name] = new Set<string>();
             if (role) groupedMembers[name].add(role);
           });

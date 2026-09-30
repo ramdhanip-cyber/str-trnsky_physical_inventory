@@ -39,6 +39,7 @@ import {
 import { styled, keyframes } from '@mui/material/styles';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getRuntimeEnvironment } from '../config/runtime';
+import { filterVisibleRoles } from '../config/roleVisibility';
 
 const BRAND_GRADIENT = 'linear-gradient(135deg, #0C2C48 0%, #1E5A8A 100%)';
 const NAVY = '#0C2C48';
@@ -262,7 +263,13 @@ const Login: React.FC<LoginPageProps> = ({ onLogin }) => {
       localStorage.setItem('User ID', res.data.user_id);
       localStorage.setItem('User Roles', res.data.roleDesc.join(', '));
 
-      setRoleDesc(res.data.roleDesc);
+      const visibleRoles = filterVisibleRoles(res.data.roleDesc);
+      if (visibleRoles.length === 0) {
+        ['token', 'full_name', 'User ID', 'User Roles'].forEach((key) => localStorage.removeItem(key));
+        setError('No active role is assigned to this user');
+        return;
+      }
+      setRoleDesc(visibleRoles);
       setOpenRoleDialog(true);
     } catch (error: unknown) {
       if (error && typeof error === 'object' && 'response' in error) {

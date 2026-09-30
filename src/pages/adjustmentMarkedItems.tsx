@@ -69,13 +69,6 @@ const isFoundItem = (item: AdjustmentMarkedItem): boolean => {
   return status === 'orphaned' || status === 'found' || status === 'counted not in system';
 };
 
-const isOverUnderItem = (item: AdjustmentMarkedItem): boolean => {
-  if (isFoundItem(item)) return false;
-  const status = String(item.recon_status || '').toLowerCase();
-  if (status === 'overcount' || status === 'undercount') return true;
-  return Number(item.variance) !== 0;
-};
-
 const ADJ_TYP_OPTIONS: Array<{
   value: AdjTyp;
   label: string;

@@ -1,3 +1,5 @@
+import { filterVisibleRoles } from './roleVisibility';
+
 const ROLE_PRIORITY: Record<string, number> = {
   Reconciler: 1,
   Gatekeeper: 2,
@@ -7,7 +9,7 @@ const ROLE_PRIORITY: Record<string, number> = {
 
 export const parseUserRoles = (): string[] => {
   const raw = localStorage.getItem('User Roles') || '';
-  return raw.split(',').map((role) => role.trim()).filter(Boolean);
+  return filterVisibleRoles(raw.split(',').map((role) => role.trim()).filter(Boolean));
 };
 
 export const orderRoles = (roles: string[]): string[] =>

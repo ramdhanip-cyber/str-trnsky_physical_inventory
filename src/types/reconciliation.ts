@@ -26,7 +26,7 @@ export interface ReconciliationItem {
   counted_qty: number;
   variance: number;
   difference?: number;
-  status: 'Match' | 'Matched' | 'Overcount' | 'Undercount' | 'Not Counted' | 'Counted Not In System' | 'Rechecking in Progress' | 'Rechecked';
+  status: 'Match' | 'Matched' | 'Overcount' | 'Undercount' | 'Not Counted' | 'Counted Not In System' | 'Orphaned' | 'Rechecking in Progress' | 'Rechecked';
   transaction_count?: number;
   teams?: string;
   counters?: string;

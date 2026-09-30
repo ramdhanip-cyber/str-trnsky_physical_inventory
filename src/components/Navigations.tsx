@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { getLoginPath } from "../config/appPath";
 import { getDefaultRouteForRole, orderRoles, parseUserRoles } from "../config/roleUtils";
+import { isRoleHidden } from "../config/roleVisibility";
 import { getRuntimeEnvironment } from "../config/runtime";
 import {
   Box,
@@ -75,6 +76,13 @@ const fadeSlideIn = keyframes`
   from { opacity: 0; transform: translateX(-10px); }
   to   { opacity: 1; transform: translateX(0); }
 `;
+
+/** Sidebar visibility toggles — set true to show again (do not delete menu/role definitions). */
+const SIDEBAR_VISIBILITY = {
+  showCheckerVsCounter: false,
+  showGatekeeperRole: !isRoleHidden('Gatekeeper'),
+  showCustomReport: false,
+};
 
 const ModernAvatar = styled(Avatar)(({ theme }) => ({
   width: 40,
@@ -222,7 +230,10 @@ const menuItems = {
       path: null,
       subItems: [
         { text: "Reconciliations", icon: <Engineering />, path: "/assigned-counters" },
-        { text: "Checker vs Counter", icon: <Inventory />, path: "/assigned-checkers" }
+        // Hidden via SIDEBAR_VISIBILITY.showCheckerVsCounter — keep entry for easy restore
+        ...(SIDEBAR_VISIBILITY.showCheckerVsCounter
+          ? [{ text: "Checker vs Counter", icon: <Inventory />, path: "/assigned-checkers" }]
+          : []),
       ]
     },
     {
@@ -234,11 +245,14 @@ const menuItems = {
         { text: "Reservation", icon: <BookmarkBorder />, path: "/reports/reservation" },
         { text: "Adjustment", icon: <Tune />, path: "/reports/adjustment" },
         { text: "Count", icon: <ListAlt />, path: "/reports/count" },
-        { text: "Custom", icon: <Assessment />, path: "/reports/custom" }
+        ...(SIDEBAR_VISIBILITY.showCustomReport
+          ? [{ text: "Custom", icon: <Assessment />, path: "/reports/custom" }]
+          : []),
       ]
     }
   ],
   Gatekeeper: [
+    // Entire Gatekeeper role menu — hidden via SIDEBAR_VISIBILITY.showGatekeeperRole
     {
       text: "Approvals",
       icon: <FactCheck />,
@@ -584,7 +598,7 @@ export default function ModernNavigation({ children }: NavigationProps) {
             </List>
           </Box>
         )}
-        {role === 'Gatekeeper' && (
+        {role === 'Gatekeeper' && SIDEBAR_VISIBILITY.showGatekeeperRole && (
           <Box key="Gatekeeper">
             {!collapsed && <CategoryLabel>Gatekeeper</CategoryLabel>}
             <List disablePadding>
@@ -805,7 +819,12 @@ export default function ModernNavigation({ children }: NavigationProps) {
           <AccountCircle />
           Profile
         </MenuItem>
-        {userRoles.length > 1 && (
+        {(() => {
+          const visibleSwitchRoles = userRoles.filter(
+            (roleOption) => SIDEBAR_VISIBILITY.showGatekeeperRole || roleOption !== 'Gatekeeper'
+          );
+          if (visibleSwitchRoles.length <= 1) return null;
+          return (
           <>
             <Divider sx={{ my: 1 }} />
             <Box sx={{ px: 2, py: 0.5, display: 'flex', alignItems: 'center', gap: 0.75 }}>
@@ -814,7 +833,7 @@ export default function ModernNavigation({ children }: NavigationProps) {
                 SWITCH ROLE
               </Typography>
             </Box>
-            {userRoles.map((roleOption) => (
+            {visibleSwitchRoles.map((roleOption) => (
               <MenuItem
                 key={roleOption}
                 onClick={() => handleRoleSwitch(roleOption)}
@@ -837,7 +856,8 @@ export default function ModernNavigation({ children }: NavigationProps) {
               </MenuItem>
             ))}
           </>
-        )}
+          );
+        })()}
         <Divider sx={{ my: 1 }} />
         <MenuItem onClick={() => { handleMenuClose(); setOpenLogoutDialog(true); }}>
           <LogoutIcon />

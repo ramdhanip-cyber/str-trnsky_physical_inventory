@@ -62,13 +62,15 @@ import {
   Close,
   Groups,
   Inbox,
-  Layers
+  Layers,
+  AddCircleOutline
 } from '@mui/icons-material';
 import Checkbox from '@mui/material/Checkbox';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import { useParams, useNavigate } from 'react-router-dom';
 import { servicesAPI } from '../config/api';
 import ConsolidatedView from '../components/ConsolidatedView';
+import ReconcilerItemEntryForm from '../components/ReconcilerItemEntryForm';
 import * as XLSX from 'xlsx';
 import { Transaction, ConsolidatedItem } from '../types/common';
 import { ReconciliationData } from '../types/reconciliation';
@@ -81,6 +83,7 @@ interface Section {
   location_desc: string;
   status: string;
   team_name?: string; // Team assigned to count this section
+  team_id?: number | null;
   checker_assigned?: string;
   assigned_at?: string;
   competed_at?: string;
@@ -768,6 +771,8 @@ const CountReviewPage = () => {
   const [noMaterialDialogOpen, setNoMaterialDialogOpen] = useState(false);
   const [checkingRecheckStatus, setCheckingRecheckStatus] = useState(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' | 'warning' }>({ open: false, message: '', severity: 'success' });
+  const [addItemDialogOpen, setAddItemDialogOpen] = useState(false);
+  const [addItemSectionId, setAddItemSectionId] = useState<string>('');
   const [columnsMenuAnchor, setColumnsMenuAnchor] = useState<null | HTMLElement>(null);
   const [columnsMenuPosition, setColumnsMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const toggleableColumnIds = COUNTER_REVIEW_COLUMNS.filter(c => !c.alwaysVisible).map(c => c.id);
@@ -1536,6 +1541,26 @@ const CountReviewPage = () => {
     }
   };
 
+  const addableSections = sections.filter((s) => s.team_id != null);
+  const addItemSection = addableSections.find((s) => String(s.section_id) === addItemSectionId);
+
+  const openAddItemDialog = () => {
+    const preferred =
+      sectionFilter !== 'all' && addableSections.some((s) => String(s.section_id) === sectionFilter)
+        ? sectionFilter
+        : addableSections.length === 1
+          ? String(addableSections[0].section_id)
+          : '';
+    setAddItemSectionId(preferred);
+    setAddItemDialogOpen(true);
+  };
+
+  const handleAddItemSuccess = async () => {
+    setAddItemDialogOpen(false);
+    setSnackbar({ open: true, message: 'Item added to the count.', severity: 'success' });
+    await Promise.all([fetchMarkedItems(), loadAllTransactions()]);
+  };
+
   const handleRefresh = () => {
     fetchSections();
     fetchMarkedItems();
@@ -1641,6 +1666,20 @@ const CountReviewPage = () => {
         </Grid>
         <Grid item xs={12} md={5}>
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+            <Tooltip title={addableSections.length === 0 ? 'No section has a counting team assigned' : ''}>
+              <span>
+                <Button
+                  variant="outlined"
+                  color="primary"
+                  onClick={openAddItemDialog}
+                  disabled={addableSections.length === 0}
+                  startIcon={<AddCircleOutline />}
+                  sx={{ borderRadius: 2, fontWeight: 600, textTransform: 'none', px: 2 }}
+                >
+                  Add Item
+                </Button>
+              </span>
+            </Tooltip>
             <Button
               variant="contained"
               color="success"
@@ -2611,6 +2650,77 @@ const CountReviewPage = () => {
             OK
           </Button>
         </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={addItemDialogOpen}
+        onClose={() => setAddItemDialogOpen(false)}
+        fullWidth
+        maxWidth="lg"
+        PaperProps={{ sx: { borderRadius: 2, overflow: 'hidden', maxHeight: '92vh' } }}
+      >
+        <DialogTitle
+          sx={{
+            background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
+            color: '#fff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            py: 1.5,
+            px: 2.5,
+          }}
+        >
+          <Typography variant="h6" sx={{ fontWeight: 700, color: '#fff' }}>
+            Add Item to Count
+          </Typography>
+          <IconButton onClick={() => setAddItemDialogOpen(false)} size="small" sx={{ color: '#fff' }} aria-label="Close">
+            <Close />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ p: 0, bgcolor: '#f8fafc' }}>
+          <Box sx={{ px: 2.5, pt: 2, pb: 1, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+            <FormControl size="small" sx={{ minWidth: 260 }} required>
+              <InputLabel>Section</InputLabel>
+              <Select
+                value={addItemSectionId}
+                label="Section"
+                onChange={(e) => setAddItemSectionId(String(e.target.value))}
+                sx={{ borderRadius: 2, bgcolor: 'background.paper' }}
+              >
+                {addableSections.map((section) => (
+                  <MenuItem key={section.section_id} value={String(section.section_id)}>
+                    {section.section_desc}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            {addItemSection && (
+              <Chip
+                icon={<Groups fontSize="small" />}
+                label={`Team: ${addItemSection.team_name || addItemSection.team_id}`}
+                size="small"
+                sx={{ fontWeight: 600 }}
+              />
+            )}
+          </Box>
+          {addItemDialogOpen && addItemSection && location_id ? (
+            <ReconcilerItemEntryForm
+              key={addItemSection.section_id}
+              locationId={location_id}
+              sectionId={String(addItemSection.section_id)}
+              teamId={String(addItemSection.team_id)}
+              sectionDesc={addItemSection.section_desc}
+              onSaved={handleAddItemSuccess}
+              onCancel={() => setAddItemDialogOpen(false)}
+            />
+          ) : (
+            <Box sx={{ px: 2.5, py: 5, textAlign: 'center' }}>
+              <Typography variant="body2" color="text.secondary">
+                Select the section this item was found in to open the count entry form.
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
       </Dialog>
 
       <Snackbar open={snackbar.open} autoHideDuration={6000} onClose={() => setSnackbar(s => ({ ...s, open: false }))} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
