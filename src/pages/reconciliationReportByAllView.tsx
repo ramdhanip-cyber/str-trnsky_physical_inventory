@@ -3,7 +3,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TableFooter,
   Typography, Card, CardContent, IconButton, Box, Button, TextField, InputAdornment,
-  Checkbox, ListItemText, Menu, MenuItem, Divider, Chip, Grid, alpha
+  Checkbox, ListItemText, Menu, MenuItem, Divider, Chip, Grid, alpha, Tooltip,
+  Dialog, DialogTitle, DialogContent, LinearProgress
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
@@ -19,6 +20,9 @@ import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import LayersIcon from '@mui/icons-material/Layers';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import CategoryIcon from '@mui/icons-material/Category';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import CloseIcon from '@mui/icons-material/Close';
 import * as XLSX from 'xlsx';
 
 interface ColumnDef {
@@ -212,9 +216,14 @@ const REPORT_COLUMNS: ColumnDef[] = [
       const val = row.status || '';
       const colorMap: Record<string, { bg: string; color: string; border: string }> = {
         'Match': { bg: '#ecfdf5', color: '#047857', border: '#a7f3d0' },
+        'Matched': { bg: '#ecfdf5', color: '#047857', border: '#a7f3d0' },
         'Over Count': { bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' },
+        'Overcount': { bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' },
         'Under Count': { bg: '#fff1f2', color: '#be123c', border: '#fecdd3' },
+        'Undercount': { bg: '#fff1f2', color: '#be123c', border: '#fecdd3' },
         'No Match': { bg: '#fefce8', color: '#a16207', border: '#fde68a' },
+        'Not Counted': { bg: '#fefce8', color: '#a16207', border: '#fde68a' },
+        'Orphaned': { bg: '#fef3c7', color: '#d97706', border: '#fcd34d' },
       };
       const style = colorMap[val] || { bg: '#f8fafc', color: '#475569', border: '#e2e8f0' };
       return (
@@ -392,6 +401,7 @@ const ReconciliationReportByAllView: React.FC = () => {
   );
   const [columnMenuAnchor, setColumnMenuAnchor] = useState<null | HTMLElement>(null);
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+  const [formDialogOpen, setFormDialogOpen] = useState(false);
 
   const activeColumns = REPORT_COLUMNS.filter((col) => visibleColumns[col.id]);
   const visibleCount = activeColumns.length;
@@ -449,6 +459,18 @@ const ReconciliationReportByAllView: React.FC = () => {
     return { totalRecords: reportData.length, totalSystemQty, totalCountedQty, totalOhdTons, totalCountTons, totalVarTons, totalMatVal };
   }, [reportData]);
 
+  // Per-form counted qty breakdown (display only — not exported)
+  const formCountedQtySummary = useMemo(() => {
+    const map = new Map<string, number>();
+    reportData.forEach((row: any) => {
+      const form = row.form || 'Unknown';
+      map.set(form, (map.get(form) || 0) + Number(row.total_counted_qty || 0));
+    });
+    return Array.from(map.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([form, countedQty]) => ({ form, countedQty }));
+  }, [reportData]);
+
   const filteredTotals = useMemo(() => {
     let systemQty = 0;
     let countedQty = 0;
@@ -488,10 +510,51 @@ const ReconciliationReportByAllView: React.FC = () => {
   const handleExportExcel = () => {
     if (filteredReportData.length === 0 || activeColumns.length === 0) return;
 
-    const formattedData: any[] = filteredReportData.map((row: any) => {
+    const formattedData: any[] = [];
+
+    // ── Row 1: TOTALS summary at the very top ────────────────────────────────
+    const totalsRow: Record<string, any> = {};
+    activeColumns.forEach((col) => {
+      switch (col.id) {
+        case 'sys_tag_no': totalsRow[col.label] = `TOTALS (${filteredReportData.length} items)`; break;
+        case 'form': totalsRow[col.label] = ''; break;
+        case 'grade': totalsRow[col.label] = ''; break;
+        case 'size': totalsRow[col.label] = ''; break;
+        case 'finish': totalsRow[col.label] = ''; break;
+        case 'ext_finish': totalsRow[col.label] = ''; break;
+        case 'width': totalsRow[col.label] = ''; break;
+        case 'length': totalsRow[col.label] = ''; break;
+        case 'location': totalsRow[col.label] = ''; break;
+        case 'mill': totalsRow[col.label] = ''; break;
+        case 'heat': totalsRow[col.label] = ''; break;
+        case 'branch': totalsRow[col.label] = ''; break;
+        case 'warehouse': totalsRow[col.label] = ''; break;
+        case 'inv_type': totalsRow[col.label] = ''; break;
+        case 'inv_quality': totalsRow[col.label] = ''; break;
+        case 'status': totalsRow[col.label] = ''; break;
+        case 'total_system_qty': totalsRow[col.label] = filteredTotals.systemQty; break;
+        case 'total_counted_qty': totalsRow[col.label] = filteredTotals.countedQty; break;
+        case 'variance_qty': totalsRow[col.label] = filteredTotals.varianceQty; break;
+        case 'ohdtons': totalsRow[col.label] = Number(filteredTotals.ohdTons.toFixed(2)); break;
+        case 'counttons': totalsRow[col.label] = Number(filteredTotals.countTons.toFixed(2)); break;
+        case 'vartons': totalsRow[col.label] = Number(filteredTotals.varTons.toFixed(2)); break;
+        case 'prd_ohd_mat_cst': totalsRow[col.label] = Number(filteredTotals.matCost.toFixed(2)); break;
+        case 'prd_ohd_mat_val': totalsRow[col.label] = Number(filteredTotals.matVal.toFixed(2)); break;
+        default: totalsRow[col.label] = '';
+      }
+    });
+    formattedData.push(totalsRow);
+
+    // ── Row 2: blank separator ────────────────────────────────────────────────
+    const blankRow: Record<string, any> = {};
+    activeColumns.forEach((col) => { blankRow[col.label] = ''; });
+    formattedData.push(blankRow);
+
+    // ── Rows 3+: actual data rows ─────────────────────────────────────────────
+    filteredReportData.forEach((row: any) => {
       const dataRow: Record<string, any> = {};
       activeColumns.forEach((col) => { dataRow[col.label] = col.getExcelValue(row); });
-      return dataRow;
+      formattedData.push(dataRow);
     });
 
     const worksheet = XLSX.utils.json_to_sheet(formattedData);
@@ -601,6 +664,158 @@ const ReconciliationReportByAllView: React.FC = () => {
               </CardContent>
             </Card>
           </Grid>
+
+          {/* Card 5: Counted Qty by Form — display only, NOT exported to Excel */}
+          <Grid item xs={12}>
+            <Card sx={{
+              borderRadius: 3,
+              boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
+              border: '1px solid #e2e8f0',
+              background: 'linear-gradient(135deg, #ffffff 0%, #f0f9ff 100%)'
+            }}>
+              <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                {/* Header row */}
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                    <Box sx={{ p: 0.6, borderRadius: 1.5, bgcolor: alpha('#0891b2', 0.1), color: '#0891b2', display: 'flex' }}>
+                      <CategoryIcon sx={{ fontSize: 16 }} />
+                    </Box>
+                    <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                      Counted Qty by Form
+                    </Typography>
+                    <Tooltip title="Display only — not included in Excel export." arrow>
+                      <Chip
+                        label="Display Only"
+                        size="small"
+                        sx={{ height: 16, fontSize: '0.6rem', fontWeight: 700, bgcolor: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', borderRadius: '4px', '& .MuiChip-label': { px: 0.6 } }}
+                      />
+                    </Tooltip>
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                      {formCountedQtySummary.length} form{formCountedQtySummary.length !== 1 ? 's' : ''} · Total: <b>{stats.totalCountedQty.toLocaleString()}</b>
+                    </Typography>
+                    {formCountedQtySummary.length > 0 && (
+                      <Tooltip title="View all forms" arrow>
+                        <IconButton
+                          size="small"
+                          onClick={() => setFormDialogOpen(true)}
+                          sx={{
+                            width: 26, height: 26,
+                            bgcolor: '#eff6ff',
+                            color: '#2563eb',
+                            border: '1px solid #bfdbfe',
+                            '&:hover': { bgcolor: '#dbeafe' },
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          <InfoOutlinedIcon sx={{ fontSize: 15 }} />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                  </Box>
+                </Box>
+
+                {/* Inline compact chips — show top 8 only */}
+                {formCountedQtySummary.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                    No data available
+                  </Typography>
+                ) : (
+                  <Box sx={{ display: 'flex', flexWrap: 'nowrap', gap: 0.75, overflowX: 'auto', pb: 0.25 }}>
+                    {formCountedQtySummary.slice(0, 8).map(({ form, countedQty }) => {
+                      const pct = stats.totalCountedQty > 0 ? (countedQty / stats.totalCountedQty) * 100 : 0;
+                      return (
+                        <Box
+                          key={form}
+                          sx={{
+                            display: 'flex', alignItems: 'center', gap: 0.5,
+                            px: 1.25, py: 0.5, borderRadius: 1.5,
+                            border: '1px solid #bae6fd', bgcolor: '#f0f9ff',
+                            whiteSpace: 'nowrap', flexShrink: 0,
+                          }}
+                        >
+                          <Typography variant="caption" fontWeight={700} color="#0369a1">{form}</Typography>
+                          <Typography variant="caption" fontWeight={800} color="#0f172a">{countedQty.toLocaleString()}</Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>({pct.toFixed(1)}%)</Typography>
+                        </Box>
+                      );
+                    })}
+                    {formCountedQtySummary.length > 8 && (
+                      <Box
+                        onClick={() => setFormDialogOpen(true)}
+                        sx={{
+                          display: 'flex', alignItems: 'center', gap: 0.5,
+                          px: 1.25, py: 0.5, borderRadius: 1.5,
+                          border: '1px solid #cbd5e1', bgcolor: '#f8fafc',
+                          whiteSpace: 'nowrap', flexShrink: 0, cursor: 'pointer',
+                          '&:hover': { bgcolor: '#f1f5f9', borderColor: '#94a3b8' },
+                          transition: 'all 0.15s'
+                        }}
+                      >
+                        <Typography variant="caption" fontWeight={700} color="#475569">+{formCountedQtySummary.length - 8} more</Typography>
+                      </Box>
+                    )}
+                  </Box>
+                )}
+              </CardContent>
+            </Card>
+          </Grid>
+
+          {/* Form Details Dialog */}
+          <Dialog
+            open={formDialogOpen}
+            onClose={() => setFormDialogOpen(false)}
+            maxWidth="sm"
+            fullWidth
+            PaperProps={{ sx: { borderRadius: 3, boxShadow: '0 24px 64px rgba(0,0,0,0.18)' } }}
+          >
+            <DialogTitle sx={{ pb: 1, borderBottom: '1px solid #e2e8f0' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Box sx={{ p: 0.75, borderRadius: 2, bgcolor: alpha('#0891b2', 0.1), color: '#0891b2', display: 'flex' }}>
+                    <CategoryIcon fontSize="small" />
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle1" fontWeight={800} color="#0f172a">Counted Qty by Form</Typography>
+                    <Typography variant="caption" color="text.secondary">{formCountedQtySummary.length} forms · Total: <b>{stats.totalCountedQty.toLocaleString()}</b></Typography>
+                  </Box>
+                </Box>
+                <IconButton size="small" onClick={() => setFormDialogOpen(false)} sx={{ color: '#64748b', '&:hover': { bgcolor: '#f1f5f9' } }}>
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </Box>
+            </DialogTitle>
+            <DialogContent sx={{ pt: 2, pb: 2 }}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                {formCountedQtySummary.map(({ form, countedQty }, idx) => {
+                  const pct = stats.totalCountedQty > 0 ? (countedQty / stats.totalCountedQty) * 100 : 0;
+                  return (
+                    <Box key={form} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 1.25, borderRadius: 2, border: '1px solid #e2e8f0', bgcolor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                      <Box sx={{
+                        width: 28, height: 28, borderRadius: '50%',
+                        bgcolor: alpha('#0891b2', 0.1), color: '#0891b2',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: '0.7rem', fontWeight: 800, flexShrink: 0
+                      }}>{idx + 1}</Box>
+                      <Typography variant="body2" fontWeight={700} color="#0369a1" sx={{ minWidth: 80 }}>{form}</Typography>
+                      <Box sx={{ flex: 1 }}>
+                        <LinearProgress
+                          variant="determinate"
+                          value={pct}
+                          sx={{ height: 6, borderRadius: 3, bgcolor: '#e0f2fe', '& .MuiLinearProgress-bar': { bgcolor: '#0891b2', borderRadius: 3 } }}
+                        />
+                      </Box>
+                      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.5, minWidth: 100, justifyContent: 'flex-end' }}>
+                        <Typography variant="body2" fontWeight={800} color="#0f172a">{countedQty.toLocaleString()}</Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>({pct.toFixed(1)}%)</Typography>
+                      </Box>
+                    </Box>
+                  );
+                })}
+              </Box>
+            </DialogContent>
+          </Dialog>
         </Grid>
       </Box>
 
