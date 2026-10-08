@@ -127,6 +127,10 @@ export interface AdjustmentMarkedItem {
   recon_status?: string;
   section_desc?: string;
   transaction_id?: number | null;
+  /** System unit cost (prd_ohd_mat_cst) at mark time */
+  unit_cost?: number | null;
+  /** System total amount (prd_ohd_mat_val) at mark time */
+  amount?: number | null;
   adjustment_amount?: number | string | null;
   adjustment_type?: string;
   adjustment_location?: string;

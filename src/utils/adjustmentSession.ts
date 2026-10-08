@@ -26,6 +26,14 @@ export type AdjustmentMarkPayload = {
   section_desc?: string | null;
   transaction_id?: number | null;
   section_id?: number | null;
+  unit_cost?: number | string | null;
+  amount?: number | string | null;
+};
+
+const toNumberOrNull = (value: unknown): number | null => {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 };
 
 const storageKey = (locationId: string) => `adjustment_marked_${locationId}`;
@@ -35,7 +43,10 @@ export function toAdjustmentMarkedItems(
   payloads: AdjustmentMarkPayload[]
 ): AdjustmentMarkedItem[] {
   const baseId = Date.now();
-  return payloads.map((item, idx) => ({
+  return payloads.map((item, idx) => {
+    const unitCost = toNumberOrNull(item.unit_cost);
+    const amount = toNumberOrNull(item.amount);
+    return {
     id: baseId + idx,
     location_id: Number(locationId),
     section_id: item.section_id ?? null,
@@ -63,7 +74,11 @@ export function toAdjustmentMarkedItems(
     warehouse: item.warehouse ?? undefined,
     section_desc: item.section_desc ?? undefined,
     transaction_id: item.transaction_id ?? null,
-  }));
+    unit_cost: unitCost,
+    amount,
+    original_amount: amount,
+    };
+  });
 }
 
 export function saveAdjustmentItems(locationId: string, items: AdjustmentMarkedItem[]) {

@@ -967,6 +967,8 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
                   <TableCell sx={headCellSx} align="right">System Qty</TableCell>
                   <TableCell sx={headCellSx} align="right">Counted Qty</TableCell>
                   <TableCell sx={headCellSx} align="right">Variance</TableCell>
+                  <TableCell sx={headCellSx} align="right">Unit Cost</TableCell>
+                  <TableCell sx={headCellSx} align="right">Amount</TableCell>
                   <TableCell sx={headCellSx}>Recon</TableCell>
                   <TableCell sx={headCellSx}>Marked By</TableCell>
                   <TableCell sx={headCellSx}>Marked At</TableCell>
@@ -1051,6 +1053,8 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
                         <TableCell align="right">
                           <Chip size="small" label={fmt(variance)} color={varianceColor(variance)} sx={{ fontWeight: 700, height: 22 }} />
                         </TableCell>
+                        <TableCell align="right">{fmt(item.unit_cost)}</TableCell>
+                        <TableCell align="right">{fmt(item.amount ?? item.original_amount)}</TableCell>
                         <TableCell>
                           {item.recon_status || item.adj_typ ? (
                             <Stack spacing={0.5} alignItems="flex-start">
@@ -1118,7 +1122,7 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
                       </TableRow>
 
                       <TableRow>
-                        <TableCell colSpan={25} sx={{ p: 0, border: 0 }}>
+                        <TableCell colSpan={27} sx={{ p: 0, border: 0 }}>
                           <Collapse in={isExpanded && erpRows.length > 0} timeout="auto" unmountOnExit>
                             <Box sx={{ px: 2.5, py: 1.75, bgcolor: alpha(NAVY_MID, 0.04) }}>
                               <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
@@ -1184,6 +1188,8 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
                   Tag: {adjustingItem.sys_tag_no || adjustingItem.tag_id || '—'}
                   {' · '}
                   Sys {fmt(adjustingItem.system_qty)} / Counted {fmt(adjustingItem.counted_qty)} / Var {fmt(adjustingItem.variance)}
+                  {' · '}
+                  Unit Cost {fmt(adjustingItem.unit_cost)} / Amount {fmt(adjustingItem.amount ?? adjustingItem.original_amount)}
                   {isFoundItem(adjustingItem) ? ' · Found item' : ''}
                 </Typography>
               </Paper>
