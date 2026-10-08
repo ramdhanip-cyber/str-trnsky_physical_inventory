@@ -1341,6 +1341,8 @@ const ReconciliationCheckerPage: React.FC = () => {
           section_desc: firstSection?.section_desc || null,
           transaction_id: transactionId,
           section_id: sectionId,
+          unit_cost: systemItem.prd_ohd_mat_cst ?? null,
+          amount: systemItem.prd_ohd_mat_val ?? null,
         };
       }).filter(item => item !== null);
 

@@ -1299,6 +1299,23 @@ exports.completeCheckerVerification = async (req, res) => {
   }
 
   try {
+    const pendingResult = await pool.query(
+      `SELECT COUNT(*)::int AS pending
+       FROM checker_sku_item
+       WHERE location_id = $1
+         AND section_id = $2
+         AND COALESCE(verified, false) = false`,
+      [location_id, section_id]
+    );
+    const pending = pendingResult.rows[0]?.pending || 0;
+    if (pending > 0) {
+      return res.status(400).json({
+        success: false,
+        pending,
+        message: `${pending} item(s) marked for recheck are not verified yet. Verify all items before submitting.`
+      });
+    }
+
     await pool.query('BEGIN');
 
     const updateQuery = `

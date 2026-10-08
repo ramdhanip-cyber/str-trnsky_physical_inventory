@@ -69,6 +69,7 @@ const Checker: React.FC = () => {
   const [bundles, setBundles] = useState<Record<number, Bundle[]>>({});
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [expandedRows, setExpandedRows] = useState<Record<number, boolean>>({});
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [editingBundles, setEditingBundles] = useState<Bundle[]>([]);
@@ -597,20 +598,26 @@ const Checker: React.FC = () => {
 
   const handleSubmit = async () => {
     const verifiedItems = transactions.filter(t => t.verified);
+    setSubmitError(null);
     
     if (verifiedItems.length === 0) {
-      setError('No verified items to submit');
+      setSubmitError('No verified items to submit');
+      return;
+    }
+
+    const unverifiedCount = transactions.length - verifiedItems.length;
+    if (unverifiedCount > 0) {
+      setSubmitError(`${unverifiedCount} item(s) marked for recheck are not verified yet. Verify all items before submitting.`);
       return;
     }
 
     if (!location_id || !section_id) {
-      setError('Location ID and Section ID are required');
+      setSubmitError('Location ID and Section ID are required');
       return;
     }
 
     try {
       setIsSubmitting(true);
-      setError(null);
       
       // Call API to update assigned_locations status to 'Completed'
       const response = await servicesAPI.completeCheckerVerification({
@@ -629,7 +636,8 @@ const Checker: React.FC = () => {
         throw new Error(response.data.message || 'Failed to complete verification');
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to submit verified items');
+      const apiMessage = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setSubmitError(apiMessage || (err instanceof Error ? err.message : 'Failed to submit verified items'));
       setIsSubmitting(false);
     }
   };
@@ -667,6 +675,16 @@ const Checker: React.FC = () => {
           }}
         >
           {successMessage}
+        </Alert>
+      )}
+
+      {submitError && (
+        <Alert
+          severity="warning"
+          onClose={() => setSubmitError(null)}
+          sx={{ mb: 2.5, borderRadius: 2, '& .MuiAlert-message': { fontWeight: 500 } }}
+        >
+          {submitError}
         </Alert>
       )}
 

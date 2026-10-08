@@ -1802,6 +1802,8 @@ const ReconciliationCounterPage: React.FC = () => {
           branch: systemItem.branch || summary?.branch || null,
           warehouse: systemItem.warehouse || summary?.warehouse || null,
           section_desc: (firstSectionMeta as { section_desc?: string } | null)?.section_desc || null,
+          unit_cost: systemItem.prd_ohd_mat_cst ?? null,
+          amount: systemItem.prd_ohd_mat_val ?? null,
         };
 
         const txEntries: Array<{ transaction_id: number; section_id: number | null; counted_qty: number }> = [];
