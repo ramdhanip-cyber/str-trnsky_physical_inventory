@@ -1856,6 +1856,17 @@ const ReconciliationCounterPage: React.FC = () => {
         return;
       }
 
+      // Save to PostgreSQL database table star.st_adj_items
+      try {
+        await servicesAPI.markItemsForAdjustment({
+          location_id: Number(location_id),
+          items: itemsToMark,
+          adjustment_reason: 'Marked for adjustment during reconciliation'
+        });
+      } catch (dbErr) {
+        console.warn('Could not persist to star.st_adj_items DB table:', dbErr);
+      }
+
       const markedItems = toAdjustmentMarkedItems(location_id, itemsToMark as AdjustmentMarkPayload[]);
       saveAdjustmentItems(location_id, markedItems);
       setSelectedItems(new Set());

@@ -36,4 +36,7 @@ router.get('/adjustment/items/:location_id', reconciliationController.getAdjustm
 router.get('/adjustment/item-reservations', reconciliationController.getAdjustmentItemReservations);
 router.delete('/adjustment/items/:item_id', reconciliationController.removeFromAdjustment);
 
+//get adjustment report
+router.post('/adjustment/getpreadjustmentreport', authMiddleware, reconciliationController.getPreAdjustmentReport);
+
 module.exports = router; 

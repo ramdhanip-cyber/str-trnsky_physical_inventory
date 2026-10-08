@@ -759,80 +759,102 @@ exports.saveReconciliationWithComparison = async (req, res) => {
     console.log('Sample checker item:', checker_data?.[0]);
 
     // Enhance items_data with comparison results (checker quantities, variance, status)
+    const hasCheckerData = Array.isArray(checker_data) && checker_data.length > 0;
+
     const enhancedItemsData = items_data.map(systemItem => {
-      // Find matching checker data
-      const matchingChecker = checker_data?.find(checker => {
-        const systemForm = String(systemItem.form || '').trim();
-        const checkerForm = String(checker.form || '').trim();
+      // Find matching checker data if checker_data was explicitly provided
+      let matchingChecker = null;
+      if (hasCheckerData) {
+        matchingChecker = checker_data.find(checker => {
+          const systemForm = String(systemItem.form || '').trim();
+          const checkerForm = String(checker.form || '').trim();
 
-        const systemGrade = String(systemItem.grade || '').trim();
-        const checkerGrade = String(checker.grade || '').trim();
+          const systemGrade = String(systemItem.grade || '').trim();
+          const checkerGrade = String(checker.grade || '').trim();
 
-        const systemSize = String(systemItem.size || '').trim();
-        const checkerSize = String(checker.size || '').trim();
+          const systemSize = String(systemItem.size || '').trim();
+          const checkerSize = String(checker.size || '').trim();
 
-        const systemFinish = String(systemItem.finish || '').trim();
-        const checkerFinish = String(checker.finish || '').trim();
+          const systemFinish = String(systemItem.finish || '').trim();
+          const checkerFinish = String(checker.finish || '').trim();
 
-        const systemExtFinish = String(systemItem.ext_finish || '').trim();
-        const checkerExtFinish = String(checker.ext_finish || '').trim();
+          const systemExtFinish = String(systemItem.ext_finish || '').trim();
+          const checkerExtFinish = String(checker.ext_finish || '').trim();
 
-        const systemWidth = String(Number(systemItem.width || 0)).trim();
-        const checkerWidth = String(Number(checker.width || 0)).trim();
+          const systemWidth = String(Number(systemItem.width || 0)).trim();
+          const checkerWidth = String(Number(checker.width || 0)).trim();
 
-        const systemLength = String(Number(systemItem.length || 0)).trim();
-        const checkerLength = String(Number(checker.length || 0)).trim();
+          const systemLength = String(Number(systemItem.length || 0)).trim();
+          const checkerLength = String(Number(checker.length || 0)).trim();
 
-        const systemLocation = String(systemItem.location || '').trim();
-        const checkerLocation = String(checker.location || '').trim();
+          const systemLocation = String(systemItem.location || '').trim();
+          const checkerLocation = String(checker.location || '').trim();
 
-        const systemType = String(systemItem.inv_type || '').trim();
-        const checkerType = String(checker.type || '').trim();
-        const systemHeat = normalizeMillHeat(systemItem.heat || '');
-        const checkerHeat = normalizeMillHeat(checker.heat || '');
+          const systemType = String(systemItem.inv_type || '').trim();
+          const checkerType = String(checker.type || '').trim();
+          const systemHeat = normalizeMillHeat(systemItem.heat || '');
+          const checkerHeat = normalizeMillHeat(checker.heat || '');
 
-        // Normalize quality values - system might have codes, counted might have descriptions
-        const systemQuality = normalizeQuality(systemItem.inv_quality || '');
-        const checkerQuality = normalizeQuality(checker.remarks || '');
+          const systemQuality = normalizeQuality(systemItem.inv_quality || '');
+          const checkerQuality = normalizeQuality(checker.remarks || '');
 
-        return (
-          systemForm === checkerForm &&
-          systemGrade === checkerGrade &&
-          systemSize === checkerSize &&
-          systemFinish === checkerFinish &&
-          systemExtFinish === checkerExtFinish &&
-          systemWidth === checkerWidth &&
-          systemLength === checkerLength &&
-          (!includeLocation || systemLocation === checkerLocation) &&
-          (!includeHeat || systemHeat === checkerHeat) &&
-          (!includeType || systemType === checkerType) &&
-          (!includeQuality || systemQuality === checkerQuality)
-        );
-      });
-
-      const checkerQty = matchingChecker ? matchingChecker.qty : 0;
-      const systemQty = systemItem.total_qty || 0; // Use total_qty as the system quantity
-      const variance = checkerQty - systemQty;
-
-      // Debug logging
-      if (matchingChecker) {
-        console.log(`Item: ${systemItem.form}-${systemItem.grade}-${systemItem.size}, Checker Qty: ${matchingChecker.qty}, System Qty: ${systemQty}, Variance: ${variance}`);
-      } else {
-        console.log(`No matching checker found for: ${systemItem.form}-${systemItem.grade}-${systemItem.size}`);
+          return (
+            systemForm === checkerForm &&
+            systemGrade === checkerGrade &&
+            systemSize === checkerSize &&
+            systemFinish === checkerFinish &&
+            systemExtFinish === checkerExtFinish &&
+            systemWidth === checkerWidth &&
+            systemLength === checkerLength &&
+            (!includeLocation || systemLocation === checkerLocation) &&
+            (!includeHeat || systemHeat === checkerHeat) &&
+            (!includeType || systemType === checkerType) &&
+            (!includeQuality || systemQuality === checkerQuality)
+          );
+        });
       }
-      const status = matchingChecker ?
-        (checkerQty === systemQty ? 'Match' :
-          checkerQty > systemQty ? 'Over Count' : 'Under Count') :
-        'No Match';
 
-      // Return enhanced item with comparison data
+      const systemQty = parseInt(systemItem.system_qty ?? systemItem.total_qty ?? 0) || 0;
+      let countedQty = 0;
+      let variance = 0;
+      let status = systemItem.status;
+
+      if (matchingChecker) {
+        countedQty = parseInt(matchingChecker.qty) || 0;
+        variance = countedQty - systemQty;
+        status = countedQty === systemQty ? 'Matched' :
+          countedQty > systemQty ? 'Overcount' : 'Undercount';
+      } else if (!hasCheckerData) {
+        // Preserved from reconcileInventory output when checker_data is not provided
+        countedQty = parseInt(systemItem.counted_qty ?? systemItem.checker_qty ?? 0) || 0;
+        variance = systemItem.variance ?? systemItem.difference ?? (countedQty - systemQty);
+        if (!status) {
+          status = countedQty === 0 ? 'Not Counted' :
+            variance === 0 ? 'Matched' :
+            variance > 0 ? 'Overcount' : 'Undercount';
+        }
+      } else {
+        // checker_data was passed but didn't match this item
+        if (systemItem.counted_qty != null && Number(systemItem.counted_qty) > 0) {
+          countedQty = parseInt(systemItem.counted_qty) || 0;
+          variance = systemItem.variance ?? systemItem.difference ?? (countedQty - systemQty);
+          status = systemItem.status || (variance === 0 ? 'Matched' : variance > 0 ? 'Overcount' : 'Undercount');
+        } else {
+          countedQty = 0;
+          variance = 0 - systemQty;
+          status = systemItem.status || 'Not Counted';
+        }
+      }
+
       return {
         ...systemItem,
-        system_qty: systemQty, // Store the system quantity (total_qty) for consistency
-        checker_qty: checkerQty,
+        system_qty: systemQty,
+        counted_qty: countedQty,
+        checker_qty: countedQty,
         variance: variance,
+        difference: variance,
         status: status,
-        has_comparison: true // Flag to indicate this item has comparison data
+        has_comparison: true
       };
     });
 
@@ -846,7 +868,6 @@ exports.saveReconciliationWithComparison = async (req, res) => {
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING id, record_name, created_at
       `;
-
 
       const values = [
         location_id,
@@ -864,13 +885,14 @@ exports.saveReconciliationWithComparison = async (req, res) => {
       const updateQry = `
         UPDATE reconciliation_records 
         SET items_data = $1, 
+            summary_data = $2,
             record_date = CURRENT_TIMESTAMP,
             created_at = CURRENT_TIMESTAMP,
             updated_at = CURRENT_TIMESTAMP
-        WHERE location_id = $2
+        WHERE location_id = $3
         RETURNING id, record_name, created_at
       `;
-      const values = [JSON.stringify(enhancedItemsData), location_id];
+      const values = [JSON.stringify(enhancedItemsData), JSON.stringify(reconciliationData), location_id];
       result = await pool.query(updateQry, values);
     }
 
@@ -2728,6 +2750,32 @@ exports.getAdjustmentItemReservations = async (req, res) => {
     console.error('getAdjustmentItemReservations error:', error);
     res.status(500).json({
       error: 'Failed to fetch reservations for adjustment item',
+      details: error.message
+    });
+  }
+};
+
+
+exports.getPreAdjustmentReport = async (req, res) => {
+  try {
+    const { location_id } = req.body;
+
+    if (!location_id) {
+      return res.status(400).json({ error: 'location_id is required' });
+    }
+
+    const result = await pool.query(
+      `SELECT *
+       FROM star.st_adj_items ai
+       WHERE ai.location_id = $1`,
+      [location_id]
+    );
+
+    return res.json({ success: true, data: result.rows });
+  } catch (error) {
+    console.error('getAdjustmentReport error:', error);
+    return res.status(500).json({
+      error: 'Failed to fetch adjustment report',
       details: error.message
     });
   }

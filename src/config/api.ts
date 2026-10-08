@@ -232,6 +232,8 @@ export const servicesAPI = {
   getAdjustmentItemReservations: (locationId: string, tagNo: string) =>
     api.get(`/services/adjustment/item-reservations?location_id=${locationId}&tag_no=${encodeURIComponent(tagNo)}`),
   removeFromAdjustment: (itemId: string) => api.delete(`/services/adjustment/items/${itemId}`),
+  getPreAdjustmentReport: (data: { location_id: number | string }) =>
+    api.post('/services/adjustment/getpreadjustmentreport', data),
   // Checker specific API methods
   getCheckerTransactions: (params: unknown) => api.get('/services/checker/get-transactions', { params }),
   getCheckerTransactionForChecker: (params: unknown) => api.get('/services/checker/TransactionForChecker', { params }),

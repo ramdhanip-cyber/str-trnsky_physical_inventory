@@ -39,6 +39,8 @@ import ReconciliationReportView from "./pages/reconciliationReportView";
 import ReconciliationReportByAllView from "./pages/reconciliationReportByAllView";
 import ReservationReportView from "./pages/reservationReportView";
 import ReservationReport from "./pages/reservationReport";
+import AdjustmentReport from "./pages/adjustmentReport";
+import AdjustmentReportView from "./pages/adjustmentReportView";
 import ProfilePage from "./pages/profile";
 import RoleGuard from "./components/RoleGuard";
 import { getAppBasePath } from "./config/appPath";
@@ -163,6 +165,9 @@ function App() {
                   {/* Standalone Reservation Report (accessible from sidebar submenu) */}
                   <Route path="/reports/reservation" element={<ReservationReport />} />
                   <Route path="/reports/reservation/view" element={<ReservationReportView />} />
+                  {/* Standalone Adjustment Report (accessible from sidebar submenu) */}
+                  <Route path="/reports/adjustment" element={<AdjustmentReport />} />
+                  <Route path="/reports/adjustment/view" element={<AdjustmentReportView />} />
                   {/* Redirect to role-appropriate page for any other routes */}
 
                   <Route path="*" element={<Navigate to={getDefaultRoute()} />} />
