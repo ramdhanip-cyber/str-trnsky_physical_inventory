@@ -10,10 +10,10 @@ import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
-import TuneIcon from '@mui/icons-material/Tune';
 import InventoryIcon from '@mui/icons-material/Inventory';
 import ScaleIcon from '@mui/icons-material/Scale';
 import AssessmentIcon from '@mui/icons-material/Assessment';
+import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import * as XLSX from 'xlsx';
 
 const AdjustmentReportView: React.FC = () => {
@@ -51,8 +51,8 @@ const AdjustmentReportView: React.FC = () => {
     const totalSysQty = reportData.reduce((s, r) => s + (Number(r.system_qty) || 0), 0);
     const totalCountQty = reportData.reduce((s, r) => s + (Number(r.counted_qty) || 0), 0);
     const totalVariance = reportData.reduce((s, r) => s + (Number(r.variance) || 0), 0);
-    const totalWeight = reportData.reduce((s, r) => s + (Number(r.weight) || 0), 0);
-    return { totalItems, totalSysQty, totalCountQty, totalVariance, totalWeight };
+    const totalAmount = reportData.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    return { totalItems, totalSysQty, totalCountQty, totalVariance, totalAmount };
   }, [reportData]);
 
   const filteredTotals = useMemo(() => {
@@ -60,7 +60,8 @@ const AdjustmentReportView: React.FC = () => {
     const countQty = filteredData.reduce((s, r) => s + (Number(r.counted_qty) || 0), 0);
     const variance = filteredData.reduce((s, r) => s + (Number(r.variance) || 0), 0);
     const weight = filteredData.reduce((s, r) => s + (Number(r.weight) || 0), 0);
-    return { sysQty, countQty, variance, weight };
+    const amount = filteredData.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    return { sysQty, countQty, variance, weight, amount };
   }, [filteredData]);
 
   // ── Excel Export ─────────────────────────────────────────────────────────────
@@ -86,6 +87,8 @@ const AdjustmentReportView: React.FC = () => {
       'System Qty': Number(r.system_qty) || 0,
       'Counted Qty': Number(r.counted_qty) || 0,
       'Variance Qty': Number(r.variance) || 0,
+      'Unit Cost': r.unit_cost != null ? Number(r.unit_cost) : '',
+      'Amount': r.amount != null ? Number(r.amount) : '',
       'Weight': Number(r.weight) || 0,
       'Status': r.status ?? 'Pending Adjustment',
       'Reason': r.adjustment_reason ?? '',
@@ -214,12 +217,14 @@ const AdjustmentReportView: React.FC = () => {
           <Grid item xs={12} sm={6} md={3}>
             <Card sx={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
               <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 }, display: 'flex', alignItems: 'center', gap: 2 }}>
-                <Box sx={{ width: 44, height: 44, borderRadius: '10px', bgcolor: '#faf5ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <TuneIcon sx={{ color: '#9333ea' }} />
+                <Box sx={{ width: 44, height: 44, borderRadius: '10px', bgcolor: '#fefce8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <AttachMoneyIcon sx={{ color: '#ca8a04' }} />
                 </Box>
                 <Box>
-                  <Typography variant="caption" color="text.secondary" fontWeight={600}>Total Weight</Typography>
-                  <Typography variant="h6" fontWeight={800} color="#0f172a">{stats.totalWeight.toLocaleString()}</Typography>
+                  <Typography variant="caption" color="text.secondary" fontWeight={600}>Total Amount</Typography>
+                  <Typography variant="h6" fontWeight={800} color="#0f172a">
+                    ${stats.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Typography>
                 </Box>
               </CardContent>
             </Card>
@@ -287,6 +292,8 @@ const AdjustmentReportView: React.FC = () => {
               <TableCell align="right" sx={thSx}>Sys Qty</TableCell>
               <TableCell align="right" sx={thSx}>Count Qty</TableCell>
               <TableCell align="right" sx={thSx}>Variance</TableCell>
+              <TableCell align="right" sx={thSx}>Unit Cost</TableCell>
+              <TableCell align="right" sx={thSx}>Amount</TableCell>
               <TableCell align="right" sx={thSx}>Weight</TableCell>
               <TableCell sx={thSx}>Status</TableCell>
             </TableRow>
@@ -294,7 +301,7 @@ const AdjustmentReportView: React.FC = () => {
           <TableBody>
             {filteredData.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={15} align="center" sx={{ py: 8 }}>
+                <TableCell colSpan={17} align="center" sx={{ py: 8 }}>
                   <Typography variant="body1" color="text.secondary" fontWeight={600}>
                     No marked adjustment items found for this location.
                   </Typography>
@@ -329,6 +336,14 @@ const AdjustmentReportView: React.FC = () => {
                   <TableCell align="right" sx={{ fontWeight: 700, color: Number(row.variance) < 0 ? '#dc2626' : '#2563eb' }}>
                     {Number(row.variance) || 0}
                   </TableCell>
+                  <TableCell align="right">
+                    {row.unit_cost != null ? `$${Number(row.unit_cost).toFixed(2)}` : '-'}
+                  </TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 700, color: '#0f172a' }}>
+                    {row.amount != null
+                      ? `$${Number(row.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : '-'}
+                  </TableCell>
                   <TableCell align="right">{Number(row.weight) || 0}</TableCell>
                   <TableCell>
                     <Chip
@@ -361,6 +376,10 @@ const AdjustmentReportView: React.FC = () => {
                 </TableCell>
                 <TableCell align="right" sx={{ fontWeight: 800, color: filteredTotals.variance < 0 ? '#dc2626' : '#2563eb' }}>
                   {filteredTotals.variance.toLocaleString()}
+                </TableCell>
+                <TableCell align="right" />
+                <TableCell align="right" sx={{ fontWeight: 800, color: '#0f172a' }}>
+                  ${filteredTotals.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </TableCell>
                 <TableCell align="right" sx={{ fontWeight: 800, color: '#0f172a' }}>
                   {filteredTotals.weight.toLocaleString()}

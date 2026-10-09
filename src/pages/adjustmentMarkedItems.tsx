@@ -294,6 +294,14 @@ const AdjustmentMarkedItemsPage: React.FC = () => {
       setItems(nextItems);
       if (nextItems.length > 0) {
         saveAdjustmentItems(location_id, nextItems);
+        // Persist/update items in backend star.st_adj_items so unit_cost and amount are populated
+        servicesAPI.markItemsForAdjustment({
+          location_id: Number(location_id),
+          items: nextItems,
+          adjustment_reason: 'Marked for adjustment during reconciliation'
+        }).catch((err) => {
+          console.warn('Could not sync adjustment items to star.st_adj_items:', err);
+        });
       }
     } finally {
       setLoading(false);

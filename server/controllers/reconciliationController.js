@@ -2532,12 +2532,46 @@ exports.markItemsForAdjustment = async (req, res) => {
           ]
         );
 
+        const unitCostVal = item.unit_cost != null ? Number(item.unit_cost) : (item.cost != null ? Number(item.cost) : null);
+        const amountVal = item.amount != null ? Number(item.amount) : null;
+
         if (duplicateCheck.rows.length > 0) {
-          skippedItems.push({
+          const existingId = duplicateCheck.rows[0].id;
+          await pool.query(
+            `UPDATE star.st_adj_items
+             SET unit_cost = COALESCE($1, unit_cost),
+                 amount = COALESCE($2, amount),
+                 counted_qty = COALESCE($3, counted_qty),
+                 variance = COALESCE($4, variance),
+                 weight = COALESCE($5, weight),
+                 tag_id = COALESCE($6, tag_id),
+                 sys_tag_no = COALESCE($7, sys_tag_no),
+                 branch = COALESCE($8, branch),
+                 warehouse = COALESCE($9, warehouse),
+                 recon_status = COALESCE($10, recon_status),
+                 section_desc = COALESCE($11, section_desc)
+             WHERE id = $12`,
+            [
+              unitCostVal,
+              amountVal,
+              item.counted_qty != null ? Number(item.counted_qty) : null,
+              item.variance != null ? Number(item.variance) : null,
+              item.weight != null ? Number(item.weight) : null,
+              item.tag_id || null,
+              item.sys_tag_no || null,
+              item.branch || null,
+              item.warehouse || null,
+              item.recon_status || item.status || null,
+              item.section_desc || null,
+              existingId
+            ]
+          );
+
+          results.push({
+            id: existingId,
             form: item.form,
             grade: item.grade,
-            size: item.size,
-            reason: 'Already marked for adjustment'
+            size: item.size
           });
           continue;
         }
@@ -2548,13 +2582,13 @@ exports.markItemsForAdjustment = async (req, res) => {
             width, length, mill, heat, location, type, quality,
             system_qty, counted_qty, variance, adjustment_reason, marked_by,
             tag_id, sys_tag_no, weight, branch, warehouse, recon_status,
-            section_desc, transaction_id, status
+            section_desc, transaction_id, status, unit_cost, amount
           ) VALUES (
             $1, $2, $3, $4, $5, $6, $7,
             $8, $9, $10, $11, $12, $13, $14,
             $15, $16, $17, $18, $19,
             $20, $21, $22, $23, $24, $25,
-            $26, $27, 'Pending Adjustment'
+            $26, $27, 'Pending Adjustment', $28, $29
           )
           RETURNING id`,
           [
@@ -2584,7 +2618,9 @@ exports.markItemsForAdjustment = async (req, res) => {
             item.warehouse || null,
             item.recon_status || item.status || null,
             item.section_desc || null,
-            item.transaction_id || null
+            item.transaction_id || null,
+            unitCostVal,
+            amountVal
           ]
         );
 
