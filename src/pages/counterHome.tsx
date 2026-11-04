@@ -16,7 +16,8 @@ import {
   TextField,
   InputAdornment,
   Skeleton,
-  Button
+  Button,
+  Alert,
 } from "@mui/material";
 import { 
   Visibility, 
@@ -46,6 +47,7 @@ interface LocationData {
   sub_location_id: number;
   section_desc: string;
   status: string;
+  has_reconciliation_report?: boolean;
 }
 
 // Styled components for better customization
@@ -74,8 +76,10 @@ const CounterHome: React.FC = () => {
   const [locations, setLocations] = useState<LocationData[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [openingKey, setOpeningKey] = useState<string | null>(null);
 
   const navigate = useNavigate();
   const fullName = localStorage.getItem('full_name');
@@ -131,6 +135,56 @@ const CounterHome: React.FC = () => {
         return <TaskAltIcon fontSize="small" />;
       default:
         return <ErrorIcon fontSize="small" />;
+    }
+  };
+
+  const hasReconciliationReport = (location: LocationData) =>
+    location.has_reconciliation_report === true;
+
+  const canOpenCount = (location: LocationData) => {
+    if (location.status === 'In Progress') return true;
+    if (location.status === 'Count Completed' && !hasReconciliationReport(location)) return true;
+    return false;
+  };
+
+  const getActionTooltip = (location: LocationData) => {
+    if (location.status === 'Count Completed' && hasReconciliationReport(location)) {
+      return 'Cannot modify: reconciliation report already generated for this location';
+    }
+    if (location.status === 'Count Completed') {
+      return 'Reopen and modify count';
+    }
+    if (location.status === 'In Progress') {
+      return 'View details';
+    }
+    return 'This assignment cannot be modified';
+  };
+
+  const handleOpenCount = async (location: LocationData) => {
+    if (!canOpenCount(location)) return;
+
+    const rowKey = `${location.location_id}-${location.sub_location_id}`;
+    const targetPath = `/counter-count/${location.location_id}/${location.sub_location_id}/${location.team_id}/${location.user_id}`;
+
+    setActionError(null);
+    setOpeningKey(rowKey);
+
+    try {
+      if (location.status === 'Count Completed') {
+        await servicesAPI.reopenCounterCount(
+          String(location.location_id),
+          String(location.sub_location_id)
+        );
+      }
+      navigate(targetPath);
+    } catch (err: unknown) {
+      const message =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        (err instanceof Error ? err.message : 'Failed to reopen count');
+      setActionError(message);
+      await fetchLocations();
+    } finally {
+      setOpeningKey(null);
     }
   };
 
@@ -223,6 +277,12 @@ const CounterHome: React.FC = () => {
         </Box>
       </Box>
 
+      {actionError && (
+        <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
+          {actionError}
+        </Alert>
+      )}
+
       <Paper elevation={2} sx={{ overflow: 'hidden' }}>
         <TableContainer>
           <Table>
@@ -277,16 +337,15 @@ const CounterHome: React.FC = () => {
                       </Box>
                     </TableCell>
                     <TableCell align="center">
-                      <Tooltip title={location.status === 'Count Completed' ? "This assignment is completed" : "View details"}>
+                      <Tooltip title={getActionTooltip(location)}>
                         <span> {/* Wrap IconButton in span for tooltip to work when disabled */}
                           <IconButton
                             color="primary"
-                            onClick={() =>
-                              navigate(
-                                `/counter-count/${location.location_id}/${location.sub_location_id}/${location.team_id}/${location.user_id}`
-                              )
+                            onClick={() => handleOpenCount(location)}
+                            disabled={
+                              !canOpenCount(location) ||
+                              openingKey === `${location.location_id}-${location.sub_location_id}`
                             }
-                            disabled={location.status !== 'In Progress'}
                           >
                             <Visibility />
                           </IconButton>

@@ -30,6 +30,7 @@ router.post("/transactions", post.PostTransactions);
 router.post("/checker-transaction", post.PostTransactions);
 router.patch('/teams/:team_id/tag-range', post.updateTeamTagPointer);
 router.post('/assigned-locations/:location_id/:section_id', post.updateLocationStatus);
+router.post('/assigned-locations/:location_id/:section_id/reopen-count', post.reopenCounterCount);
 router.post('/sections/:location_id/:sectionId/enable-checker', post.enableChecker);
 router.post('/users/:user_id', post.updateUser);
 router.post('/checker/update-transaction', post.updateTransactions);

@@ -184,6 +184,8 @@ export const servicesAPI = {
   getAvailableWarehouses: () => api.get('/services/available-warehouses'),
   getLocationsByWarehouse: (warehouse: string) => api.get(`/services/locations-by-warehouse?warehouse=${encodeURIComponent(warehouse)}`),
   completeAssignedLocation: (locationId: string, sectionId: string, data: unknown) => api.post(`/services/assigned-locations/${locationId}/${sectionId}`, data),
+  reopenCounterCount: (locationId: string, sectionId: string) =>
+    api.post(`/services/assigned-locations/${locationId}/${sectionId}/reopen-count`, {}),
   
   // Review and Reconciliation
   getReviewTransactions: (params: unknown) => api.get('/services/review-transactions', { params }),

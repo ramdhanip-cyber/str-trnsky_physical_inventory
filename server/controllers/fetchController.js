@@ -1344,7 +1344,13 @@ exports.counterAssigned = async (req, res) => {
     f.location_desc,
     e.sub_location_id,
     g.section_desc,
-    e.status
+    e.status,
+    EXISTS (
+      SELECT 1
+      FROM reconciliation_records rr
+      WHERE rr.location_id = e.location_id
+        AND COALESCE(rr.status, 'active') = 'active'
+    ) AS has_reconciliation_report
     FROM 
 st_users a
     INNER JOIN 

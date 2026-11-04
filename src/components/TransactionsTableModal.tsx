@@ -40,7 +40,9 @@ import {
   History,
   Summarize,
   ViewColumn,
-  Delete
+  Delete,
+  FilterList,
+  Clear,
 } from "@mui/icons-material";
 import Menu from "@mui/material/Menu";
 import Checkbox from "@mui/material/Checkbox";
@@ -101,6 +103,13 @@ interface TableModalProps {
 }
 
 type ColumnId = "expand" | "tag_no" | "form" | "grade" | "size" | "finish" | "ext_finish" | "width" | "length" | "mill" | "heat" | "count_type" | "type" | "qty" | "remarks" | "ad_cmts" | "page_number" | "serial_number" | "actions";
+type FilterableField = Exclude<ColumnId, "expand" | "actions">;
+
+interface FieldFilter {
+  id: string;
+  field: FilterableField;
+  value: string;
+}
 
 const COLUMNS: { id: ColumnId; label: string; align?: "left" | "right" | "center"; alwaysVisible?: boolean }[] = [
   { id: "expand", label: "", alwaysVisible: true },
@@ -123,6 +132,55 @@ const COLUMNS: { id: ColumnId; label: string; align?: "left" | "right" | "center
   { id: "serial_number", label: "Line #" },
   { id: "actions", label: "Actions", align: "center", alwaysVisible: true },
 ];
+
+const FILTERABLE_FIELDS = COLUMNS.filter(
+  (c): c is { id: FilterableField; label: string; align?: "left" | "right" | "center" } =>
+    !c.alwaysVisible
+);
+
+const getFieldLabel = (field: FilterableField) =>
+  FILTERABLE_FIELDS.find((f) => f.id === field)?.label || field;
+
+const getTransactionFieldValue = (transaction: Transaction, field: FilterableField): string => {
+  switch (field) {
+    case "tag_no":
+      return String(transaction.sys_tag_no ?? transaction.tag_id ?? "");
+    case "form":
+      return String(transaction.form ?? "");
+    case "grade":
+      return String(transaction.grade ?? "");
+    case "size":
+      return String(transaction.size ?? "");
+    case "finish":
+      return String(transaction.finish ?? "");
+    case "ext_finish":
+      return String(transaction.ext_finish ?? "");
+    case "width":
+      return String(transaction.width ?? "");
+    case "length":
+      return String(transaction.length ?? "");
+    case "mill":
+      return String(transaction.mill ?? "");
+    case "heat":
+      return String(transaction.heat ?? "");
+    case "count_type":
+      return String(transaction.count_type ?? "");
+    case "type":
+      return String(transaction.type ?? "");
+    case "qty":
+      return String(transaction.qty ?? "");
+    case "remarks":
+      return String(transaction.remarks ?? "");
+    case "ad_cmts":
+      return String(transaction.ad_cmts ?? "");
+    case "page_number":
+      return String(transaction.page_number ?? "");
+    case "serial_number":
+      return String(transaction.serial_number ?? "");
+    default:
+      return "";
+  }
+};
 
 const ModalCard = styled(Paper)(({ theme }) => ({
   width: "98%",
@@ -218,8 +276,9 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
 }) => {
   const theme = useTheme();
   const [expandedRows, setExpandedRows] = useState<Record<number, boolean>>({});
-  const [searchTerm, setSearchTerm] = useState("");
-  const [searchBy, setSearchBy] = useState<"tag_id" | "counted_by">("tag_id");
+  const [fieldFilters, setFieldFilters] = useState<FieldFilter[]>([]);
+  const [pendingField, setPendingField] = useState<FilterableField>("form");
+  const [pendingValue, setPendingValue] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [editingBundles, setEditingBundles] = useState<Bundle[]>([]);
@@ -257,16 +316,47 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
     setVisibleColumns(toggleableColumnIds.reduce((acc, id) => ({ ...acc, [id]: false }), {}));
   };
 
-  const filteredData = useMemo(() => {
-    if (!searchTerm) return data;
-    return data.filter((transaction) => {
-      const fieldValue =
-        searchBy === "tag_id"
-          ? transaction.tag_id.toString()
-          : transaction.counted_by.toString();
-      return fieldValue.includes(searchTerm);
+  const addFieldFilter = () => {
+    const value = pendingValue.trim();
+    if (!value) return;
+
+    setFieldFilters((prev) => {
+      const existing = prev.findIndex((f) => f.field === pendingField);
+      if (existing >= 0) {
+        const next = [...prev];
+        next[existing] = { ...next[existing], value };
+        return next;
+      }
+      return [
+        ...prev,
+        {
+          id: `${pendingField}-${Date.now()}`,
+          field: pendingField,
+          value,
+        },
+      ];
     });
-  }, [data, searchTerm, searchBy]);
+    setPendingValue("");
+  };
+
+  const removeFieldFilter = (id: string) => {
+    setFieldFilters((prev) => prev.filter((f) => f.id !== id));
+  };
+
+  const clearFieldFilters = () => {
+    setFieldFilters([]);
+    setPendingValue("");
+  };
+
+  const filteredData = useMemo(() => {
+    if (fieldFilters.length === 0) return data;
+    return data.filter((transaction) =>
+      fieldFilters.every((filter) => {
+        const fieldValue = getTransactionFieldValue(transaction, filter.field).toLowerCase();
+        return fieldValue.includes(filter.value.toLowerCase());
+      })
+    );
+  }, [data, fieldFilters]);
 
   const toggleRow = (id: number) => {
     setExpandedRows((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -687,25 +777,34 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
         </HeaderBar>
 
         <SearchBar>
-          <FormControl size="small" sx={{ minWidth: 140 }}>
-            <InputLabel>Search by</InputLabel>
+          <FormControl size="small" sx={{ minWidth: 150 }}>
+            <InputLabel>Search by field</InputLabel>
             <Select
-              value={searchBy}
-              label="Search by"
-              onChange={(e) => setSearchBy(e.target.value as "tag_id" | "counted_by")}
+              value={pendingField}
+              label="Search by field"
+              onChange={(e) => setPendingField(e.target.value as FilterableField)}
             >
-              <MenuItem value="tag_id">Tag ID</MenuItem>
-              <MenuItem value="counted_by">User ID</MenuItem>
+              {FILTERABLE_FIELDS.map((field) => (
+                <MenuItem key={field.id} value={field.id}>
+                  {field.label}
+                </MenuItem>
+              ))}
             </Select>
           </FormControl>
           <TextField
             size="small"
-            placeholder={`Search by ${searchBy === "tag_id" ? "Tag ID" : "User ID"}...`}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder={`Filter by ${getFieldLabel(pendingField)}...`}
+            value={pendingValue}
+            onChange={(e) => setPendingValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addFieldFilter();
+              }
+            }}
             sx={{
               flex: 1,
-              minWidth: 220,
+              minWidth: 200,
               "& .MuiOutlinedInput-root": {
                 borderRadius: 2,
                 backgroundColor: theme.palette.background.paper,
@@ -714,11 +813,32 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
-                  <Search color="action" />
+                  <FilterList color="action" />
                 </InputAdornment>
               ),
             }}
           />
+          <Button
+            variant="contained"
+            size="small"
+            startIcon={<Add />}
+            onClick={addFieldFilter}
+            disabled={!pendingValue.trim()}
+            sx={{ borderRadius: 2, textTransform: "none", fontWeight: 600, boxShadow: "none" }}
+          >
+            Add filter
+          </Button>
+          {fieldFilters.length > 0 && (
+            <Button
+              variant="text"
+              size="small"
+              startIcon={<Clear />}
+              onClick={clearFieldFilters}
+              sx={{ borderRadius: 2, textTransform: "none", fontWeight: 600 }}
+            >
+              Clear
+            </Button>
+          )}
           <Chip
             icon={<Summarize />}
             label={`${filteredData.length} of ${data.length} records`}
@@ -744,6 +864,21 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
           >
             Columns ({visibleCount})
           </Button>
+          {fieldFilters.length > 0 && (
+            <Box sx={{ width: "100%", display: "flex", flexWrap: "wrap", gap: 0.75, pt: 0.5 }}>
+              {fieldFilters.map((filter) => (
+                <Chip
+                  key={filter.id}
+                  size="small"
+                  color="primary"
+                  variant="outlined"
+                  label={`${getFieldLabel(filter.field)}: ${filter.value}`}
+                  onDelete={() => removeFieldFilter(filter.id)}
+                  sx={{ borderRadius: 2, fontWeight: 600 }}
+                />
+              ))}
+            </Box>
+          )}
           <Menu
             open={!!columnsMenuAnchor}
             onClose={() => { setColumnsMenuAnchor(null); setColumnsMenuPosition(null); }}
@@ -895,7 +1030,7 @@ const TransactionsTableModal: React.FC<TableModalProps> = ({
                           No transactions match your search
                         </Typography>
                         <Typography variant="body2" color="text.disabled" sx={{ mt: 0.5 }}>
-                          Try a different {searchBy === "tag_id" ? "Tag ID" : "User ID"} or clear the search
+                          Try different field filters or clear all filters
                         </Typography>
                       </Box>
                     </TableCell>

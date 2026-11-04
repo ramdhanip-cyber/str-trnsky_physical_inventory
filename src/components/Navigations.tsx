@@ -4,7 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { getLoginPath } from "../config/appPath";
 import { getDefaultRouteForRole, orderRoles, parseUserRoles } from "../config/roleUtils";
 import { isRoleHidden } from "../config/roleVisibility";
-import { getRuntimeEnvironment } from "../config/runtime";
+import { getEnvironmentChipColors, getRuntimeEnvironment } from "../config/runtime";
 import {
   Box,
   CssBaseline,
@@ -314,6 +314,7 @@ export default function ModernNavigation({ children }: NavigationProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const environment = getRuntimeEnvironment();
+  const envChip = getEnvironmentChipColors(environment);
 
   const fullName = localStorage.getItem('full_name');
 
@@ -636,9 +637,9 @@ export default function ModernNavigation({ children }: NavigationProps) {
                 fontSize: '0.65rem',
                 letterSpacing: '0.5px',
                 textTransform: 'uppercase',
-                color: environment === 'LIVE' ? '#A5D6A7' : '#FFD54F',
-                backgroundColor: environment === 'LIVE' ? 'rgba(76,175,80,0.22)' : 'rgba(255,193,7,0.18)',
-                border: environment === 'LIVE' ? '1px solid rgba(76,175,80,0.45)' : '1px solid rgba(255,193,7,0.38)',
+                color: envChip.color,
+                backgroundColor: envChip.backgroundColor,
+                border: envChip.border,
               }}
             />
           </Box>

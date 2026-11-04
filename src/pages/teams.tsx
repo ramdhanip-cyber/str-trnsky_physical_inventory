@@ -49,7 +49,6 @@ import {
   ViewModule as ViewModuleIcon,
   ViewList as ViewListIcon,
   AccessTime as AccessTimeIcon,
-  LocalOffer as LocalOfferIcon,
   PersonAdd as PersonAddIcon,
   MoreVert as MoreVertIcon,
 } from "@mui/icons-material";
@@ -732,10 +731,6 @@ const TeamManagement = () => {
         >
           {filteredTeams.map((team) => {
             const members = filterVisibleRoleRecords(team.members || []).filter((m) => m?.full_name);
-            const tagLabel =
-              team.tag_from || team.tag_to
-                ? `${team.tag_from || '—'} → ${team.tag_to || '—'}`
-                : null;
 
             return (
               <Fade in key={team.team_id} timeout={280}>
@@ -822,28 +817,6 @@ const TeamManagement = () => {
                           '& .MuiChip-icon': { color: BRAND },
                         }}
                       />
-                      {tagLabel && (
-                        <Chip
-                          size="small"
-                          icon={<LocalOfferIcon sx={{ fontSize: '14px !important' }} />}
-                          label={tagLabel}
-                          sx={{
-                            height: 26,
-                            maxWidth: '100%',
-                            fontWeight: 700,
-                            fontSize: '0.7rem',
-                            color: BRAND,
-                            background: SKEU_BG,
-                            boxShadow: skeuInset(2),
-                            border: 'none',
-                            '& .MuiChip-icon': { color: alpha(BRAND, 0.7) },
-                            '& .MuiChip-label': {
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                            },
-                          }}
-                        />
-                      )}
                     </Box>
 
                     {/* Members well — scrollable */}

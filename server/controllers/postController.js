@@ -1246,6 +1246,66 @@ exports.updateTeamTagPointer = async (req, res) => {
   }
 };
 
+exports.reopenCounterCount = async (req, res) => {
+  const { location_id, section_id } = req.params;
+
+  if (!location_id || !section_id) {
+    return res.status(400).json({
+      success: false,
+      message: 'Location ID and Section ID are required'
+    });
+  }
+
+  try {
+    const reconCheck = await pool.query(
+      `SELECT 1
+       FROM reconciliation_records
+       WHERE location_id = $1
+         AND COALESCE(status, 'active') = 'active'
+       LIMIT 1`,
+      [location_id]
+    );
+
+    if (reconCheck.rows.length > 0) {
+      return res.status(403).json({
+        success: false,
+        message: 'Cannot modify count: reconciliation report already generated for this location'
+      });
+    }
+
+    const updateQuery = `
+      UPDATE assigned_locations
+      SET status = 'In Progress'
+      WHERE location_id = $1
+        AND sub_location_id = $2
+        AND status = 'Count Completed'
+      RETURNING *;
+    `;
+
+    const { rows } = await pool.query(updateQuery, [location_id, section_id]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No Count Completed assignment found to reopen'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Count reopened for modification',
+      data: rows[0]
+    });
+  } catch (error) {
+    console.error('Error reopening counter count:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to reopen count',
+      error: error.message
+    });
+  }
+};
+
 exports.updateLocationStatus = async (req, res) => {
   const { location_id, section_id } = req.params;
   

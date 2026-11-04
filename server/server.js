@@ -44,17 +44,22 @@ const defaultCorsOrigins = [
   "http://localhost:5173",
   "http://localhost:3000",
   "http://localhost:5310",
+  "http://localhost:5314",
   "http://127.0.0.1:5173",
   "http://127.0.0.1:3000",
   "http://127.0.0.1:5310",
+  "http://127.0.0.1:5314",
   "http://172.28.1.248:5173",
   "http://172.28.1.248:5310",
+  "http://172.28.1.248:5314",
   "http://10.50.60.162:5310",
   "http://10.50.60.162:5173",
   "http://10.52.33.41:5310",
   "http://10.52.33.41:5312",
+  "http://10.52.33.41:5314",
   "http://10.60.1.38:5310",
   "http://10.60.1.38:5312",
+  "http://10.60.1.38:5314",
   "http://10.60.1.38:3000",
   "https://auxinvex.sss-steel.com",
   "https://auxinvex.sss-steel.com:443",
@@ -74,19 +79,43 @@ try {
 const corsOrigins = [...new Set([...defaultCorsOrigins, ...envCorsOrigins])];
 console.log('CORS allowed origins:', corsOrigins);
 
-// Allow any localhost / 127.0.0.1 origin regardless of port (Vite may pick 5173, 5174, ...)
-const isLocalhostOrigin = (origin) =>
-  /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+const allowedCorsHosts = new Set(
+  corsOrigins.flatMap((entry) => {
+    try {
+      return [new URL(entry).hostname];
+    } catch {
+      return [];
+    }
+  })
+);
+allowedCorsHosts.add('localhost');
+allowedCorsHosts.add('127.0.0.1');
+allowedCorsHosts.add('10.52.33.41');
+allowedCorsHosts.add('10.60.1.38');
+allowedCorsHosts.add('10.50.60.162');
+allowedCorsHosts.add('172.28.1.248');
+allowedCorsHosts.add('auxinvex.sss-steel.com');
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+  if (corsOrigins.includes(origin)) return true;
+  try {
+    const { hostname } = new URL(origin);
+    if (hostname === 'localhost' || hostname === '127.0.0.1') return true;
+    return allowedCorsHosts.has(hostname);
+  } catch {
+    return false;
+  }
+};
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow same-origin / non-browser requests (no Origin header)
-      if (!origin || corsOrigins.includes(origin) || isLocalhostOrigin(origin)) {
+      if (isAllowedOrigin(origin)) {
         return callback(null, true);
       }
       console.warn('CORS blocked origin:', origin);
-      return callback(new Error(`CORS blocked for origin: ${origin}`));
+      return callback(null, false);
     },
     credentials: true,
   })
